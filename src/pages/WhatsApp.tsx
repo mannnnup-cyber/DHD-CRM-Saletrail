@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
-const INSTANCE_ID = '7103533114';
-const API_TOKEN = 'e7d1f33adc654f2c8824b962db22cb03d47a8417ddf84c17a2';
-const BASE_URL = `https://api.green-api.com/waInstance${INSTANCE_ID}`;
+// WhatsApp Green API Configuration - Uses environment variables
+const INSTANCE_ID = import.meta.env.VITE_GREENAPI_INSTANCE_ID || '';
+const API_TOKEN = import.meta.env.VITE_GREENAPI_TOKEN || '';
+const BASE_URL = INSTANCE_ID ? `https://api.green-api.com/waInstance${INSTANCE_ID}` : '';
 
 const TEAM_MEMBERS = [
   { id: 'all', name: 'Unassigned' },
@@ -90,6 +91,10 @@ export default function WhatsApp() {
 
   // Check connection status
   const checkStatus = async () => {
+    if (!INSTANCE_ID || !API_TOKEN) {
+      setConnected(false);
+      return;
+    }
     try {
       const r = await fetch(`${BASE_URL}/getStateInstance/${API_TOKEN}`);
       const data = await r.json();
@@ -101,6 +106,11 @@ export default function WhatsApp() {
 
   // Load chats from Green API
   const loadChats = async () => {
+    if (!INSTANCE_ID || !API_TOKEN) {
+      setChats(getMockChats());
+      setSyncing(false);
+      return;
+    }
     setSyncing(true);
     try {
       const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
@@ -131,6 +141,11 @@ export default function WhatsApp() {
 
   // Load messages for a chat
   const loadMessages = async (chatId: string) => {
+    if (!INSTANCE_ID || !API_TOKEN) {
+      setMessages(getMockMessages());
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const r = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
@@ -165,6 +180,10 @@ export default function WhatsApp() {
   // Send message
   const sendMessage = async () => {
     if (!replyText.trim() || !selectedChat) return;
+    if (!INSTANCE_ID || !API_TOKEN) {
+      alert('WhatsApp credentials not configured. Please set GREENAPI_INSTANCE_ID and GREENAPI_TOKEN in Vercel.');
+      return;
+    }
     setSending(true);
     const text = replyText;
     setReplyText('');
@@ -651,28 +670,51 @@ export default function WhatsApp() {
       {/* SETUP TAB */}
       {activeTab === 'setup' && (
         <div className="space-y-4">
-          <div className={`rounded-xl p-4 border ${
-            connected ? 'bg-green-500/10 border-green-500/30' : 'bg-amber-500/10 border-amber-500/30'
-          }`}>
-            <div className="flex items-center gap-3">
-              {connected ? <Wifi className="w-5 h-5 text-green-400" /> : <WifiOff className="w-5 h-5 text-amber-400" />}
-              <div>
-                <p className={`font-medium ${connected ? 'text-green-400' : 'text-amber-400'}`}>
-                  {connected ? '✅ Green API Connected' : '⚠️ Green API Not Connected'}
-                </p>
-                <p className="text-gray-400 text-sm">Instance ID: {INSTANCE_ID}</p>
+          {!INSTANCE_ID || !API_TOKEN ? (
+            <div className="bg-red-500/10 rounded-xl border border-red-500/30 p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <AlertCircle className="w-6 h-6 text-red-400" />
+                <h3 className="text-white font-semibold text-lg">Environment Variables Not Configured</h3>
+              </div>
+              <p className="text-gray-400 text-sm mb-4">Please add the following environment variables in your Vercel project settings:</p>
+              <div className="space-y-3 bg-gray-900/50 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400 text-sm">GREENAPI_INSTANCE_ID</span>
+                  <span className="text-red-400 text-xs">Required</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400 text-sm">GREENAPI_TOKEN</span>
+                  <span className="text-red-400 text-xs">Required</span>
+                </div>
+              </div>
+              <p className="text-gray-400 text-xs mt-4">
+                Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+              </p>
+            </div>
+          ) : (
+            <div className={`rounded-xl p-4 border ${
+              connected ? 'bg-green-500/10 border-green-500/30' : 'bg-amber-500/10 border-amber-500/30'
+            }`}>
+              <div className="flex items-center gap-3">
+                {connected ? <Wifi className="w-5 h-5 text-green-400" /> : <WifiOff className="w-5 h-5 text-amber-400" />}
+                <div>
+                  <p className={`font-medium ${connected ? 'text-green-400' : 'text-amber-400'}`}>
+                    {connected ? '✅ Green API Connected' : '⚠️ Green API Not Connected'}
+                  </p>
+                  <p className="text-gray-400 text-sm">Instance ID: {INSTANCE_ID}</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
             <h3 className="text-white font-semibold mb-4">🚀 Setup Guide</h3>
             <div className="space-y-4">
               {[
-                { step: '1', title: 'Green API Account Created', desc: 'Account created and Instance ID configured', done: true },
+                { step: '1', title: 'Green API Account Created', desc: 'Account created and Instance ID configured', done: !!INSTANCE_ID && !!API_TOKEN },
                 { step: '2', title: 'Link WhatsApp Business', desc: 'Open WhatsApp Business → Settings → Linked Devices → Link Device → Scan QR in Green API dashboard', done: connected === true },
                 { step: '3', title: 'Configure Webhook', desc: 'In Green API dashboard → Settings → Webhook URL: https://your-vercel-app.vercel.app/api/whatsapp', done: false },
-                { step: '4', title: 'Deploy to Vercel', desc: 'Push code to GitHub → Import to Vercel → Add WC environment variables → Deploy', done: false },
+                { step: '4', title: 'Environment Variables Set', desc: 'GREENAPI_INSTANCE_ID and GREENAPI_TOKEN added to Vercel', done: !!INSTANCE_ID && !!API_TOKEN },
                 { step: '5', title: 'Add MacroDroid WhatsApp Trigger', desc: 'Add notification trigger for WhatsApp calls in MacroDroid to log WhatsApp calls to Google Sheets', done: false },
               ].map(item => (
                 <div key={item.step} className={`flex items-start gap-4 p-4 rounded-xl ${
@@ -697,15 +739,15 @@ export default function WhatsApp() {
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
                 <span className="text-gray-400 text-sm">Instance ID</span>
-                <span className="text-white font-mono text-sm">{INSTANCE_ID}</span>
+                <span className="text-white font-mono text-sm">{INSTANCE_ID || 'Not configured'}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
                 <span className="text-gray-400 text-sm">API Token</span>
-                <span className="text-gray-400 font-mono text-xs">••••••••••{API_TOKEN.slice(-6)}</span>
+                <span className="text-gray-400 font-mono text-xs">{API_TOKEN ? `••••••••••${API_TOKEN.slice(-6)}` : 'Not configured'}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
                 <span className="text-gray-400 text-sm">Base URL</span>
-                <span className="text-blue-400 font-mono text-xs">api.green-api.com/waInstance{INSTANCE_ID}</span>
+                <span className="text-blue-400 font-mono text-xs">{INSTANCE_ID ? `api.green-api.com/waInstance${INSTANCE_ID}` : 'Not configured'}</span>
               </div>
             </div>
           </div>

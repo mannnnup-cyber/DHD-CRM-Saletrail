@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const INSTANCE_ID = '7103533114';
-const API_TOKEN = 'e7d1f33adc654f2c8824b962db22cb03d47a8417ddf84c17a2';
-const BASE_URL = `https://api.green-api.com/waInstance${INSTANCE_ID}`;
+// Use environment variables for security
+const INSTANCE_ID = process.env.GREENAPI_INSTANCE_ID || '';
+const API_TOKEN = process.env.GREENAPI_TOKEN || '';
+const BASE_URL = INSTANCE_ID ? `https://api.green-api.com/waInstance${INSTANCE_ID}` : '';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,6 +11,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Check if credentials are configured
+  if (!INSTANCE_ID || !API_TOKEN) {
+    return res.status(400).json({
+      success: false,
+      error: 'WhatsApp credentials not configured',
+      message: 'Please set GREENAPI_INSTANCE_ID and GREENAPI_TOKEN environment variables in Vercel'
+    });
+  }
 
   const action = req.query.action as string;
 

@@ -158,7 +158,108 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- ============================================
--- WOOCOMMERCE SYNC TABLE
+-- UNIFIED CONTACTS TABLE
+-- ============================================
+-- This table replaces the need for separate leads and WooCommerce customers
+-- All contacts (leads, customers, etc.) are stored here with source tracking
+CREATE TABLE IF NOT EXISTS contacts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    phone VARCHAR(50),
+    phone_normalized VARCHAR(50), -- Normalized phone for matching (e.g., +1XXXXXXXXXX)
+    company VARCHAR(255),
+    source VARCHAR(50) CHECK (source IN ('MANUAL', 'WOOCOMMERCE', 'CSV_IMPORT', 'WHATSAPP', 'WEBSITE')),
+    status VARCHAR(50) DEFAULT 'NEW' CHECK (status IN ('NEW', 'CONTACTED', 'QUALIFYING', 'VERIFIED_CUSTOMER', 'CONVERTED', 'LOST')),
+    assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+    notes TEXT,
+    tags TEXT[], -- Array of tags for segmentation
+    total_orders INTEGER DEFAULT 0, -- From WooCommerce
+    total_revenue DECIMAL(15, 2) DEFAULT 0, -- From WooCommerce
+    first_order_date DATE, -- From WooCommerce
+    last_order_date DATE, -- From WooCommerce
+    average_order_value DECIMAL(15, 2) DEFAULT 0, -- Calculated from WooCommerce
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- WOOCOMMERCE ORDERS TABLE
+-- ============================================
+-- Stores cached orders from WooCommerce for trend analysis
+CREATE TABLE IF NOT EXISTS woo_orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    woo_order_id VARCHAR(100) UNIQUE NOT NULL,
+    contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+    customer_name VARCHAR(255),
+    customer_email VARCHAR(255),
+    customer_phone VARCHAR(50),
+    billing_address TEXT,
+    shipping_address TEXT,
+    subtotal DECIMAL(15, 2) DEFAULT 0,
+    tax_amount DECIMAL(15, 2) DEFAULT 0,
+    shipping_amount DECIMAL(15, 2) DEFAULT 0,
+    total_amount DECIMAL(15, 2) DEFAULT 0,
+    currency VARCHAR(10) DEFAULT 'JMD',
+    status VARCHAR(50) CHECK (status IN ('pending', 'processing', 'completed', 'cancelled', 'refunded', 'failed')),
+    payment_method VARCHAR(50),
+    order_notes TEXT,
+    line_items JSONB, -- Store line items as JSON
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    synced_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- ORDER TRENDS TABLE
+-- ============================================
+-- Aggregated order data for trend analysis
+CREATE TABLE IF NOT EXISTS order_trends (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
+    period_type VARCHAR(20) CHECK (period_type IN ('daily', 'weekly', 'monthly', 'yearly')),
+    period_start DATE NOT NULL,
+    order_count INTEGER DEFAULT 0,
+    revenue DECIMAL(15, 2) DEFAULT 0,
+    average_order_value DECIMAL(15, 2) DEFAULT 0,
+    first_order DATE,
+    last_order DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- INTERACTIONS TABLE
+-- ============================================
+-- Unified table for all communications (WhatsApp, calls, emails, notes)
+CREATE TABLE IF NOT EXISTS interactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
+    type VARCHAR(50) CHECK (type IN ('WHATSAPP', 'CALL', 'EMAIL', 'NOTE', 'SMS', 'MEETING')),
+    direction VARCHAR(20) CHECK (direction IN ('INBOUND', 'OUTBOUND')),
+    subject VARCHAR(255),
+    content TEXT,
+    metadata JSONB, -- Store extra data like WhatsApp message ID, call duration, etc.
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- LEAD STAGES TABLE
+-- ============================================
+-- Track lead progression through qualification pipeline
+CREATE TABLE IF NOT EXISTS lead_stages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
+    stage VARCHAR(50) CHECK (stage IN ('NEW', 'CONTACTED', 'QUALIFYING', 'VERIFIED', 'PROPOSAL', 'NEGOTIATION', 'CONVERTED', 'LOST')),
+    notes TEXT,
+    changed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    changed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- WOOCOMMERCE SYNC TABLE (Legacy - for backward compatibility)
 -- ============================================
 CREATE TABLE IF NOT EXISTS woocommerce_sync (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -198,6 +299,32 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id);
 CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON activities(timestamp);
+
+-- Indices for unified contacts
+CREATE INDEX IF NOT EXISTS idx_contacts_phone_normalized ON contacts(phone_normalized);
+CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
+CREATE INDEX IF NOT EXISTS idx_contacts_source ON contacts(source);
+CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status);
+CREATE INDEX IF NOT EXISTS idx_contacts_assigned_to ON contacts(assigned_to);
+
+-- Indices for WooCommerce orders
+CREATE INDEX IF NOT EXISTS idx_woo_orders_contact_id ON woo_orders(contact_id);
+CREATE INDEX IF NOT EXISTS idx_woo_orders_status ON woo_orders(status);
+CREATE INDEX IF NOT EXISTS idx_woo_orders_created_at ON woo_orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_woo_orders_customer_email ON woo_orders(customer_email);
+
+-- Indices for order trends
+CREATE INDEX IF NOT EXISTS idx_order_trends_contact_id ON order_trends(contact_id);
+CREATE INDEX IF NOT EXISTS idx_order_trends_period ON order_trends(period_type, period_start);
+
+-- Indices for interactions
+CREATE INDEX IF NOT EXISTS idx_interactions_contact_id ON interactions(contact_id);
+CREATE INDEX IF NOT EXISTS idx_interactions_type ON interactions(type);
+CREATE INDEX IF NOT EXISTS idx_interactions_timestamp ON interactions(timestamp);
+
+-- Indices for lead stages
+CREATE INDEX IF NOT EXISTS idx_lead_stages_contact_id ON lead_stages(contact_id);
+CREATE INDEX IF NOT EXISTS idx_lead_stages_stage ON lead_stages(stage);
 
 -- ============================================
 -- INSERT DEFAULT DATA
@@ -271,6 +398,20 @@ CREATE POLICY "Allow all access" ON team_members FOR ALL USING (true);
 CREATE POLICY "Allow all access" ON settings FOR ALL USING (true);
 CREATE POLICY "Allow all access" ON woocommerce_sync FOR ALL USING (true);
 CREATE POLICY "Allow all access" ON whatsapp_messages FOR ALL USING (true);
+
+-- Enable RLS on new tables
+ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE woo_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_trends ENABLE ROW LEVEL SECURITY;
+ALTER TABLE interactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lead_stages ENABLE ROW LEVEL SECURITY;
+
+-- RLS policies for new tables
+CREATE POLICY "Allow all access" ON contacts FOR ALL USING (true);
+CREATE POLICY "Allow all access" ON woo_orders FOR ALL USING (true);
+CREATE POLICY "Allow all access" ON order_trends FOR ALL USING (true);
+CREATE POLICY "Allow all access" ON interactions FOR ALL USING (true);
+CREATE POLICY "Allow all access" ON lead_stages FOR ALL USING (true);
 
 -- ============================================
 -- FUNCTION TO UPDATE UPDATED_AT TIMESTAMP
