@@ -3,8 +3,10 @@ import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, Chec
 import { useApp } from '../context/AppContext';
 
 // WhatsApp Green API Configuration - Uses environment variables
-const INSTANCE_ID = import.meta.env.VITE_GREENAPI_INSTANCE_ID || '';
-const API_TOKEN = import.meta.env.VITE_GREENAPI_TOKEN || '';
+// Vite requires VITE_ prefix for frontend-accessible env vars
+// But we also check without prefix for compatibility
+const INSTANCE_ID = import.meta.env.VITE_GREENAPI_INSTANCE_ID || import.meta.env.GREENAPI_INSTANCE_ID || '';
+const API_TOKEN = import.meta.env.VITE_GREENAPI_TOKEN || import.meta.env.GREENAPI_TOKEN || '';
 const BASE_URL = INSTANCE_ID ? `https://api.green-api.com/waInstance${INSTANCE_ID}` : '';
 
 const TEAM_MEMBERS = [
