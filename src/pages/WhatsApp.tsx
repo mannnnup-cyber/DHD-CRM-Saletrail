@@ -115,10 +115,14 @@ export default function WhatsApp() {
     }
     setSyncing(true);
     try {
-      const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
+      const url = `${BASE_URL}/getChats/${API_TOKEN}`;
+      console.log('Loading chats from:', url);
+      const r = await fetch(url);
       const data = await r.json();
+      console.log('Chats response:', data);
 
-      if (Array.isArray(data)) {
+      // Check if response is valid
+      if (data && Array.isArray(data) && data.length > 0) {
         const formatted: Chat[] = data.slice(0, 50).map((chat: any) => ({
           id: chat.id || '',
           name: chat.name || chat.id?.split('@')[0] || 'Unknown',
@@ -132,10 +136,17 @@ export default function WhatsApp() {
           status: 'active' as const
         }));
         setChats(formatted);
-      } else {
+      } else if (data && data.status === false) {
+        // API returned error
+        console.error('Green API error:', data);
         setChats(getMockChats());
+      } else {
+        // No chats or empty response
+        console.log('No chats found, using empty array');
+        setChats([]);
       }
-    } catch {
+    } catch (error) {
+      console.error('Error loading chats:', error);
       setChats(getMockChats());
     }
     setSyncing(false);
@@ -150,14 +161,17 @@ export default function WhatsApp() {
     }
     setLoading(true);
     try {
-      const r = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
+      const url = `${BASE_URL}/getChatHistory/${API_TOKEN}`;
+      console.log('Loading messages from:', url, 'chatId:', chatId);
+      const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId, count: 50 })
       });
       const data = await r.json();
+      console.log('Messages response:', data);
 
-      if (Array.isArray(data)) {
+      if (data && Array.isArray(data) && data.length > 0) {
         const formatted: Message[] = data.map((msg: any) => ({
           id: msg.idMessage || Math.random().toString(),
           text: msg.textMessage || msg.caption || '📎 Media',
@@ -169,11 +183,15 @@ export default function WhatsApp() {
           type: msg.typeMessage || 'text'
         }));
         setMessages(formatted.reverse());
+      } else if (data && data.status === false) {
+        console.error('Green API error:', data);
+        setMessages([]);
       } else {
-        setMessages(getMockMessages());
+        setMessages([]);
       }
-    } catch {
-      setMessages(getMockMessages());
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      setMessages([]);
     }
     setLoading(false);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
