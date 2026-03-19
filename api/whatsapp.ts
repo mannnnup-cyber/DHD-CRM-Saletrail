@@ -21,7 +21,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ success: true, received: true });
   }
 
-  // Check if credentials are configured
+  const action = req.query.action as string;
+
+  // Allow webhookInfo without requiring credentials (for status display)
+  if (action === 'webhookInfo' && (!INSTANCE_ID || !API_TOKEN)) {
+    return res.json({
+      success: false,
+      configured: false,
+      url: '',
+      message: 'WhatsApp credentials not configured'
+    });
+  }
+
+  // For other actions, require credentials
   if (!INSTANCE_ID || !API_TOKEN) {
     return res.status(400).json({
       success: false,
@@ -29,8 +41,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       message: 'Please set GREENAPI_INSTANCE_ID and GREENAPI_TOKEN environment variables in Vercel'
     });
   }
-
-  const action = req.query.action as string;
 
   try {
     switch (action) {
@@ -114,7 +124,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Get webhook settings
         const r = await fetch(`${BASE_URL}/getWebhookUrl/${API_TOKEN}`);
         const data = await r.json();
-        return res.json({ success: true, webhook: data });
+        return res.json({
+          success: true,
+          configured: !!(data.webhookUrl && data.webhookUrl.length > 0),
+          url: data.webhookUrl || '',
+          raw: data
+        });
       }
 
       default:

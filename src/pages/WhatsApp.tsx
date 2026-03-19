@@ -118,17 +118,19 @@ export default function WhatsApp() {
     }
   }, []);
 
-  // Check webhook status
+  // Check webhook status - call backend API which has access to env vars
   const checkWebhookStatus = useCallback(async () => {
-    if (!INSTANCE_ID || !API_TOKEN) return;
     try {
-      const r = await fetch(`${BASE_URL}/getWebhookUrl/${API_TOKEN}`);
+      const r = await fetch('/api/whatsapp?action=webhookInfo');
       const data = await r.json();
-      // Green API returns { webhookUrl: "", statusInstance: "online" } or { status: false, ... }
-      setWebhookStatus({
-        configured: !!(data.webhookUrl && data.webhookUrl.length > 0),
-        url: data.webhookUrl || ''
-      });
+      if (data.success) {
+        setWebhookStatus({
+          configured: data.configured || false,
+          url: data.url || ''
+        });
+      } else {
+        setWebhookStatus({ configured: false, url: '' });
+      }
     } catch {
       setWebhookStatus({ configured: false, url: '' });
     }
@@ -148,8 +150,16 @@ export default function WhatsApp() {
       const data = await r.json();
 
       if (data && Array.isArray(data) && data.length > 0) {
-        // Check if this looks like real data (has proper chat structure)
-        const hasRealStructure = data.some((chat: any) => chat.id && (chat.name || chat.lastMessage));
+        // STRICT check: Real data must have chats with actual names (not just phone IDs)
+        // and should NOT contain our mock chat names
+        const MOCK_NAMES = ['Production Office', 'Sun Island CUG', 'Cindy-lue Miller', 'Aakeem Jones', 'Mr. Charles Williams'];
+        const hasRealStructure = data.some((chat: any) => {
+          const name = chat.name || '';
+          // Must have a real name (not just phone) and not be a mock name
+          const isMockName = MOCK_NAMES.includes(name);
+          const hasProperName = name.length > 0 && !name.includes('@') && !isMockName;
+          return chat.id && hasProperName;
+        });
 
         if (hasRealStructure) {
           const formatted: Chat[] = data.slice(0, 50).map((chat: any) => ({
@@ -167,7 +177,8 @@ export default function WhatsApp() {
           setChats(formatted);
           setHasRealData(true);
         } else {
-          // Data doesn't look like real chats
+          // Data doesn't look like real chats - show empty instead of mock
+          console.log('Green API returned data but not real chat structure, showing empty');
           setChats([]);
           setHasRealData(false);
         }
