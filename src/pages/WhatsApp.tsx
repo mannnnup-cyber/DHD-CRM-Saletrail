@@ -81,6 +81,7 @@ export default function WhatsApp() {
   const [waCalls, setWaCalls] = useState<WACall[]>([]);
   const [dbTestResult, setDbTestResult] = useState<DBTestResult | null>(null);
   const [testingDB, setTestingDB] = useState(false);
+  const [hasRealData, setHasRealData] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageCountRef = useRef<number>(0);
 
@@ -123,8 +124,9 @@ export default function WhatsApp() {
     try {
       const r = await fetch(`${BASE_URL}/getWebhookUrl/${API_TOKEN}`);
       const data = await r.json();
+      // Green API returns { webhookUrl: "", statusInstance: "online" } or { status: false, ... }
       setWebhookStatus({
-        configured: !!data.webhookUrl,
+        configured: !!(data.webhookUrl && data.webhookUrl.length > 0),
         url: data.webhookUrl || ''
       });
     } catch {
@@ -136,6 +138,7 @@ export default function WhatsApp() {
   const loadChats = useCallback(async () => {
     if (!INSTANCE_ID || !API_TOKEN) {
       setChats(getMockChats());
+      setHasRealData(false);
       setSyncing(false);
       return;
     }
@@ -145,28 +148,41 @@ export default function WhatsApp() {
       const data = await r.json();
 
       if (data && Array.isArray(data) && data.length > 0) {
-        const formatted: Chat[] = data.slice(0, 50).map((chat: any) => ({
-          id: chat.id || '',
-          name: chat.name || chat.id?.split('@')[0] || 'Unknown',
-          lastMessage: chat.lastMessage?.textMessage || chat.lastMessage?.caption || 'Media message',
-          timestamp: chat.lastMessage?.timestamp
-            ? new Date(chat.lastMessage.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : '',
-          unread: chat.unreadCount || 0,
-          assignedTo: 'Unassigned',
-          phone: chat.id?.split('@')[0] || '',
-          status: 'active' as const
-        }));
-        setChats(formatted);
+        // Check if this looks like real data (has proper chat structure)
+        const hasRealStructure = data.some((chat: any) => chat.id && (chat.name || chat.lastMessage));
+
+        if (hasRealStructure) {
+          const formatted: Chat[] = data.slice(0, 50).map((chat: any) => ({
+            id: chat.id || '',
+            name: chat.name || chat.id?.split('@')[0] || 'Unknown',
+            lastMessage: chat.lastMessage?.textMessage || chat.lastMessage?.caption || 'Media message',
+            timestamp: chat.lastMessage?.timestamp
+              ? new Date(chat.lastMessage.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : '',
+            unread: chat.unreadCount || 0,
+            assignedTo: 'Unassigned',
+            phone: chat.id?.split('@')[0] || '',
+            status: 'active' as const
+          }));
+          setChats(formatted);
+          setHasRealData(true);
+        } else {
+          // Data doesn't look like real chats
+          setChats([]);
+          setHasRealData(false);
+        }
       } else if (data && data.status === false) {
         console.error('Green API error:', data);
-        setChats(getMockChats());
+        setChats([]);
+        setHasRealData(false);
       } else {
         setChats([]);
+        setHasRealData(false);
       }
     } catch (error) {
       console.error('Error loading chats:', error);
-      setChats(getMockChats());
+      setChats([]);
+      setHasRealData(false);
     }
     setSyncing(false);
   }, []);
@@ -340,7 +356,7 @@ export default function WhatsApp() {
   const whatsappCallsToday = allCalls.filter(c => c.type === 'WhatsApp' && new Date(c.timestamp).toDateString() === new Date().toDateString()).length;
 
   // Determine if using real or mock data
-  const isUsingRealData = connected === true && chats.length > 0 && !chats.some(c => c.name === 'Production Office');
+  const isUsingRealData = hasRealData && connected === true;
 
   return (
     <div className="h-full flex flex-col">
