@@ -1,13 +1,8 @@
 {
-  "rewrites": [
+  "builds": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/:path*"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
     }
-  ],
-  "installCommand": "npm install"
+  ]
 }
