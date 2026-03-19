@@ -12,6 +12,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // Handle webhook POST from Green API (no action query param)
+  if (req.method === 'POST' && !req.query.action) {
+    const body = req.body;
+    console.log('WhatsApp Webhook received:', JSON.stringify(body));
+
+    // Acknowledge receipt
+    return res.status(200).json({ success: true, received: true });
+  }
+
   // Check if credentials are configured
   if (!INSTANCE_ID || !API_TOKEN) {
     return res.status(400).json({
@@ -43,7 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const r = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId, count: 50 })
+          body: JSON.stringify({ chatId, count: 100 })
         });
         const data = await r.json();
         return res.json({ success: true, messages: data });
@@ -67,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'receive': {
-        // Receive incoming notifications
+        // Receive incoming notifications (long polling)
         const r = await fetch(`${BASE_URL}/receiveNotification/${API_TOKEN}`);
         const data = await r.json();
         return res.json({ success: true, notification: data });
@@ -82,17 +91,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, data });
       }
 
-      case 'webhook': {
-        // Receive webhook from Green API
-        const body = req.body;
-        console.log('WhatsApp Webhook received:', JSON.stringify(body));
-        return res.json({ success: true });
+      case 'settings': {
+        // Get instance settings
+        const r = await fetch(`${BASE_URL}/getSettings/${API_TOKEN}`);
+        const data = await r.json();
+        return res.json({ success: true, settings: data });
+      }
+
+      case 'setWebhook': {
+        // Set webhook URL
+        const webhookUrl = req.query.webhookUrl as string;
+        const r = await fetch(`${BASE_URL}/setWebhookUrl/${API_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ webhookUrl })
+        });
+        const data = await r.json();
+        return res.json({ success: true, data });
+      }
+
+      case 'webhookInfo': {
+        // Get webhook settings
+        const r = await fetch(`${BASE_URL}/getWebhookUrl/${API_TOKEN}`);
+        const data = await r.json();
+        return res.json({ success: true, webhook: data });
       }
 
       default:
-        return res.status(400).json({ success: false, error: 'Unknown action' });
+        return res.status(400).json({ success: false, error: 'Unknown action. Use: status, chats, messages, send, contacts, receive, settings, setWebhook, webhookInfo' });
     }
   } catch (err: any) {
+    console.error('WhatsApp API Error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }

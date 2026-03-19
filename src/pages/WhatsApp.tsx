@@ -1,10 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall, Database, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 // WhatsApp Green API Configuration - Uses environment variables
-// Vite requires VITE_ prefix for frontend-accessible env vars
-// But we also check without prefix for compatibility
 const INSTANCE_ID = import.meta.env.VITE_GREENAPI_INSTANCE_ID || import.meta.env.GREENAPI_INSTANCE_ID || '';
 const API_TOKEN = import.meta.env.VITE_GREENAPI_TOKEN || import.meta.env.GREENAPI_TOKEN || '';
 const BASE_URL = INSTANCE_ID ? `https://api.green-api.com/waInstance${INSTANCE_ID}` : '';
@@ -19,11 +17,11 @@ const TEAM_MEMBERS = [
 ];
 
 const MESSAGE_TEMPLATES = [
-  { id: 1, name: 'Initial Response', text: 'Hi! Thanks for reaching out to Dirty Hand Designs 🎨 How can we help you today?' },
+  { id: 1, name: 'Initial Response', text: 'Hi! Thanks for reaching out to Dirty Hand Designs. How can we help you today?' },
   { id: 2, name: 'Quote Follow-up', text: 'Hi! Just following up on the quote we sent. Do you have any questions about our branding services?' },
   { id: 3, name: 'Design Review', text: 'Hi! Your design mockup is ready for review. Please let us know your feedback and any changes needed.' },
   { id: 4, name: 'Payment Reminder', text: 'Hi! This is a friendly reminder that your invoice is due. Please let us know if you have any questions.' },
-  { id: 5, name: 'Project Complete', text: 'Hi! Great news — your project is complete! Thank you for choosing Dirty Hand Designs 🙌' },
+  { id: 5, name: 'Project Complete', text: 'Hi! Great news — your project is complete! Thank you for choosing Dirty Hand Designs.' },
 ];
 
 interface Chat {
@@ -56,10 +54,20 @@ interface WACall {
   rep: string;
 }
 
+interface DBTestResult {
+  success: boolean;
+  connected: boolean;
+  message: string;
+  tableCounts?: Record<string, number>;
+  tableErrors?: Record<string, string>;
+  error?: string;
+}
+
 export default function WhatsApp() {
   const { state, allCalls, addCall } = useApp();
   const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
@@ -71,7 +79,10 @@ export default function WhatsApp() {
   const [assignDropdown, setAssignDropdown] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [waCalls, setWaCalls] = useState<WACall[]>([]);
+  const [dbTestResult, setDbTestResult] = useState<DBTestResult | null>(null);
+  const [testingDB, setTestingDB] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMessageCountRef = useRef<number>(0);
 
   const user = state.user;
 
@@ -92,7 +103,7 @@ export default function WhatsApp() {
   }, [allCalls]);
 
   // Check connection status
-  const checkStatus = async () => {
+  const checkStatus = useCallback(async () => {
     if (!INSTANCE_ID || !API_TOKEN) {
       setConnected(false);
       return;
@@ -104,10 +115,25 @@ export default function WhatsApp() {
     } catch {
       setConnected(false);
     }
-  };
+  }, []);
+
+  // Check webhook status
+  const checkWebhookStatus = useCallback(async () => {
+    if (!INSTANCE_ID || !API_TOKEN) return;
+    try {
+      const r = await fetch(`${BASE_URL}/getWebhookUrl/${API_TOKEN}`);
+      const data = await r.json();
+      setWebhookStatus({
+        configured: !!data.webhookUrl,
+        url: data.webhookUrl || ''
+      });
+    } catch {
+      setWebhookStatus({ configured: false, url: '' });
+    }
+  }, []);
 
   // Load chats from Green API
-  const loadChats = async () => {
+  const loadChats = useCallback(async () => {
     if (!INSTANCE_ID || !API_TOKEN) {
       setChats(getMockChats());
       setSyncing(false);
@@ -115,18 +141,14 @@ export default function WhatsApp() {
     }
     setSyncing(true);
     try {
-      const url = `${BASE_URL}/getChats/${API_TOKEN}`;
-      console.log('Loading chats from:', url);
-      const r = await fetch(url);
+      const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
       const data = await r.json();
-      console.log('Chats response:', data);
 
-      // Check if response is valid
       if (data && Array.isArray(data) && data.length > 0) {
         const formatted: Chat[] = data.slice(0, 50).map((chat: any) => ({
           id: chat.id || '',
           name: chat.name || chat.id?.split('@')[0] || 'Unknown',
-          lastMessage: chat.lastMessage?.textMessage || chat.lastMessage?.caption || '📎 Media',
+          lastMessage: chat.lastMessage?.textMessage || chat.lastMessage?.caption || 'Media message',
           timestamp: chat.lastMessage?.timestamp
             ? new Date(chat.lastMessage.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : '',
@@ -137,12 +159,9 @@ export default function WhatsApp() {
         }));
         setChats(formatted);
       } else if (data && data.status === false) {
-        // API returned error
         console.error('Green API error:', data);
         setChats(getMockChats());
       } else {
-        // No chats or empty response
-        console.log('No chats found, using empty array');
         setChats([]);
       }
     } catch (error) {
@@ -150,10 +169,10 @@ export default function WhatsApp() {
       setChats(getMockChats());
     }
     setSyncing(false);
-  };
+  }, []);
 
   // Load messages for a chat
-  const loadMessages = async (chatId: string) => {
+  const loadMessages = useCallback(async (chatId: string) => {
     if (!INSTANCE_ID || !API_TOKEN) {
       setMessages(getMockMessages());
       setLoading(false);
@@ -161,20 +180,17 @@ export default function WhatsApp() {
     }
     setLoading(true);
     try {
-      const url = `${BASE_URL}/getChatHistory/${API_TOKEN}`;
-      console.log('Loading messages from:', url, 'chatId:', chatId);
-      const r = await fetch(url, {
+      const r = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, count: 50 })
+        body: JSON.stringify({ chatId, count: 100 })
       });
       const data = await r.json();
-      console.log('Messages response:', data);
 
       if (data && Array.isArray(data) && data.length > 0) {
         const formatted: Message[] = data.map((msg: any) => ({
           id: msg.idMessage || Math.random().toString(),
-          text: msg.textMessage || msg.caption || '📎 Media',
+          text: msg.textMessage || msg.caption || 'Media message',
           timestamp: msg.timestamp
             ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : '',
@@ -183,6 +199,7 @@ export default function WhatsApp() {
           type: msg.typeMessage || 'text'
         }));
         setMessages(formatted.reverse());
+        lastMessageCountRef.current = formatted.length;
       } else if (data && data.status === false) {
         console.error('Green API error:', data);
         setMessages([]);
@@ -195,7 +212,7 @@ export default function WhatsApp() {
     }
     setLoading(false);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  };
+  }, []);
 
   // Send message
   const sendMessage = async () => {
@@ -245,6 +262,24 @@ export default function WhatsApp() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
+  // Test database connection
+  const testDatabaseConnection = async () => {
+    setTestingDB(true);
+    try {
+      const r = await fetch('/api/db-test');
+      const data = await r.json();
+      setDbTestResult(data);
+    } catch (error: any) {
+      setDbTestResult({
+        success: false,
+        connected: false,
+        error: error.message,
+        message: 'Failed to test database connection'
+      });
+    }
+    setTestingDB(false);
+  };
+
   const getMockChats = (): Chat[] => [
     { id: '18763280220@c.us', name: 'Production Office', lastMessage: 'When will the logo be ready?', timestamp: '10:42', unread: 3, assignedTo: 'Keisha', phone: '18763280220', status: 'active' },
     { id: '18765408428@c.us', name: 'Sun Island CUG', lastMessage: 'Thanks for the quote!', timestamp: '09:15', unread: 0, assignedTo: 'Andre', phone: '18765408428', status: 'active' },
@@ -255,7 +290,7 @@ export default function WhatsApp() {
 
   const getMockMessages = (): Message[] => [
     { id: '1', text: 'Hi! I am interested in a logo design for my business', timestamp: '09:00', fromMe: false, status: 'read', type: 'text' },
-    { id: '2', text: 'Hi! Thanks for reaching out to Dirty Hand Designs 🎨 How can we help you today?', timestamp: '09:02', fromMe: true, status: 'read', type: 'text' },
+    { id: '2', text: 'Hi! Thanks for reaching out to Dirty Hand Designs. How can we help you today?', timestamp: '09:02', fromMe: true, status: 'read', type: 'text' },
     { id: '3', text: 'I need a full branding package — logo, business cards and social media graphics', timestamp: '09:05', fromMe: false, status: 'read', type: 'text' },
     { id: '4', text: 'Great! We specialize in exactly that. Can I ask about your budget range?', timestamp: '09:07', fromMe: true, status: 'read', type: 'text' },
     { id: '5', text: 'Budget is around $80,000 JMD', timestamp: '09:10', fromMe: false, status: 'read', type: 'text' },
@@ -263,16 +298,35 @@ export default function WhatsApp() {
     { id: '7', text: 'When will the logo be ready?', timestamp: '10:42', fromMe: false, status: 'read', type: 'text' },
   ];
 
+  // Initial load
   useEffect(() => {
     checkStatus();
+    checkWebhookStatus();
     loadChats();
-    const interval = setInterval(() => { loadChats(); }, 30000);
+  }, [checkStatus, checkWebhookStatus, loadChats]);
+
+  // Poll for new messages every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkStatus();
+      if (selectedChat) {
+        loadMessages(selectedChat.id);
+      }
+    }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [checkStatus, selectedChat, loadMessages]);
+
+  // Reload chats periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadChats();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [loadChats]);
 
   useEffect(() => {
     if (selectedChat) loadMessages(selectedChat.id);
-  }, [selectedChat]);
+  }, [selectedChat, loadMessages]);
 
   const filteredChats = chats.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -285,6 +339,9 @@ export default function WhatsApp() {
   const resolvedChats = chats.filter(c => c.status === 'resolved').length;
   const whatsappCallsToday = allCalls.filter(c => c.type === 'WhatsApp' && new Date(c.timestamp).toDateString() === new Date().toDateString()).length;
 
+  // Determine if using real or mock data
+  const isUsingRealData = connected === true && chats.length > 0 && !chats.some(c => c.name === 'Production Office');
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -294,7 +351,11 @@ export default function WhatsApp() {
             <MessageCircle className="w-7 h-7 text-green-400" />
             WhatsApp Business
           </h1>
-          <p className="text-gray-400 text-sm mt-1">DHD Sales Inbox — Shared team number</p>
+          <p className="text-gray-400 text-sm mt-1">
+            DHD Sales Inbox — Shared team number
+            {isUsingRealData && <span className="ml-2 text-green-400">(Live Data)</span>}
+            {!isUsingRealData && connected && <span className="ml-2 text-amber-400">(Using Mock Data - Check Setup)</span>}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
@@ -308,7 +369,7 @@ export default function WhatsApp() {
             {connected === true ? 'Connected' : connected === false ? 'Disconnected' : 'Checking...'}
           </div>
           <button
-            onClick={() => { checkStatus(); loadChats(); }}
+            onClick={() => { checkStatus(); checkWebhookStatus(); loadChats(); }}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
@@ -348,10 +409,10 @@ export default function WhatsApp() {
               activeTab === tab ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
             }`}
           >
-            {tab === 'inbox' && `💬 Inbox${totalUnread > 0 ? ` (${totalUnread})` : ''}`}
-            {tab === 'calls' && `📞 Calls${waCalls.length > 0 ? ` (${waCalls.length})` : ''}`}
-            {tab === 'stats' && '📊 Stats'}
-            {tab === 'setup' && '⚙️ Setup'}
+            {tab === 'inbox' && `Inbox${totalUnread > 0 ? ` (${totalUnread})` : ''}`}
+            {tab === 'calls' && `Calls${waCalls.length > 0 ? ` (${waCalls.length})` : ''}`}
+            {tab === 'stats' && 'Stats'}
+            {tab === 'setup' && 'Setup'}
           </button>
         ))}
       </div>
@@ -487,7 +548,7 @@ export default function WhatsApp() {
                           : 'bg-green-600/30 text-green-400 hover:bg-green-600/50'
                       }`}
                     >
-                      {selectedChat.status === 'resolved' ? 'Reopen' : '✓ Resolve'}
+                      {selectedChat.status === 'resolved' ? 'Reopen' : 'Resolve'}
                     </button>
                     <a
                       href={`https://wa.me/${selectedChat.phone}`}
@@ -627,7 +688,7 @@ export default function WhatsApp() {
                       </div>
                       <div>
                         <p className="text-white font-medium text-sm">{call.name || 'Unknown'}</p>
-                        <p className="text-gray-400 text-xs">+{call.number} · {call.rep}</p>
+                        <p className="text-gray-400 text-xs">+{call.number} . {call.rep}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -635,7 +696,7 @@ export default function WhatsApp() {
                         call.type === 'Outgoing' ? 'text-blue-400' :
                         call.type === 'Incoming' ? 'text-green-400' : 'text-red-400'
                       }`}>{call.type}</p>
-                      <p className="text-gray-400 text-xs">{call.duration} · {call.time}</p>
+                      <p className="text-gray-400 text-xs">{call.duration} . {call.time}</p>
                     </div>
                   </div>
                 ))}
@@ -645,10 +706,6 @@ export default function WhatsApp() {
                 <PhoneCall className="w-12 h-12 text-gray-600 mx-auto mb-3" />
                 <p className="text-gray-400 font-medium">No WhatsApp calls logged yet</p>
                 <p className="text-gray-500 text-sm mt-1">WhatsApp calls from MacroDroid will appear here when synced</p>
-                <div className="mt-4 p-4 bg-amber-500/10 rounded-xl border border-amber-500/20 text-left max-w-md mx-auto">
-                  <p className="text-amber-400 text-sm font-medium mb-2">📱 To log WhatsApp calls:</p>
-                  <p className="text-gray-400 text-xs">Add a MacroDroid trigger for WhatsApp notifications. When a WhatsApp call ends, MacroDroid sends the call data to Google Sheets with type=WhatsApp. The Call Sync page will import them here automatically.</p>
-                </div>
               </div>
             )}
           </div>
@@ -689,7 +746,8 @@ export default function WhatsApp() {
 
       {/* SETUP TAB */}
       {activeTab === 'setup' && (
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[calc(100vh-320px)] overflow-y-auto">
+          {/* WhatsApp Configuration Status */}
           {!INSTANCE_ID || !API_TOKEN ? (
             <div className="bg-red-500/10 rounded-xl border border-red-500/30 p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -708,7 +766,7 @@ export default function WhatsApp() {
                 </div>
               </div>
               <p className="text-gray-400 text-xs mt-4">
-                Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+                Go to Vercel Dashboard . Your Project . Settings . Environment Variables
               </p>
             </div>
           ) : (
@@ -719,7 +777,7 @@ export default function WhatsApp() {
                 {connected ? <Wifi className="w-5 h-5 text-green-400" /> : <WifiOff className="w-5 h-5 text-amber-400" />}
                 <div>
                   <p className={`font-medium ${connected ? 'text-green-400' : 'text-amber-400'}`}>
-                    {connected ? '✅ Green API Connected' : '⚠️ Green API Not Connected'}
+                    {connected ? 'Green API Connected' : 'Green API Not Connected'}
                   </p>
                   <p className="text-gray-400 text-sm">Instance ID: {INSTANCE_ID}</p>
                 </div>
@@ -727,13 +785,115 @@ export default function WhatsApp() {
             </div>
           )}
 
+          {/* Webhook Status */}
+          {connected && (
+            <div className={`rounded-xl p-4 border ${
+              webhookStatus?.configured ? 'bg-green-500/10 border-green-500/30' : 'bg-amber-500/10 border-amber-500/30'
+            }`}>
+              <div className="flex items-center gap-3 mb-2">
+                {webhookStatus?.configured ? <CheckCircle2 className="w-5 h-5 text-green-400" /> : <AlertCircle className="w-5 h-5 text-amber-400" />}
+                <p className={`font-medium ${webhookStatus?.configured ? 'text-green-400' : 'text-amber-400'}`}>
+                  Webhook {webhookStatus?.configured ? 'Configured' : 'Not Configured'}
+                </p>
+              </div>
+              {webhookStatus?.configured && (
+                <p className="text-gray-400 text-xs">URL: {webhookStatus.url}</p>
+              )}
+              {!webhookStatus?.configured && (
+                <div className="mt-3">
+                  <p className="text-gray-400 text-sm mb-2">To receive real-time messages:</p>
+                  <ol className="text-gray-500 text-xs list-decimal list-inside space-y-1">
+                    <li>Go to Green API Dashboard</li>
+                    <li>Select your instance</li>
+                    <li>Go to Settings</li>
+                    <li>Set Webhook URL to: <code className="bg-gray-800 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/whatsapp</code></li>
+                    <li>Save settings</li>
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Database Connection Test */}
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
-            <h3 className="text-white font-semibold mb-4">🚀 Setup Guide</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold flex items-center gap-2">
+                <Database className="w-5 h-5 text-blue-400" />
+                Database Connection
+              </h3>
+              <button
+                onClick={testDatabaseConnection}
+                disabled={testingDB}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {testingDB ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {testingDB ? 'Testing...' : 'Test Connection'}
+              </button>
+            </div>
+
+            {dbTestResult && (
+              <div className={`rounded-xl p-4 border ${
+                dbTestResult.success ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'
+              }`}>
+                <div className="flex items-center gap-2 mb-3">
+                  {dbTestResult.success ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-400" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-red-400" />
+                  )}
+                  <p className={`font-medium ${dbTestResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                    {dbTestResult.message}
+                  </p>
+                </div>
+
+                {dbTestResult.error && (
+                  <p className="text-red-400 text-xs mb-3">Error: {dbTestResult.error}</p>
+                )}
+
+                {dbTestResult.tableCounts && (
+                  <div className="space-y-2">
+                    <p className="text-gray-400 text-xs font-medium">Table Record Counts:</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {Object.entries(dbTestResult.tableCounts).map(([table, count]) => (
+                        <div key={table} className="bg-gray-800/50 rounded-lg p-2 text-center">
+                          <p className="text-white font-bold">{count as number}</p>
+                          <p className="text-gray-500 text-[10px]">{table}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {dbTestResult.tableErrors && (
+                  <div className="mt-3">
+                    <p className="text-amber-400 text-xs font-medium mb-2">Missing Tables (run SQL schema):</p>
+                    <div className="space-y-1">
+                      {Object.entries(dbTestResult.tableErrors).map(([table, error]) => (
+                        <p key={table} className="text-amber-300 text-xs">
+                          . {table}: {error}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!dbTestResult && (
+              <p className="text-gray-500 text-sm text-center py-4">
+                Click "Test Connection" to verify database connectivity
+              </p>
+            )}
+          </div>
+
+          {/* Setup Guide */}
+          <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
+            <h3 className="text-white font-semibold mb-4">Setup Guide</h3>
             <div className="space-y-4">
               {[
                 { step: '1', title: 'Green API Account Created', desc: 'Account created and Instance ID configured', done: !!INSTANCE_ID && !!API_TOKEN },
-                { step: '2', title: 'Link WhatsApp Business', desc: 'Open WhatsApp Business → Settings → Linked Devices → Link Device → Scan QR in Green API dashboard', done: connected === true },
-                { step: '3', title: 'Configure Webhook', desc: 'In Green API dashboard → Settings → Webhook URL: https://your-vercel-app.vercel.app/api/whatsapp', done: false },
+                { step: '2', title: 'Link WhatsApp Business', desc: 'Open WhatsApp Business . Settings . Linked Devices . Link Device . Scan QR in Green API dashboard', done: connected === true },
+                { step: '3', title: 'Configure Webhook', desc: 'In Green API dashboard . Settings . Webhook URL: ' + (typeof window !== 'undefined' ? window.location.origin : '') + '/api/whatsapp', done: webhookStatus?.configured || false },
                 { step: '4', title: 'Environment Variables Set', desc: 'GREENAPI_INSTANCE_ID and GREENAPI_TOKEN added to Vercel', done: !!INSTANCE_ID && !!API_TOKEN },
                 { step: '5', title: 'Add MacroDroid WhatsApp Trigger', desc: 'Add notification trigger for WhatsApp calls in MacroDroid to log WhatsApp calls to Google Sheets', done: false },
               ].map(item => (
@@ -743,7 +903,7 @@ export default function WhatsApp() {
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm ${
                     item.done ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-400'
                   }`}>
-                    {item.done ? '✓' : item.step}
+                    {item.done ? 'OK' : item.step}
                   </div>
                   <div>
                     <p className="text-white font-medium text-sm">{item.title}</p>
@@ -754,8 +914,9 @@ export default function WhatsApp() {
             </div>
           </div>
 
+          {/* Credentials */}
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
-            <h3 className="text-white font-semibold mb-4">🔑 Green API Credentials</h3>
+            <h3 className="text-white font-semibold mb-4">Green API Credentials</h3>
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
                 <span className="text-gray-400 text-sm">Instance ID</span>
@@ -763,7 +924,7 @@ export default function WhatsApp() {
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
                 <span className="text-gray-400 text-sm">API Token</span>
-                <span className="text-gray-400 font-mono text-xs">{API_TOKEN ? `••••••••••${API_TOKEN.slice(-6)}` : 'Not configured'}</span>
+                <span className="text-gray-400 font-mono text-xs">{API_TOKEN ? `****${API_TOKEN.slice(-6)}` : 'Not configured'}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
                 <span className="text-gray-400 text-sm">Base URL</span>
@@ -772,6 +933,7 @@ export default function WhatsApp() {
             </div>
           </div>
 
+          {/* Important Note */}
           <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4">
             <p className="text-amber-400 font-medium flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
