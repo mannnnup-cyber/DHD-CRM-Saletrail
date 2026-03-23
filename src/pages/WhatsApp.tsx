@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall, Database, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall, Database, CheckCircle2, XCircle, Loader2, Plus, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 // WhatsApp API is handled by backend /api/whatsapp
@@ -81,6 +81,12 @@ export default function WhatsApp() {
   const [dbTestResult, setDbTestResult] = useState<DBTestResult | null>(null);
   const [testingDB, setTestingDB] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
+  const [showNewMessage, setShowNewMessage] = useState(false);
+  const [newMessagePhone, setNewMessagePhone] = useState('');
+  const [newMessageText, setNewMessageText] = useState('');
+  const [sendingNew, setSendingNew] = useState(false);
+  const [messageHistoryEnabled, setMessageHistoryEnabled] = useState(false);
+  const [enablingHistory, setEnablingHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageCountRef = useRef<number>(0);
 
@@ -260,6 +266,91 @@ export default function WhatsApp() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
+  // Send new message to a new contact
+  const sendNewMessage = async () => {
+    if (!newMessagePhone.trim() || !newMessageText.trim()) return;
+
+    // Format phone number
+    let phone = newMessagePhone.replace(/\D/g, '');
+    if (!phone.endsWith('@c.us')) {
+      phone = `${phone}@c.us`;
+    }
+
+    setSendingNew(true);
+    try {
+      const r = await fetch('/api/whatsapp?action=send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: phone, message: newMessageText })
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        // Add to chats list
+        const newChat: Chat = {
+          id: phone,
+          name: newMessagePhone,
+          lastMessage: newMessageText,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          unread: 0,
+          assignedTo: 'Unassigned',
+          phone: newMessagePhone.replace(/\D/g, ''),
+          status: 'active'
+        };
+        setChats(prev => [newChat, ...prev]);
+        setShowNewMessage(false);
+        setNewMessagePhone('');
+        setNewMessageText('');
+
+        // Log as activity
+        addCall({
+          repId: user?.id || 'rep1',
+          contactId: '',
+          contactName: newMessagePhone,
+          contactPhone: newMessagePhone.replace(/\D/g, ''),
+          type: 'WhatsApp',
+          duration: 0,
+          notes: `New WhatsApp message: ${newMessageText.slice(0, 50)}`,
+          source: 'WhatsApp'
+        } as any);
+      } else {
+        alert('Failed to send message: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      alert('Failed to send message');
+    }
+    setSendingNew(false);
+  };
+
+  // Enable message history
+  const enableMessageHistory = async () => {
+    setEnablingHistory(true);
+    try {
+      const r = await fetch('/api/whatsapp?action=setWebhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl: webhookStatus?.url || `${window.location.origin}/api/whatsapp`,
+          incomingWebhook: true,
+          outgoingWebhook: true,
+          stateWebhook: true
+        })
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        setMessageHistoryEnabled(true);
+        alert('Message history enabled! Refresh your chats in a few minutes to see history.');
+        checkWebhookStatus();
+      } else {
+        alert('Failed to enable message history');
+      }
+    } catch (error) {
+      alert('Failed to enable message history');
+    }
+    setEnablingHistory(false);
+  };
+
   // Test database connection
   const testDatabaseConnection = async () => {
     setTestingDB(true);
@@ -373,8 +464,67 @@ export default function WhatsApp() {
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+          <button
+            onClick={() => setShowNewMessage(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Message
+          </button>
         </div>
       </div>
+
+      {/* New Message Modal */}
+      {showNewMessage && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold text-lg">New WhatsApp Message</h3>
+              <button onClick={() => setShowNewMessage(false)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-gray-400 text-sm mb-1 block">Phone Number</label>
+                <input
+                  type="text"
+                  value={newMessagePhone}
+                  onChange={(e) => setNewMessagePhone(e.target.value)}
+                  placeholder="18765551234"
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 text-sm mb-1 block">Message</label>
+                <textarea
+                  value={newMessageText}
+                  onChange={(e) => setNewMessageText(e.target.value)}
+                  placeholder="Type your message..."
+                  rows={4}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-500 resize-none"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowNewMessage(false)}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendNewMessage}
+                  disabled={!newMessagePhone.trim() || !newMessageText.trim() || sendingNew}
+                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  {sendingNew ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Bar */}
       <div className="grid grid-cols-5 gap-4 mb-6">
@@ -798,6 +948,24 @@ export default function WhatsApp() {
               )}
             </div>
           )}
+
+          {/* Enable Message History */}
+          <div className="bg-blue-500/10 rounded-xl border border-blue-500/30 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-white font-medium">Enable Message History</h4>
+                <p className="text-gray-400 text-xs mt-1">Load your WhatsApp chat history (one-time setup)</p>
+              </div>
+              <button
+                onClick={enableMessageHistory}
+                disabled={enablingHistory || messageHistoryEnabled}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {enablingHistory ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                {enablingHistory ? 'Enabling...' : messageHistoryEnabled ? 'Enabled' : 'Enable Now'}
+              </button>
+            </div>
+          </div>
 
           {/* Database Connection Test */}
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
