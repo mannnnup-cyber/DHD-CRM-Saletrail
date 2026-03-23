@@ -2,10 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall, Database, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
-// WhatsApp Green API Configuration - Uses environment variables
-const INSTANCE_ID = import.meta.env.VITE_GREENAPI_INSTANCE_ID || import.meta.env.GREENAPI_INSTANCE_ID || '';
-const API_TOKEN = import.meta.env.VITE_GREENAPI_TOKEN || import.meta.env.GREENAPI_TOKEN || '';
-const BASE_URL = INSTANCE_ID ? `https://api.green-api.com/waInstance${INSTANCE_ID}` : '';
+// WhatsApp API is handled by backend /api/whatsapp
+// Frontend calls /api/whatsapp which proxies to Green API
+// This avoids CORS issues and keeps credentials secure
 
 const TEAM_MEMBERS = [
   { id: 'all', name: 'Unassigned' },
@@ -103,16 +102,16 @@ export default function WhatsApp() {
     setWaCalls(whatsappCalls);
   }, [allCalls]);
 
-  // Check connection status
+  // Check connection status via backend API
   const checkStatus = useCallback(async () => {
-    if (!INSTANCE_ID || !API_TOKEN) {
-      setConnected(false);
-      return;
-    }
     try {
-      const r = await fetch(`${BASE_URL}/getStateInstance/${API_TOKEN}`);
+      const r = await fetch('/api/whatsapp?action=status');
       const data = await r.json();
-      setConnected(data.stateInstance === 'authorized');
+      if (data.success) {
+        setConnected(data.connected === true);
+      } else {
+        setConnected(false);
+      }
     } catch {
       setConnected(false);
     }
@@ -136,56 +135,41 @@ export default function WhatsApp() {
     }
   }, []);
 
-  // Load chats from Green API
+  // Load chats from backend API (proxies to Green API)
   const loadChats = useCallback(async () => {
-    if (!INSTANCE_ID || !API_TOKEN) {
-      setChats(getMockChats());
-      setHasRealData(false);
-      setSyncing(false);
-      return;
-    }
     setSyncing(true);
     try {
-      const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
+      const r = await fetch('/api/whatsapp?action=chats');
       const data = await r.json();
 
-      if (data && Array.isArray(data) && data.length > 0) {
-        // STRICT check: Real data must have chats with actual names (not just phone IDs)
-        // and should NOT contain our mock chat names
+      if (data.success && data.chats && Array.isArray(data.chats) && data.chats.length > 0) {
+        // STRICT check: Real data must have chats with actual names
         const MOCK_NAMES = ['Production Office', 'Sun Island CUG', 'Cindy-lue Miller', 'Aakeem Jones', 'Mr. Charles Williams'];
-        const hasRealStructure = data.some((chat: any) => {
+        const hasRealStructure = data.chats.some((chat: any) => {
           const name = chat.name || '';
-          // Must have a real name (not just phone) and not be a mock name
           const isMockName = MOCK_NAMES.includes(name);
           const hasProperName = name.length > 0 && !name.includes('@') && !isMockName;
           return chat.id && hasProperName;
         });
 
         if (hasRealStructure) {
-          const formatted: Chat[] = data.slice(0, 50).map((chat: any) => ({
+          const formatted: Chat[] = data.chats.slice(0, 50).map((chat: any) => ({
             id: chat.id || '',
-            name: chat.name || chat.id?.split('@')[0] || 'Unknown',
-            lastMessage: chat.lastMessage?.textMessage || chat.lastMessage?.caption || 'Media message',
-            timestamp: chat.lastMessage?.timestamp
-              ? new Date(chat.lastMessage.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : '',
-            unread: chat.unreadCount || 0,
+            name: chat.name || chat.phone || 'Unknown',
+            lastMessage: chat.lastMessage || '',
+            timestamp: chat.timestamp || '',
+            unread: chat.unread || 0,
             assignedTo: 'Unassigned',
-            phone: chat.id?.split('@')[0] || '',
-            status: 'active' as const
+            phone: chat.phone || chat.id?.split('@')[0] || '',
+            status: (chat.status || 'active') as 'active' | 'resolved' | 'pending'
           }));
           setChats(formatted);
           setHasRealData(true);
         } else {
-          // Data doesn't look like real chats - show empty instead of mock
-          console.log('Green API returned data but not real chat structure, showing empty');
+          console.log('No real chat structure, showing empty');
           setChats([]);
           setHasRealData(false);
         }
-      } else if (data && data.status === false) {
-        console.error('Green API error:', data);
-        setChats([]);
-        setHasRealData(false);
       } else {
         setChats([]);
         setHasRealData(false);
@@ -198,38 +182,26 @@ export default function WhatsApp() {
     setSyncing(false);
   }, []);
 
-  // Load messages for a chat
+  // Load messages for a chat via backend API
   const loadMessages = useCallback(async (chatId: string) => {
-    if (!INSTANCE_ID || !API_TOKEN) {
-      setMessages(getMockMessages());
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
-      const r = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, count: 100 })
-      });
+      const r = await fetch(`/api/whatsapp?action=messages&chatId=${encodeURIComponent(chatId)}`);
       const data = await r.json();
 
-      if (data && Array.isArray(data) && data.length > 0) {
-        const formatted: Message[] = data.map((msg: any) => ({
-          id: msg.idMessage || Math.random().toString(),
-          text: msg.textMessage || msg.caption || 'Media message',
+      if (data.success && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+        const formatted: Message[] = data.messages.map((msg: any) => ({
+          id: msg.idMessage || msg.id || Math.random().toString(),
+          text: msg.textMessage || msg.text || msg.caption || 'Media message',
           timestamp: msg.timestamp
             ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : '',
-          fromMe: msg.type === 'outgoing',
+          fromMe: msg.type === 'outgoing' || msg.type === 'outgoing' || msg.fromMe === true,
           status: 'read' as const,
-          type: msg.typeMessage || 'text'
+          type: msg.typeMessage || msg.type || 'text'
         }));
         setMessages(formatted.reverse());
         lastMessageCountRef.current = formatted.length;
-      } else if (data && data.status === false) {
-        console.error('Green API error:', data);
-        setMessages([]);
       } else {
         setMessages([]);
       }
@@ -241,13 +213,9 @@ export default function WhatsApp() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, []);
 
-  // Send message
+  // Send message via backend API
   const sendMessage = async () => {
     if (!replyText.trim() || !selectedChat) return;
-    if (!INSTANCE_ID || !API_TOKEN) {
-      alert('WhatsApp credentials not configured. Please set GREENAPI_INSTANCE_ID and GREENAPI_TOKEN in Vercel.');
-      return;
-    }
     setSending(true);
     const text = replyText;
     setReplyText('');
@@ -263,25 +231,28 @@ export default function WhatsApp() {
     setMessages(prev => [...prev, newMsg]);
 
     try {
-      await fetch(`${BASE_URL}/sendMessage/${API_TOKEN}`, {
+      const r = await fetch('/api/whatsapp?action=send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: selectedChat.id, message: text })
       });
-      setMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, status: 'delivered' } : m));
+      const data = await r.json();
 
-      // Log as activity
-      addCall({
-        repId: user?.id || 'rep1',
-        contactId: '',
-        contactName: selectedChat.name,
-        contactPhone: selectedChat.phone,
-        type: 'WhatsApp',
-        duration: 0,
-        notes: `WhatsApp message: ${text.slice(0, 50)}`,
-        source: 'WhatsApp'
-      } as any);
+      if (data.success) {
+        setMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, status: 'delivered' } : m));
 
+        // Log as activity
+        addCall({
+          repId: user?.id || 'rep1',
+          contactId: '',
+          contactName: selectedChat.name,
+          contactPhone: selectedChat.phone,
+          type: 'WhatsApp',
+          duration: 0,
+          notes: `WhatsApp message: ${text.slice(0, 50)}`,
+          source: 'WhatsApp'
+        } as any);
+      }
     } catch {
       // Message still shows locally
     }
@@ -775,42 +746,29 @@ export default function WhatsApp() {
       {activeTab === 'setup' && (
         <div className="space-y-4 max-h-[calc(100vh-320px)] overflow-y-auto">
           {/* WhatsApp Configuration Status */}
-          {!INSTANCE_ID || !API_TOKEN ? (
-            <div className="bg-red-500/10 rounded-xl border border-red-500/30 p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <AlertCircle className="w-6 h-6 text-red-400" />
-                <h3 className="text-white font-semibold text-lg">Environment Variables Not Configured</h3>
-              </div>
-              <p className="text-gray-400 text-sm mb-4">Please add the following environment variables in your Vercel project settings:</p>
-              <div className="space-y-3 bg-gray-900/50 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">GREENAPI_INSTANCE_ID</span>
-                  <span className="text-red-400 text-xs">Required</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">GREENAPI_TOKEN</span>
-                  <span className="text-red-400 text-xs">Required</span>
-                </div>
-              </div>
-              <p className="text-gray-400 text-xs mt-4">
-                Go to Vercel Dashboard . Your Project . Settings . Environment Variables
-              </p>
-            </div>
-          ) : (
-            <div className={`rounded-xl p-4 border ${
-              connected ? 'bg-green-500/10 border-green-500/30' : 'bg-amber-500/10 border-amber-500/30'
-            }`}>
-              <div className="flex items-center gap-3">
-                {connected ? <Wifi className="w-5 h-5 text-green-400" /> : <WifiOff className="w-5 h-5 text-amber-400" />}
-                <div>
-                  <p className={`font-medium ${connected ? 'text-green-400' : 'text-amber-400'}`}>
-                    {connected ? 'Green API Connected' : 'Green API Not Connected'}
-                  </p>
-                  <p className="text-gray-400 text-sm">Instance ID: {INSTANCE_ID}</p>
-                </div>
+          <div className={`rounded-xl p-4 border ${
+            connected === true ? 'bg-green-500/10 border-green-500/30' :
+            connected === false ? 'bg-red-500/10 border-red-500/30' :
+            'bg-gray-700/30 border-gray-600/50'
+          }`}>
+            <div className="flex items-center gap-3">
+              {connected === true ? <Wifi className="w-5 h-5 text-green-400" /> :
+               connected === false ? <WifiOff className="w-5 h-5 text-red-400" /> :
+               <AlertCircle className="w-5 h-5 text-gray-400" />}
+              <div>
+                <p className={`font-medium ${
+                  connected === true ? 'text-green-400' :
+                  connected === false ? 'text-red-400' : 'text-gray-400'
+                }`}>
+                  {connected === true ? 'Green API Connected' :
+                   connected === false ? 'Green API Not Connected' : 'Checking Connection...'}
+                </p>
+                <p className="text-gray-400 text-sm">
+                  {connected === null ? 'Checking...' : 'Instance is authorized and ready'}
+                </p>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Webhook Status */}
           {connected && (
@@ -918,10 +876,10 @@ export default function WhatsApp() {
             <h3 className="text-white font-semibold mb-4">Setup Guide</h3>
             <div className="space-y-4">
               {[
-                { step: '1', title: 'Green API Account Created', desc: 'Account created and Instance ID configured', done: !!INSTANCE_ID && !!API_TOKEN },
+                { step: '1', title: 'Green API Account Created', desc: 'Account created at green-api.com', done: connected !== null },
                 { step: '2', title: 'Link WhatsApp Business', desc: 'Open WhatsApp Business . Settings . Linked Devices . Link Device . Scan QR in Green API dashboard', done: connected === true },
                 { step: '3', title: 'Configure Webhook', desc: 'In Green API dashboard . Settings . Webhook URL: ' + (typeof window !== 'undefined' ? window.location.origin : '') + '/api/whatsapp', done: webhookStatus?.configured || false },
-                { step: '4', title: 'Environment Variables Set', desc: 'GREENAPI_INSTANCE_ID and GREENAPI_TOKEN added to Vercel', done: !!INSTANCE_ID && !!API_TOKEN },
+                { step: '4', title: 'Environment Variables Set', desc: 'GREENAPI_INSTANCE_ID and GREENAPI_TOKEN added to Vercel (check Vercel project settings)', done: connected !== null },
                 { step: '5', title: 'Add MacroDroid WhatsApp Trigger', desc: 'Add notification trigger for WhatsApp calls in MacroDroid to log WhatsApp calls to Google Sheets', done: false },
               ].map(item => (
                 <div key={item.step} className={`flex items-start gap-4 p-4 rounded-xl ${
@@ -941,21 +899,20 @@ export default function WhatsApp() {
             </div>
           </div>
 
-          {/* Credentials */}
+          {/* Environment Variables Info */}
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
-            <h3 className="text-white font-semibold mb-4">Green API Credentials</h3>
+            <h3 className="text-white font-semibold mb-4">Environment Variables</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Add these environment variables in Vercel Dashboard . Your Project . Settings . Environment Variables:
+            </p>
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
-                <span className="text-gray-400 text-sm">Instance ID</span>
-                <span className="text-white font-mono text-sm">{INSTANCE_ID || 'Not configured'}</span>
+                <span className="text-gray-400 text-sm">GREENAPI_INSTANCE_ID</span>
+                <span className="text-blue-400 text-xs">Required</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
-                <span className="text-gray-400 text-sm">API Token</span>
-                <span className="text-gray-400 font-mono text-xs">{API_TOKEN ? `****${API_TOKEN.slice(-6)}` : 'Not configured'}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
-                <span className="text-gray-400 text-sm">Base URL</span>
-                <span className="text-blue-400 font-mono text-xs">{INSTANCE_ID ? `api.green-api.com/waInstance${INSTANCE_ID}` : 'Not configured'}</span>
+                <span className="text-gray-400 text-sm">GREENAPI_TOKEN</span>
+                <span className="text-blue-400 text-xs">Required</span>
               </div>
             </div>
           </div>
