@@ -87,8 +87,11 @@ export default function WhatsApp() {
   const [sendingNew, setSendingNew] = useState(false);
   const [messageHistoryEnabled, setMessageHistoryEnabled] = useState(false);
   const [enablingHistory, setEnablingHistory] = useState(false);
+  const [syncingHistory, setSyncingHistory] = useState(false);
+  const [historyLastSynced, setHistoryLastSynced] = useState<Date | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageCountRef = useRef<number>(0);
+  const chatMessagesCache = useRef<Record<string, Message[]>>({});
 
   const user = state.user;
 
@@ -145,7 +148,9 @@ export default function WhatsApp() {
   const loadChats = useCallback(async () => {
     setSyncing(true);
     try {
-      const r = await fetch('/api/whatsapp?action=chats');
+      // Use syncHistory if enabled to get full chat history with last messages
+      const action = messageHistoryEnabled ? 'syncHistory' : 'chats';
+      const r = await fetch(`/api/whatsapp?action=${action}`);
       const data = await r.json();
 
       if (data.success && data.chats && Array.isArray(data.chats) && data.chats.length > 0) {
@@ -158,7 +163,12 @@ export default function WhatsApp() {
           return chat.id && hasProperName;
         });
 
-        if (hasRealStructure) {
+        if (hasRealStructure || data.synced) {
+          // Store messages cache if synced
+          if (data.messages && typeof data.messages === 'object') {
+            chatMessagesCache.current = data.messages;
+          }
+
           const formatted: Chat[] = data.chats.slice(0, 50).map((chat: any) => ({
             id: chat.id || '',
             name: chat.name || chat.phone || 'Unknown',
@@ -171,6 +181,10 @@ export default function WhatsApp() {
           }));
           setChats(formatted);
           setHasRealData(true);
+
+          if (data.synced) {
+            setHistoryLastSynced(new Date());
+          }
         } else {
           console.log('No real chat structure, showing empty');
           setChats([]);
@@ -186,12 +200,22 @@ export default function WhatsApp() {
       setHasRealData(false);
     }
     setSyncing(false);
-  }, []);
+  }, [messageHistoryEnabled]);
 
   // Load messages for a chat via backend API
   const loadMessages = useCallback(async (chatId: string) => {
     setLoading(true);
     try {
+      // First check if we have cached messages from syncHistory
+      if (chatMessagesCache.current[chatId]) {
+        setMessages(chatMessagesCache.current[chatId]);
+        lastMessageCountRef.current = chatMessagesCache.current[chatId].length;
+        setLoading(false);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        return;
+      }
+
+      // Otherwise fetch from API
       const r = await fetch(`/api/whatsapp?action=messages&chatId=${encodeURIComponent(chatId)}`);
       const data = await r.json();
 
@@ -208,6 +232,9 @@ export default function WhatsApp() {
         }));
         setMessages(formatted.reverse());
         lastMessageCountRef.current = formatted.length;
+
+        // Cache the messages
+        chatMessagesCache.current[chatId] = formatted.reverse();
       } else {
         setMessages([]);
       }
@@ -247,7 +274,14 @@ export default function WhatsApp() {
       if (data.success) {
         setMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, status: 'delivered' } : m));
 
-        // Log as activity
+        // Update chat's last message in the list
+        setChats(prev => prev.map(c =>
+          c.id === selectedChat.id
+            ? { ...c, lastMessage: text.slice(0, 50), timestamp: newMsg.timestamp }
+            : c
+        ));
+
+        // Log as WhatsApp activity (NOT a call)
         addCall({
           repId: user?.id || 'rep1',
           contactId: '',
@@ -255,8 +289,9 @@ export default function WhatsApp() {
           contactPhone: selectedChat.phone,
           type: 'WhatsApp',
           duration: 0,
-          notes: `WhatsApp message: ${text.slice(0, 50)}`,
-          source: 'WhatsApp'
+          notes: `Sent: ${text.slice(0, 100)}`,
+          source: 'WhatsApp',
+          outcome: 'Message Sent'
         } as any);
       }
     } catch {
@@ -287,11 +322,12 @@ export default function WhatsApp() {
 
       if (data.success) {
         // Add to chats list
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const newChat: Chat = {
           id: phone,
           name: newMessagePhone,
           lastMessage: newMessageText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: timestamp,
           unread: 0,
           assignedTo: 'Unassigned',
           phone: newMessagePhone.replace(/\D/g, ''),
@@ -302,7 +338,7 @@ export default function WhatsApp() {
         setNewMessagePhone('');
         setNewMessageText('');
 
-        // Log as activity
+        // Log as WhatsApp activity (NOT a call)
         addCall({
           repId: user?.id || 'rep1',
           contactId: '',
@@ -310,8 +346,9 @@ export default function WhatsApp() {
           contactPhone: newMessagePhone.replace(/\D/g, ''),
           type: 'WhatsApp',
           duration: 0,
-          notes: `New WhatsApp message: ${newMessageText.slice(0, 50)}`,
-          source: 'WhatsApp'
+          notes: `Sent: ${newMessageText.slice(0, 100)}`,
+          source: 'WhatsApp',
+          outcome: 'Message Sent'
         } as any);
       } else {
         alert('Failed to send message: ' + (data.error || 'Unknown error'));
@@ -322,33 +359,70 @@ export default function WhatsApp() {
     setSendingNew(false);
   };
 
-  // Enable message history
+  // Enable message history - syncs chat history from WhatsApp
   const enableMessageHistory = async () => {
     setEnablingHistory(true);
+    setSyncingHistory(true);
     try {
-      const r = await fetch('/api/whatsapp?action=setWebhook', {
+      // First, ensure webhooks are configured
+      const webhookR = await fetch('/api/whatsapp?action=setWebhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          webhookUrl: webhookStatus?.url || `${window.location.origin}/api/whatsapp`,
+          webhookUrl: `${window.location.origin}/api/whatsapp`,
           incomingWebhook: true,
           outgoingWebhook: true,
           stateWebhook: true
         })
       });
-      const data = await r.json();
+      const webhookData = await webhookR.json();
 
-      if (data.success) {
+      if (!webhookData.success) {
+        alert('Failed to configure webhooks. Please try again.');
+        setEnablingHistory(false);
+        setSyncingHistory(false);
+        return;
+      }
+
+      // Now sync the history
+      const syncR = await fetch('/api/whatsapp?action=syncHistory');
+      const syncData = await syncR.json();
+
+      if (syncData.success && syncData.chats) {
+        // Update chats with synced data
+        const formatted: Chat[] = syncData.chats.map((chat: any) => ({
+          id: chat.id || '',
+          name: chat.name || chat.phone || 'Unknown',
+          lastMessage: chat.lastMessage || '',
+          timestamp: chat.timestamp || '',
+          unread: chat.unread || 0,
+          assignedTo: 'Unassigned',
+          phone: chat.phone || chat.id?.split('@')[0] || '',
+          status: 'active' as const
+        }));
+
+        setChats(formatted);
+        setHasRealData(true);
+
+        // Cache all messages
+        if (syncData.messages) {
+          chatMessagesCache.current = syncData.messages;
+        }
+
         setMessageHistoryEnabled(true);
-        alert('Message history enabled! Refresh your chats in a few minutes to see history.');
+        setHistoryLastSynced(new Date());
         checkWebhookStatus();
+
+        alert(`Message history synced! Loaded ${syncData.count} conversations. Click any chat to view messages.`);
       } else {
-        alert('Failed to enable message history');
+        alert('Failed to sync message history. Please try again.');
       }
     } catch (error) {
-      alert('Failed to enable message history');
+      console.error('Error syncing history:', error);
+      alert('Failed to sync message history. Please try again.');
     }
     setEnablingHistory(false);
+    setSyncingHistory(false);
   };
 
   // Test database connection
@@ -950,21 +1024,53 @@ export default function WhatsApp() {
           )}
 
           {/* Enable Message History */}
-          <div className="bg-blue-500/10 rounded-xl border border-blue-500/30 p-4">
+          <div className={`rounded-xl border p-4 ${
+            messageHistoryEnabled
+              ? 'bg-green-500/10 border-green-500/30'
+              : 'bg-blue-500/10 border-blue-500/30'
+          }`}>
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-white font-medium">Enable Message History</h4>
-                <p className="text-gray-400 text-xs mt-1">Load your WhatsApp chat history (one-time setup)</p>
+                <h4 className="text-white font-medium flex items-center gap-2">
+                  {messageHistoryEnabled ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : null}
+                  {messageHistoryEnabled ? 'Message History Synced' : 'Enable Message History'}
+                </h4>
+                <p className="text-gray-400 text-xs mt-1">
+                  {messageHistoryEnabled
+                    ? historyLastSynced
+                      ? `Last synced: ${historyLastSynced.toLocaleTimeString()}`
+                      : 'Synced - click to re-sync'
+                    : 'Load your WhatsApp chat history from Green API'
+                  }
+                </p>
               </div>
               <button
                 onClick={enableMessageHistory}
-                disabled={enablingHistory || messageHistoryEnabled}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                disabled={enablingHistory}
+                className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors ${
+                  messageHistoryEnabled
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                } ${enablingHistory ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {enablingHistory ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                {enablingHistory ? 'Enabling...' : messageHistoryEnabled ? 'Enabled' : 'Enable Now'}
+                {enablingHistory ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className={`w-4 h-4 ${syncingHistory ? 'animate-spin' : ''}`} />
+                    {messageHistoryEnabled ? 'Re-sync' : 'Sync Now'}
+                  </>
+                )}
               </button>
             </div>
+            {messageHistoryEnabled && chats.length > 0 && (
+              <p className="text-green-400 text-xs mt-2">
+                {chats.length} conversations loaded with last messages
+              </p>
+            )}
           </div>
 
           {/* Database Connection Test */}

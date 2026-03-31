@@ -134,6 +134,102 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, chats });
       }
 
+      case 'syncHistory': {
+        // Fetch all chats with their last message - this enables "history" functionality
+        const r = await fetch(`${BASE_URL}/getContacts/${API_TOKEN}`);
+        const contacts = await r.json();
+
+        if (!Array.isArray(contacts)) {
+          return res.json({ success: true, chats: [], messages: {} });
+        }
+
+        // Get last messages for each chat (limit to 10 most recent to avoid rate limiting)
+        const chatsWithHistory: any[] = [];
+        const chatMessages: Record<string, any[]> = {};
+        const recentContacts = contacts.slice(0, 20); // Limit to 20 chats for performance
+
+        for (const contact of recentContacts) {
+          const chatId = contact.id || contact.wid;
+          if (!chatId) continue;
+
+          try {
+            const historyRes = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chatId, count: 30 })
+            });
+            const history = await historyRes.json();
+
+            if (Array.isArray(history) && history.length > 0) {
+              // Get the last message
+              const lastMsg = history[0];
+              const lastMsgText = lastMsg.textMessage || lastMsg.caption || 'Media';
+
+              chatsWithHistory.push({
+                id: chatId,
+                name: contact.name || contact.pushname || contact.wid || 'Unknown',
+                phone: (contact.wid || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
+                lastMessage: lastMsgText.slice(0, 60),
+                timestamp: lastMsg.timestamp
+                  ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : '',
+                rawTimestamp: lastMsg.timestamp || 0,
+                unread: 0,
+                status: 'active'
+              });
+
+              // Store messages for this chat
+              chatMessages[chatId] = history.map((msg: any) => ({
+                id: msg.idMessage || msg.id || Math.random().toString(),
+                text: msg.textMessage || msg.text || msg.caption || 'Media message',
+                timestamp: msg.timestamp
+                  ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : '',
+                fromMe: msg.fromMe === true || msg.type === 'outgoing',
+                status: 'read',
+                type: msg.typeMessage || msg.type || 'text'
+              })).reverse();
+            } else {
+              // No history for this chat
+              chatsWithHistory.push({
+                id: chatId,
+                name: contact.name || contact.pushname || contact.wid || 'Unknown',
+                phone: (contact.wid || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
+                lastMessage: '',
+                timestamp: '',
+                rawTimestamp: 0,
+                unread: 0,
+                status: 'active'
+              });
+            }
+          } catch (err) {
+            console.error(`Error fetching history for ${chatId}:`, err);
+            // Still add the chat even if history fetch failed
+            chatsWithHistory.push({
+              id: chatId,
+              name: contact.name || contact.pushname || contact.wid || 'Unknown',
+              phone: (contact.wid || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
+              lastMessage: '',
+              timestamp: '',
+              rawTimestamp: 0,
+              unread: 0,
+              status: 'active'
+            });
+          }
+        }
+
+        // Sort by timestamp (most recent first)
+        chatsWithHistory.sort((a, b) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0));
+
+        return res.json({
+          success: true,
+          chats: chatsWithHistory,
+          messages: chatMessages,
+          synced: true,
+          count: chatsWithHistory.length
+        });
+      }
+
       case 'messages': {
         // Get chat history
         const chatId = req.query.chatId as string;
