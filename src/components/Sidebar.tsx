@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Phone, CheckCircle2, ChartPie, FilePenLine,
   UserPlus, ShoppingCart, RefreshCw, MessageSquare, Users,
   Calendar, Receipt, Settings, BookOpen, LogOut, X,
-  BarChart3, MessageCircle
+  BarChart3, MessageCircle, Mail
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { section: 'CRM', path: '/call-sync', label: 'Call Sync', icon: RefreshCw, role: 'all' },
   { section: 'CRM', path: '/templates', label: 'Templates', icon: MessageSquare, role: 'all' },
   { section: 'CRM', path: '/whatsapp', label: 'WhatsApp Inbox', icon: MessageCircle, role: 'all' },
+  { section: 'CRM', path: '/email', label: 'Email Inbox', icon: Mail, role: 'all' },
   { section: 'Analytics', path: '/team', label: 'Team', icon: Users, role: 'manager' },
   { section: 'Analytics', path: '/reports', label: 'Reports', icon: BarChart3, role: 'all' },
   { section: 'System', path: '/holidays', label: 'JA Holidays', icon: Calendar, role: 'all' },

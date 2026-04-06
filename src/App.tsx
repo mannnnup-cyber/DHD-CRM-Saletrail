@@ -19,6 +19,7 @@ import Invoices from './pages/Invoices';
 import Settings from './pages/Settings';
 import Documentation from './pages/Documentation';
 import WhatsApp from './pages/WhatsApp';
+import EmailInbox from './pages/EmailInbox';
 import ContactModal from './components/ContactModal';
 import {
   Menu, Bell, Search, X, LogOut, User,
@@ -329,6 +330,7 @@ const AppInner: React.FC = () => {
             <Route path="/settings" element={<Settings />} />
             <Route path="/docs" element={<Documentation />} />
             <Route path="/whatsapp" element={<WhatsApp />} />
+            <Route path="/email" element={<EmailInbox />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
