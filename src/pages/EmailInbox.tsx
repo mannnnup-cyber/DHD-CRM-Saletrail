@@ -24,8 +24,36 @@ import {
   Brain,
   Clock,
   Target,
-  ArrowRight
+  ArrowRight,
+  Inbox,
+  Settings
 } from 'lucide-react';
+
+// Database field names (snake_case) to component field names (camelCase)
+interface DbEmail {
+  id: string;
+  message_id: string;
+  thread_id: string;
+  from_email: string;
+  from_name: string;
+  to_email: string;
+  subject: string;
+  body: string;
+  body_html: string;
+  date: string;
+  read: boolean;
+  starred: boolean;
+  category: 'lead' | 'support' | 'newsletter' | 'other';
+  lead_score: number;
+  ai_analysis: {
+    intent: string;
+    sentiment: string;
+    urgency: string;
+    keyPoints: string[];
+    suggestedAction: string;
+  } | null;
+  converted_to_lead: boolean;
+}
 
 interface Email {
   id: string;
@@ -112,14 +140,29 @@ export default function EmailInbox() {
   const [stats, setStats] = useState<EmailStats | null>(null);
   const [imported, setImported] = useState(false);
 
-  // Load emails
+  // Load emails from Supabase
   const loadEmails = useCallback(async () => {
     setLoading(true);
     try {
       const r = await fetch('/api/email?action=list');
       const data = await r.json();
       if (data.success) {
-        setEmails(data.emails || []);
+        // Map database fields (snake_case) to component fields (camelCase)
+        const mappedEmails: Email[] = (data.emails || []).map((dbEmail: DbEmail) => ({
+          id: dbEmail.id,
+          from: dbEmail.from_email,
+          fromName: dbEmail.from_name || dbEmail.from_email.split('@')[0],
+          to: dbEmail.to_email,
+          subject: dbEmail.subject,
+          body: dbEmail.body,
+          date: dbEmail.date,
+          read: dbEmail.read,
+          starred: dbEmail.starred,
+          category: dbEmail.category,
+          leadScore: dbEmail.lead_score,
+          aiAnalysis: dbEmail.ai_analysis
+        }));
+        setEmails(mappedEmails);
       }
     } catch (error) {
       console.error('Error loading emails:', error);
@@ -205,24 +248,32 @@ export default function EmailInbox() {
     setSending(false);
   };
 
-  // Reply to email
+  // Reply to email thread
   const replyToEmail = async () => {
     if (!selectedEmail || !replyData.body) return;
     setSending(true);
     try {
-      const r = await fetch('/api/email?action=reply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailId: selectedEmail.id, replyBody: replyData.body })
-      });
+      // Get thread_id from selected email
+      const r = await fetch('/api/email?action=list');
       const data = await r.json();
       if (data.success) {
-        setReplyData({ body: '' });
-        setShowAI(false);
-        setAiSuggestion('');
-        alert('Reply sent successfully!');
-      } else {
-        alert('Failed to send reply: ' + data.error);
+        const dbEmail = (data.emails || []).find((e: DbEmail) => e.id === selectedEmail.id);
+        const threadId = dbEmail?.thread_id || dbEmail?.id;
+
+        const replyRes = await fetch('/api/email?action=reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ threadId, replyBody: replyData.body })
+        });
+        const replyData = await replyRes.json();
+        if (replyData.success) {
+          setReplyData({ body: '' });
+          setShowAI(false);
+          setAiSuggestion('');
+          alert('Reply sent successfully!');
+        } else {
+          alert('Failed to send reply: ' + replyData.error);
+        }
       }
     } catch (error) {
       alert('Failed to send reply');
@@ -256,13 +307,19 @@ export default function EmailInbox() {
     loadStats();
   };
 
-  // Convert to lead
+  // Convert email to lead
   const convertToLead = async (email: Email) => {
+    if (!confirm('Convert this email to a lead?')) return;
     const r = await fetch(`/api/email?action=convertToLead&emailId=${email.id}`);
     const data = await r.json();
     if (data.success) {
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, category: 'lead', leadScore: Math.max(e.leadScore, 70) } : e));
+      if (selectedEmail?.id === email.id) {
+        setSelectedEmail(prev => prev ? { ...prev, category: 'lead', leadScore: Math.max(prev.leadScore, 70) } : null);
+      }
       alert(`Converted to lead!\nName: ${data.lead.name}\nEmail: ${data.lead.email}\nScore: ${data.lead.score}`);
+    } else {
+      alert('Failed to convert: ' + (data.error || 'Unknown error'));
     }
   };
 
@@ -633,7 +690,7 @@ export default function EmailInbox() {
                 <div className="flex items-center gap-2 mb-3">
                   <MessageSquare className="w-4 h-4 text-blue-400" />
                   <span className="text-white font-medium">Reply</span>
-                  {!aiSuggestion && (
+                  {selectedEmail.aiAnalysis && !aiSuggestion && (
                     <button
                       onClick={() => getAISuggestion(selectedEmail.id)}
                       disabled={!!analyzing}
@@ -645,6 +702,14 @@ export default function EmailInbox() {
                         <Sparkles className="w-3 h-3" />
                       )}
                       {analyzing === selectedEmail.id ? 'Analyzing...' : 'AI Suggest Reply'}
+                    </button>
+                  )}
+                  {aiSuggestion && (
+                    <button
+                      onClick={() => { setAiSuggestion(''); setReplyData({ body: '' }); }}
+                      className="ml-auto flex items-center gap-1 px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-xs transition-colors"
+                    >
+                      Clear
                     </button>
                   )}
                 </div>
