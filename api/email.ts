@@ -1,13 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import Imap from 'imap';
+import { simpleParser } from 'mailparser';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
+
+// IMAP Configuration
+const IMAP_HOST = process.env.IMAP_HOST || '';
+const IMAP_PORT = parseInt(process.env.IMAP_PORT || '993');
+const IMAP_USER = process.env.IMAP_USER || '';
+const IMAP_PASSWORD = process.env.IMAP_PASSWORD || '';
+const IMAP_USE_TLS = process.env.IMAP_USE_TLS !== 'false';
 
 const supabase = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
@@ -298,21 +304,215 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'sync': {
-        // Sync emails from Gmail (OAuth flow required)
-        // This would typically use Google's Gmail API
-        // For now, return instructions for setup
-        return res.json({
-          success: false,
-          error: 'Gmail OAuth not configured',
-          message: 'To sync emails, you need to:',
-          steps: [
-            '1. Go to https://console.cloud.google.com',
-            '2. Create a new project or select existing',
-            '3. Enable Gmail API',
-            '4. Create OAuth 2.0 credentials',
-            '5. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to Vercel env vars',
-            '6. Add GOOGLE_REDIRECT_URI to Vercel env vars'
-          ]
+        // Sync emails from IMAP mailbox
+        if (!IMAP_HOST || !IMAP_USER || !IMAP_PASSWORD) {
+          return res.json({
+            success: false,
+            error: 'IMAP not configured',
+            message: 'Add IMAP credentials to Vercel env vars:',
+            required: ['IMAP_HOST', 'IMAP_USER', 'IMAP_PASSWORD'],
+            optional: ['IMAP_PORT (default: 993)', 'IMAP_USE_TLS (default: true)'],
+            example: 'imap.gmail.com,993,your-email@gmail.com,app-password'
+          });
+        }
+
+        if (!supabase) {
+          return res.status(500).json({ success: false, error: 'Database not configured' });
+        }
+
+        return new Promise((resolve) => {
+          const imap = new Imap({
+            user: IMAP_USER,
+            password: IMAP_PASSWORD,
+            host: IMAP_HOST,
+            port: IMAP_PORT,
+            tls: IMAP_USE_TLS,
+            tlsOptions: { rejectUnauthorized: false }
+          });
+
+          function openInbox(cb: (err: Error | null, box: any) => void) {
+            imap.openBox('INBOX', true, cb);
+          }
+
+          imap.once('ready', () => {
+            openInbox(async (err, box) => {
+              if (err) {
+                imap.end();
+                return resolve(res.status(500).json({ success: false, error: err.message }));
+              }
+
+              const totalEmails = box.messages.total;
+              const fetchedEmails: any[] = [];
+
+              if (totalEmails === 0) {
+                imap.end();
+                return resolve(res.json({ success: true, synced: 0, total: 0 }));
+              }
+
+              // Fetch last 50 emails (most recent)
+              const fetchRange = Math.max(1, totalEmails - 49);
+              const fetch = imap.seq.fetch(`${fetchRange}:*`, {
+                bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REFERENCES IN-REPLY-TO)',
+                struct: true
+              });
+
+              let processedCount = 0;
+              let newEmails = 0;
+
+              fetch.on('message', (msg, seqno) => {
+                const headers: any = {};
+                let bodyPreview = '';
+                let messageId = '';
+                let inReplyTo = '';
+                let references = '';
+
+                msg.on('headers', (h) => {
+                  headers.from = h.from?.[0] || '';
+                  headers.to = h.to?.[0] || '';
+                  headers.subject = h.subject?.[0] || 'No Subject';
+                  headers.date = h.date?.[0] || new Date().toISOString();
+                  messageId = h['message-id']?.[0] || `local-${seqno}`;
+                  inReplyTo = h['in-reply-to']?.[0] || '';
+                  references = h.references?.[0] || '';
+                });
+
+                msg.on('body', (stream, info) => {
+                  let buffer = '';
+                  stream.on('data', (chunk) => {
+                    buffer += chunk.toString('utf8');
+                    if (buffer.length > 50000) {
+                      stream.destroy();
+                    }
+                  });
+                  stream.once('end', async () => {
+                    try {
+                      const parsed = await simpleParser(buffer);
+                      bodyPreview = parsed.text?.slice(0, 5000) || parsed.html?.replace(/<[^>]*>/g, '').slice(0, 5000) || '';
+
+                      // Extract email addresses
+                      const fromMatch = headers.from.match(/<([^>]+)>/);
+                      const fromEmail = fromMatch ? fromMatch[1] : headers.from.replace(/.*<([^>]+)>.*/, '$1');
+                      const fromName = headers.from.replace(/<[^>]+>/, '').trim() || fromEmail.split('@')[0];
+
+                      const toMatch = headers.to.match(/<([^>]+)>/);
+                      const toEmail = toMatch ? toMatch[1] : headers.to.replace(/.*<([^>]+)>.*/, '$1');
+
+                      // Determine thread_id (use message-id or in-reply-to or generate from references)
+                      let threadId = messageId;
+                      if (!threadId && inReplyTo) {
+                        threadId = inReplyTo.trim();
+                      }
+                      if (!threadId && references) {
+                        const refArray = references.trim().split(/\s+/);
+                        threadId = refArray[refArray.length - 1];
+                      }
+                      if (!threadId) {
+                        threadId = `thread-${fromEmail}-${headers.subject}`.replace(/\s+/g, '-');
+                      }
+
+                      const emailData = {
+                        message_id: messageId,
+                        thread_id: threadId,
+                        from_email: fromEmail,
+                        from_name: fromName,
+                        to_email: toEmail,
+                        subject: headers.subject,
+                        body: bodyPreview,
+                        date: new Date(headers.date).toISOString(),
+                        read: info.which !== '\\Seen',
+                        starred: false,
+                        category: 'other' as const,
+                        lead_score: 50,
+                        source: 'IMAP'
+                      };
+
+                      // Check if email already exists
+                      const { data: existing } = await supabase
+                        .from('emails')
+                        .select('id')
+                        .eq('message_id', messageId)
+                        .single();
+
+                      if (!existing) {
+                        // AI analysis
+                        const aiResult = await analyzeWithAI({
+                          subject: headers.subject,
+                          body: bodyPreview,
+                          from: fromEmail
+                        });
+
+                        emailData.category = aiResult.category as any;
+                        emailData.lead_score = aiResult.score;
+                        emailData.ai_analysis = aiResult.analysis;
+
+                        const { error } = await supabase.from('emails').insert(emailData);
+                        if (!error) newEmails++;
+                      }
+
+                      fetchedEmails.push(emailData);
+                      processedCount++;
+
+                      if (processedCount === (fetch as any)._messages?.length || processedCount >= 50) {
+                        imap.end();
+                        resolve(res.json({
+                          success: true,
+                          synced: newEmails,
+                          total: totalEmails,
+                          processed: processedCount,
+                          message: `Synced ${newEmails} new emails`
+                        }));
+                      }
+                    } catch (parseErr) {
+                      processedCount++;
+                      if (processedCount >= 50) {
+                        imap.end();
+                        resolve(res.json({
+                          success: true,
+                          synced: newEmails,
+                          total: totalEmails,
+                          processed: processedCount
+                        }));
+                      }
+                    }
+                  });
+                });
+              });
+
+              fetch.once('error', (err) => {
+                imap.end();
+                resolve(res.status(500).json({ success: false, error: err.message }));
+              });
+
+              fetch.once('end', () => {
+                if (processedCount === 0) {
+                  imap.end();
+                  resolve(res.json({ success: true, synced: 0, total: totalEmails }));
+                }
+              });
+
+              // Timeout after 60 seconds
+              setTimeout(() => {
+                imap.end();
+                resolve(res.json({
+                  success: true,
+                  synced: newEmails,
+                  total: totalEmails,
+                  processed: processedCount,
+                  timeout: true
+                }));
+              }, 60000);
+            });
+          });
+
+          imap.once('error', (err) => {
+            resolve(res.status(500).json({
+              success: false,
+              error: err.message,
+              hint: 'Check IMAP credentials and firewall settings'
+            }));
+          });
+
+          imap.connect();
         });
       }
 
@@ -682,32 +882,6 @@ Return ONLY the email body text.`
           .eq('id', templateId);
 
         return res.json({ success: true, subject, body });
-      }
-
-      case 'oauthUrl': {
-        // Generate Google OAuth URL
-        if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
-          return res.json({
-            success: false,
-            error: 'Google OAuth not configured',
-            message: 'Add GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI to Vercel env vars'
-          });
-        }
-
-        const scopes = [
-          'https://www.googleapis.com/auth/gmail.readonly',
-          'https://www.googleapis.com/auth/gmail.send'
-        ];
-
-        const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-          `client_id=${GOOGLE_CLIENT_ID}` +
-          `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
-          `&response_type=code` +
-          `&scope=${encodeURIComponent(scopes.join(' '))}` +
-          `&access_type=offline` +
-          `&prompt=consent`;
-
-        return res.json({ success: true, url: oauthUrl });
       }
 
       case 'import': {

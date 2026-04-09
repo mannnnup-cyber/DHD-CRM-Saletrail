@@ -4,8 +4,8 @@
 -- Emails table
 CREATE TABLE IF NOT EXISTS emails (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  message_id VARCHAR(500) UNIQUE, -- Gmail message ID
-  thread_id VARCHAR(500), -- Gmail thread ID
+  message_id VARCHAR(500) UNIQUE, -- Email message ID
+  thread_id VARCHAR(500), -- Thread ID for email threading
   from_email VARCHAR(255) NOT NULL,
   from_name VARCHAR(255),
   to_email VARCHAR(255),
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS emails (
   is_part_of_thread BOOLEAN DEFAULT false,
   converted_to_lead BOOLEAN DEFAULT false,
   assigned_to VARCHAR(100),
+  source VARCHAR(50) DEFAULT 'manual', -- IMAP, Resend, manual
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -154,6 +155,29 @@ FROM emails
 GROUP BY date_trunc('day', date)
 ORDER BY day DESC;
 
+-- If source column doesn't exist (for existing tables), add it:
+-- ALTER TABLE emails ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'manual';
+
 -- Enable Row Level Security (optional, for multi-user)
 -- ALTER TABLE emails ENABLE ROW LEVEL SECURITY;
 -- CREATE POLICY "Users can view own emails" ON emails FOR SELECT USING (true);
+
+-- ============================================
+-- IMAP SETUP INSTRUCTIONS
+-- ============================================
+-- To sync emails from your IMAP mailbox, add these environment variables in Vercel:
+--
+-- IMAP_HOST     : Your IMAP server (e.g., imap.gmail.com)
+-- IMAP_PORT     : IMAP port (default: 993)
+-- IMAP_USER     : Your email address
+-- IMAP_PASSWORD : Your app password (NOT your regular password)
+-- IMAP_USE_TLS  : true/false (default: true)
+--
+-- For Gmail:
+-- 1. Enable 2-Factor Authentication
+-- 2. Go to https://myaccount.google.com/apppasswords
+-- 3. Generate an App Password for "Mail"
+-- 4. Use that 16-character password as IMAP_PASSWORD
+--
+-- For other providers (Outlook, Yahoo, etc.):
+-- Use your regular email password or app password as provided by your email service

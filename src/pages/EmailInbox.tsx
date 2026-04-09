@@ -183,6 +183,26 @@ export default function EmailInbox() {
     }
   }, []);
 
+  // Sync emails from IMAP
+  const syncEmails = async () => {
+    if (!confirm('Sync emails from your IMAP mailbox? This will fetch the last 50 emails.')) return;
+    setLoading(true);
+    try {
+      const r = await fetch('/api/email?action=sync', { method: 'POST' });
+      const data = await r.json();
+      if (data.success) {
+        alert(`Synced ${data.synced} new emails! Total: ${data.total}`);
+        await loadEmails();
+        await loadStats();
+      } else {
+        alert(`Sync failed: ${data.error}\n\n${data.message || ''}`);
+      }
+    } catch (error) {
+      alert('Failed to sync emails');
+    }
+    setLoading(false);
+  };
+
   // Import demo emails
   const importDemoEmails = async () => {
     setLoading(true);
@@ -422,6 +442,14 @@ export default function EmailInbox() {
               Load Demo Emails
             </button>
           )}
+          <button
+            onClick={syncEmails}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <Inbox className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Sync Emails
+          </button>
           <button
             onClick={() => { loadEmails(); loadStats(); }}
             className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
