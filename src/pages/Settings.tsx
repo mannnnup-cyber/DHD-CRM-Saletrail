@@ -1,122 +1,666 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Save, Shield, Smartphone, Bell, Globe, Database, HelpCircle } from 'lucide-react';
+import {
+  Save, Shield, Smartphone, Bell, Globe, Database, HelpCircle,
+  Mail, Key, Bot, Link2, CheckCircle, XCircle, Loader2,
+  ChevronRight, Eye, EyeOff
+} from 'lucide-react';
+
+interface SettingItem {
+  key: string;
+  value: string;
+  type: 'text' | 'password' | 'number' | 'boolean';
+  description: string;
+  category: string;
+  isEncrypted: boolean;
+}
+
+interface SettingsByCategory {
+  email: SettingItem[];
+  api: SettingItem[];
+  integrations: SettingItem[];
+}
 
 const Settings: React.FC = () => {
   const { state, updateSettings } = useApp();
   const settings = state.settings;
 
+  const [activeTab, setActiveTab] = useState<'email' | 'api' | 'integrations' | 'automation'>('email');
+  const [dbSettings, setDbSettings] = useState<SettingsByCategory>({
+    email: [],
+    api: [],
+    integrations: []
+  });
+  const [localValues, setLocalValues] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Load settings from database
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/settings?action=list');
+      const data = await r.json();
+      if (data.success) {
+        // Group by category
+        const grouped: SettingsByCategory = { email: [], api: [], integrations: [] };
+        Object.entries(data.settings).forEach(([key, value]) => {
+          const item: SettingItem = {
+            key,
+            value: value as string,
+            type: 'text',
+            description: '',
+            category: key.includes('IMAP') || key.includes('RESEND') ? 'email' :
+                       key.includes('OPENAI') || key.includes('AI_') ? 'api' : 'integrations',
+            isEncrypted: false
+          };
+
+          // Set proper types based on key
+          if (key.includes('PORT')) item.type = 'number';
+          if (key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET')) item.type = 'password';
+          if (key.includes('ENABLED')) item.type = 'boolean';
+
+          if (grouped[item.category]) {
+            grouped[item.category].push(item);
+          }
+        });
+
+        setDbSettings(grouped);
+
+        // Set local values (use raw values if available)
+        const rawValues: Record<string, string> = {};
+        Object.entries(data.settings).forEach(([key, value]) => {
+          rawValues[key] = value as string;
+        });
+        setLocalValues(rawValues);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+    setLoading(false);
+  };
+
+  const handleValueChange = (key: string, value: string) => {
+    setLocalValues(prev => ({ ...prev, [key]: value }));
+    setMessage(null);
+  };
+
+  const togglePasswordVisibility = (key: string) => {
+    setShowPasswords(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const r = await fetch('/api/settings?action=save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: localValues })
+      });
+      const data = await r.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'Settings saved successfully!' });
+        await loadSettings();
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to save settings' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to save settings' });
+    }
+    setSaving(false);
+  };
+
+  const handleTest = async (type: 'email' | 'resend' | 'openai') => {
+    setTesting(type);
+    setMessage(null);
+
+    try {
+      if (type === 'email') {
+        const r = await fetch('/api/settings?action=testEmail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: localValues['IMAP_HOST'],
+            port: localValues['IMAP_PORT'],
+            user: localValues['IMAP_USER'],
+            password: localValues['IMAP_PASSWORD']
+          })
+        });
+        const data = await r.json();
+        setMessage({ type: data.success ? 'success' : 'error', text: data.message || data.error });
+      } else if (type === 'resend') {
+        const r = await fetch('/api/settings?action=testResend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: localValues['RESEND_API_KEY'] })
+        });
+        const data = await r.json();
+        setMessage({ type: data.success ? 'success' : 'error', text: data.message || data.error });
+      } else if (type === 'openai') {
+        const r = await fetch('/api/settings?action=testOpenAI', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: localValues['OPENAI_API_KEY'] })
+        });
+        const data = await r.json();
+        setMessage({ type: data.success ? 'success' : 'error', text: data.message || data.error });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Test failed' });
+    }
+    setTesting(null);
+  };
+
   const handleToggle = (key: keyof typeof settings) => {
     updateSettings({ [key]: !settings[key] });
   };
 
+  const tabs = [
+    { id: 'email' as const, label: 'Email', icon: Mail },
+    { id: 'api' as const, label: 'AI & API', icon: Bot },
+    { id: 'integrations' as const, label: 'Integrations', icon: Link2 },
+    { id: 'automation' as const, label: 'Automation', icon: Smartphone },
+  ];
+
   return (
-    <div className="space-y-8 max-w-4xl">
+    <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-white">System Settings</h1>
-        <p className="text-gray-400">Configure your CRM and automation preferences</p>
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <p className="text-gray-400">Configure your CRM integrations and preferences</p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-6">
-          <h3 className="font-bold text-white flex items-center gap-2 mb-2">
-            <Smartphone className="w-5 h-5 text-amber-500" />
-            Automation
-          </h3>
-          
-          <div className="space-y-4">
-            {[
-              { id: 'simAutoLogging', label: 'SIM Call Auto-Logging', desc: 'Automatically log incoming/outgoing SIM calls' },
-              { id: 'twoSidedRecording', label: 'Two-Sided Recording', desc: 'Capture both sides of the conversation' },
-              { id: 'whatsAppDetection', label: 'WhatsApp Call Tracking', desc: 'Detect and log WhatsApp voice calls' },
-            ].map((item) => (
-              <div key={item.id} className="flex items-center justify-between group">
-                <div>
-                  <p className="text-sm font-medium text-gray-200">{item.label}</p>
-                  <p className="text-xs text-gray-500">{item.desc}</p>
-                </div>
-                <button 
-                  onClick={() => handleToggle(item.id as any)}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${settings[item.id as keyof typeof settings] ? 'bg-amber-500' : 'bg-gray-700'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${settings[item.id as keyof typeof settings] ? 'left-7' : 'left-1'}`} />
-                </button>
-              </div>
-            ))}
-          </div>
+      {/* Message Banner */}
+      {message && (
+        <div className={`p-4 rounded-xl flex items-center gap-3 ${
+          message.type === 'success' ? 'bg-green-500/20 border border-green-500/30' : 'bg-red-500/20 border border-red-500/30'
+        }`}>
+          {message.type === 'success' ? (
+            <CheckCircle className="w-5 h-5 text-green-400" />
+          ) : (
+            <XCircle className="w-5 h-5 text-red-400" />
+          )}
+          <span className={message.type === 'success' ? 'text-green-400' : 'text-red-400'}>{message.text}</span>
         </div>
+      )}
 
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-6">
-          <h3 className="font-bold text-white flex items-center gap-2 mb-2">
-            <Shield className="w-5 h-5 text-amber-500" />
-            Compliance & Security
-          </h3>
-          
-          <div className="space-y-4">
-            {[
-              { id: 'holidayBlocking', label: 'Jamaica Holiday Block', desc: 'Prevent calls on public holidays' },
-              { id: 'notifications', label: 'Manager Notifications', desc: 'Alert manager on significant events' },
-            ].map((item) => (
-              <div key={item.id} className="flex items-center justify-between group">
-                <div>
-                  <p className="text-sm font-medium text-gray-200">{item.label}</p>
-                  <p className="text-xs text-gray-500">{item.desc}</p>
-                </div>
-                <button 
-                  onClick={() => handleToggle(item.id as any)}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${settings[item.id as keyof typeof settings] ? 'bg-amber-500' : 'bg-gray-700'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${settings[item.id as keyof typeof settings] ? 'left-7' : 'left-1'}`} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 md:col-span-2">
-          <h3 className="font-bold text-white flex items-center gap-2 mb-6">
-            <Globe className="w-5 h-5 text-amber-500" />
-            Regional & Localization
-          </h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Company Name</label>
-              <input 
-                type="text" 
-                value={settings.companyName}
-                onChange={(e) => updateSettings({ companyName: e.target.value })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white outline-none focus:border-amber-500/50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Currency</label>
-              <select className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white outline-none focus:border-amber-500/50 appearance-none">
-                <option>JMD</option>
-                <option>USD</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">GCT Tax Rate (%)</label>
-              <input 
-                type="number" 
-                value={settings.gctRate}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white outline-none focus:border-amber-500/50"
-              />
-            </div>
-          </div>
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-gray-700 pb-2">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'bg-amber-500/20 text-amber-400'
+                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+            }`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      <div className="flex justify-end gap-4">
-        <button className="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-400 hover:text-white transition-colors">
-          Discard Changes
-        </button>
-        <button className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2">
-          <Save className="w-4 h-4" />
-          Save Settings
-        </button>
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+        </div>
+      ) : (
+        <>
+          {/* Email Settings */}
+          {activeTab === 'email' && (
+            <div className="space-y-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Mail className="w-5 h-5 text-amber-500" />
+                  IMAP Configuration (Receive Emails)
+                </h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Connect your email inbox to automatically sync and analyze incoming emails.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">IMAP Host</label>
+                    <input
+                      type="text"
+                      value={localValues['IMAP_HOST'] || ''}
+                      onChange={(e) => handleValueChange('IMAP_HOST', e.target.value)}
+                      placeholder="imap.gmail.com"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">e.g., imap.gmail.com, imap-mail.outlook.com</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Port</label>
+                    <input
+                      type="number"
+                      value={localValues['IMAP_PORT'] || '993'}
+                      onChange={(e) => handleValueChange('IMAP_PORT', e.target.value)}
+                      placeholder="993"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Email Address</label>
+                    <input
+                      type="text"
+                      value={localValues['IMAP_USER'] || ''}
+                      onChange={(e) => handleValueChange('IMAP_USER', e.target.value)}
+                      placeholder="your-email@gmail.com"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Password / App Password</label>
+                    <div className="relative">
+                      <input
+                        type={showPasswords['IMAP_PASSWORD'] ? 'text' : 'password'}
+                        value={localValues['IMAP_PASSWORD'] || ''}
+                        onChange={(e) => handleValueChange('IMAP_PASSWORD', e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility('IMAP_PASSWORD')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                      >
+                        {showPasswords['IMAP_PASSWORD'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">For Gmail, use an App Password from myaccount.google.com</p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleValueChange('IMAP_USE_TLS', localValues['IMAP_USE_TLS'] === 'true' ? 'false' : 'true')}
+                      className={`w-12 h-6 rounded-full transition-colors relative ${localValues['IMAP_USE_TLS'] === 'true' ? 'bg-amber-500' : 'bg-gray-700'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localValues['IMAP_USE_TLS'] === 'true' ? 'left-7' : 'left-1'}`} />
+                    </button>
+                    <span className="text-sm text-gray-300">Use TLS/SSL</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleTest('email')}
+                  disabled={testing === 'email'}
+                  className="mt-6 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                >
+                  {testing === 'email' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  Validate IMAP Settings
+                </button>
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Mail className="w-5 h-5 text-amber-500" />
+                  Email Sending (Resend)
+                </h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Configure Resend API to send emails directly from the CRM.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Resend API Key</label>
+                    <div className="relative">
+                      <input
+                        type={showPasswords['RESEND_API_KEY'] ? 'text' : 'password'}
+                        value={localValues['RESEND_API_KEY'] || ''}
+                        onChange={(e) => handleValueChange('RESEND_API_KEY', e.target.value)}
+                        placeholder="re_••••••••"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility('RESEND_API_KEY')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                      >
+                        {showPasswords['RESEND_API_KEY'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Get your API key from resend.com API Keys</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Default From Email</label>
+                    <input
+                      type="text"
+                      value={localValues['DEFAULT_FROM_EMAIL'] || ''}
+                      onChange={(e) => handleValueChange('DEFAULT_FROM_EMAIL', e.target.value)}
+                      placeholder="sales@yourcompany.com"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Default From Name</label>
+                    <input
+                      type="text"
+                      value={localValues['DEFAULT_FROM_NAME'] || ''}
+                      onChange={(e) => handleValueChange('DEFAULT_FROM_NAME', e.target.value)}
+                      placeholder="Your Company Name"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleTest('resend')}
+                  disabled={testing === 'resend'}
+                  className="mt-6 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                >
+                  {testing === 'resend' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  Test Resend API Key
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* AI & API Settings */}
+          {activeTab === 'api' && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+              <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                <Bot className="w-5 h-5 text-amber-500" />
+                AI Configuration
+              </h3>
+              <p className="text-gray-400 text-sm mb-6">
+                Configure OpenAI for AI-powered email analysis and reply suggestions.
+              </p>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">OpenAI API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showPasswords['OPENAI_API_KEY'] ? 'text' : 'password'}
+                      value={localValues['OPENAI_API_KEY'] || ''}
+                      onChange={(e) => handleValueChange('OPENAI_API_KEY', e.target.value)}
+                      placeholder="sk-••••••••"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('OPENAI_API_KEY')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                    >
+                      {showPasswords['OPENAI_API_KEY'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Get your API key from platform.openai.com</p>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                  <div>
+                    <p className="text-sm font-medium text-gray-200">AI Email Analysis</p>
+                    <p className="text-xs text-gray-500">Automatically analyze emails for lead scoring</p>
+                  </div>
+                  <button
+                    onClick={() => handleValueChange('AI_ANALYSIS_ENABLED', localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'false' : 'true')}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'bg-amber-500' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                  <div>
+                    <p className="text-sm font-medium text-gray-200">AI Reply Suggestions</p>
+                    <p className="text-xs text-gray-500">Generate AI-powered reply suggestions</p>
+                  </div>
+                  <button
+                    onClick={() => handleValueChange('AI_SUGGESTIONS_ENABLED', localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'false' : 'true')}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'bg-amber-500' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleTest('openai')}
+                disabled={testing === 'openai'}
+                className="mt-6 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+              >
+                {testing === 'openai' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Test OpenAI API Key
+              </button>
+            </div>
+          )}
+
+          {/* Integrations Settings */}
+          {activeTab === 'integrations' && (
+            <div className="space-y-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Smartphone className="w-5 h-5 text-green-500" />
+                  WhatsApp (Green API)
+                </h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Connect WhatsApp Business via Green API for message automation.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Green API ID</label>
+                    <input
+                      type="text"
+                      value={localValues['GREEN_API_ID'] || ''}
+                      onChange={(e) => handleValueChange('GREEN_API_ID', e.target.value)}
+                      placeholder="12345"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Green API Token</label>
+                    <div className="relative">
+                      <input
+                        type={showPasswords['GREEN_API_TOKEN'] ? 'text' : 'password'}
+                        value={localValues['GREEN_API_TOKEN'] || ''}
+                        onChange={(e) => handleValueChange('GREEN_API_TOKEN', e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility('GREEN_API_TOKEN')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                      >
+                        {showPasswords['GREEN_API_TOKEN'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Link2 className="w-5 h-5 text-purple-500" />
+                  WooCommerce
+                </h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Connect your WooCommerce store to sync orders and customers.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm text-gray-400 mb-2">Store URL</label>
+                    <input
+                      type="text"
+                      value={localValues['WOOCOMMERCE_URL'] || ''}
+                      onChange={(e) => handleValueChange('WOOCOMMERCE_URL', e.target.value)}
+                      placeholder="https://yourstore.com"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Consumer Key</label>
+                    <input
+                      type="text"
+                      value={localValues['WOOCOMMERCE_KEY'] || ''}
+                      onChange={(e) => handleValueChange('WOOCOMMERCE_KEY', e.target.value)}
+                      placeholder="ck_••••••••"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Consumer Secret</label>
+                    <div className="relative">
+                      <input
+                        type={showPasswords['WOOCOMMERCE_SECRET'] ? 'text' : 'password'}
+                        value={localValues['WOOCOMMERCE_SECRET'] || ''}
+                        onChange={(e) => handleValueChange('WOOCOMMERCE_SECRET', e.target.value)}
+                        placeholder="cs_••••••••"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility('WOOCOMMERCE_SECRET')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                      >
+                        {showPasswords['WOOCOMMERCE_SECRET'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Automation Settings */}
+          {activeTab === 'automation' && (
+            <div className="space-y-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Smartphone className="w-5 h-5 text-amber-500" />
+                  Call Automation
+                </h3>
+
+                <div className="space-y-4">
+                  {[
+                    { key: 'simAutoLogging', label: 'SIM Call Auto-Logging', desc: 'Automatically log incoming/outgoing SIM calls' },
+                    { key: 'twoSidedRecording', label: 'Two-Sided Recording', desc: 'Capture both sides of the conversation' },
+                    { key: 'whatsAppDetection', label: 'WhatsApp Call Tracking', desc: 'Detect and log WhatsApp voice calls' },
+                  ].map((item) => (
+                    <div key={item.key} className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                      <div>
+                        <p className="text-sm font-medium text-gray-200">{item.label}</p>
+                        <p className="text-xs text-gray-500">{item.desc}</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggle(item.key as any)}
+                        className={`w-12 h-6 rounded-full transition-colors relative ${settings[item.key as keyof typeof settings] ? 'bg-amber-500' : 'bg-gray-700'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${settings[item.key as keyof typeof settings] ? 'left-7' : 'left-1'}`} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Shield className="w-5 h-5 text-amber-500" />
+                  Compliance & Security
+                </h3>
+
+                <div className="space-y-4">
+                  {[
+                    { key: 'holidayBlocking', label: 'Jamaica Holiday Block', desc: 'Prevent calls on public holidays' },
+                    { key: 'notifications', label: 'Manager Notifications', desc: 'Alert manager on significant events' },
+                  ].map((item) => (
+                    <div key={item.key} className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                      <div>
+                        <p className="text-sm font-medium text-gray-200">{item.label}</p>
+                        <p className="text-xs text-gray-500">{item.desc}</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggle(item.key as any)}
+                        className={`w-12 h-6 rounded-full transition-colors relative ${settings[item.key as keyof typeof settings] ? 'bg-amber-500' : 'bg-gray-700'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${settings[item.key as keyof typeof settings] ? 'left-7' : 'left-1'}`} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Globe className="w-5 h-5 text-amber-500" />
+                  Regional & Localization
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Company Name</label>
+                    <input
+                      type="text"
+                      value={settings.companyName}
+                      onChange={(e) => updateSettings({ companyName: e.target.value })}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Currency</label>
+                    <select
+                      value={settings.currency || 'USD'}
+                      onChange={(e) => updateSettings({ currency: e.target.value })}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white outline-none focus:border-amber-500/50"
+                    >
+                      <option value="JMD">JMD (Jamaican Dollar)</option>
+                      <option value="USD">USD (US Dollar)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">GCT Tax Rate (%)</label>
+                    <input
+                      type="number"
+                      value={settings.gctRate || 0}
+                      onChange={(e) => updateSettings({ gctRate: parseFloat(e.target.value) || 0 })}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Save Button */}
+          <div className="flex justify-end gap-4 pt-4">
+            <button
+              onClick={loadSettings}
+              className="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-400 hover:text-white transition-colors"
+            >
+              Reset
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 };

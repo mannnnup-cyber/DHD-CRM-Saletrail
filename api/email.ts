@@ -3,19 +3,54 @@ import { createClient } from '@supabase/supabase-js';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
-
-// IMAP Configuration
-const IMAP_HOST = process.env.IMAP_HOST || '';
-const IMAP_PORT = parseInt(process.env.IMAP_PORT || '993');
-const IMAP_USER = process.env.IMAP_USER || '';
-const IMAP_PASSWORD = process.env.IMAP_PASSWORD || '';
-const IMAP_USE_TLS = process.env.IMAP_USE_TLS !== 'false';
-
 const supabase = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+// Cache for settings
+let settingsCache: Record<string, string> = {};
+let settingsCacheTime = 0;
+const SETTINGS_CACHE_TTL = 60000; // 1 minute
+
+// Get settings from database (with caching)
+async function getSettings(): Promise<Record<string, string>> {
+  if (!supabase) return {};
+
+  const now = Date.now();
+  if (now - settingsCacheTime < SETTINGS_CACHE_TTL && Object.keys(settingsCache).length > 0) {
+    return settingsCache;
+  }
+
+  try {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('setting_key, setting_value');
+
+    settingsCache = {};
+    (data || []).forEach((s: any) => {
+      if (s.setting_value) {
+        settingsCache[s.setting_key] = s.setting_value;
+      }
+    });
+    settingsCacheTime = now;
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+  }
+
+  return settingsCache;
+}
+
+// Helper to get a specific setting
+async function getSetting(key: string, fallback: string = ''): Promise<string> {
+  const settings = await getSettings();
+  return settings[key] || fallback;
+}
+
+// Helper to get boolean setting
+async function getBoolSetting(key: string, fallback: boolean = false): Promise<boolean> {
+  const value = await getSetting(key, fallback ? 'true' : 'false');
+  return value === 'true';
+}
 
 interface Email {
   id: string;
@@ -52,6 +87,8 @@ async function analyzeWithAI(email: { subject: string; body: string; from: strin
     suggestedAction: string;
   };
 }> {
+  const OPENAI_API_KEY = await getSetting('OPENAI_API_KEY', '');
+
   if (!OPENAI_API_KEY) {
     return {
       score: 50,
@@ -304,15 +341,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'sync': {
-        // Sync emails from IMAP mailbox
+        // Sync emails from IMAP mailbox (get settings from database)
+        const settings = await getSettings();
+        const IMAP_HOST = settings['IMAP_HOST'] || '';
+        const IMAP_PORT = parseInt(settings['IMAP_PORT'] || '993');
+        const IMAP_USER = settings['IMAP_USER'] || '';
+        const IMAP_PASSWORD = settings['IMAP_PASSWORD'] || '';
+        const IMAP_USE_TLS = settings['IMAP_USE_TLS'] !== 'false';
+        const AI_ANALYSIS_ENABLED = await getBoolSetting('AI_ANALYSIS_ENABLED', true);
+
         if (!IMAP_HOST || !IMAP_USER || !IMAP_PASSWORD) {
           return res.json({
             success: false,
             error: 'IMAP not configured',
-            message: 'Add IMAP credentials to Vercel env vars:',
-            required: ['IMAP_HOST', 'IMAP_USER', 'IMAP_PASSWORD'],
-            optional: ['IMAP_PORT (default: 993)', 'IMAP_USE_TLS (default: true)'],
-            example: 'imap.gmail.com,993,your-email@gmail.com,app-password'
+            message: 'Configure IMAP settings in Settings > Email tab',
+            setupUrl: '/settings'
           });
         }
 
@@ -434,16 +477,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         .single();
 
                       if (!existing) {
-                        // AI analysis
-                        const aiResult = await analyzeWithAI({
-                          subject: headers.subject,
-                          body: bodyPreview,
-                          from: fromEmail
-                        });
-
-                        emailData.category = aiResult.category as any;
-                        emailData.lead_score = aiResult.score;
-                        emailData.ai_analysis = aiResult.analysis;
+                        // AI analysis (if enabled)
+                        if (AI_ANALYSIS_ENABLED) {
+                          const aiResult = await analyzeWithAI({
+                            subject: headers.subject,
+                            body: bodyPreview,
+                            from: fromEmail
+                          });
+                          emailData.category = aiResult.category as any;
+                          emailData.lead_score = aiResult.score;
+                          emailData.ai_analysis = aiResult.analysis;
+                        }
 
                         const { error } = await supabase.from('emails').insert(emailData);
                         if (!error) newEmails++;
@@ -553,22 +597,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'send': {
-        // Send email via Resend
+        // Send email via Resend (get API key from database settings)
+        const settings = await getSettings();
+        const RESEND_API_KEY = settings['RESEND_API_KEY'] || '';
+
         if (!RESEND_API_KEY) {
           return res.status(400).json({
             success: false,
-            error: 'Resend API key not configured'
+            error: 'Resend API key not configured',
+            setupUrl: '/settings'
           });
         }
 
         const { to, subject, body, from, cc, bcc } = req.body;
+        const DEFAULT_FROM_EMAIL = settings['DEFAULT_FROM_EMAIL'] || 'sales@saletrail.com';
+        const DEFAULT_FROM_NAME = settings['DEFAULT_FROM_NAME'] || 'DHD Sales';
 
         if (!to || !subject || !body) {
           return res.status(400).json({ success: false, error: 'Missing required fields' });
         }
 
         const emailData: any = {
-          from: from || 'DHD Sales <sales@saletrail.com>',
+          from: from || `${DEFAULT_FROM_NAME} <${DEFAULT_FROM_EMAIL}>`,
           to: Array.isArray(to) ? to : [to],
           subject,
           html: body,
@@ -619,6 +669,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(500).json({ success: false, error: 'Database not configured' });
         }
 
+        // Get settings from database
+        const settings = await getSettings();
+        const RESEND_API_KEY = settings['RESEND_API_KEY'] || '';
+        const DEFAULT_FROM_EMAIL = settings['DEFAULT_FROM_EMAIL'] || 'sales@saletrail.com';
+        const DEFAULT_FROM_NAME = settings['DEFAULT_FROM_NAME'] || 'DHD Sales';
+
+        if (!RESEND_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Resend not configured' });
+        }
+
         const { data: threadEmails } = await supabase
           .from('emails')
           .select('*')
@@ -632,10 +692,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Send via Resend
-        if (!RESEND_API_KEY) {
-          return res.status(400).json({ success: false, error: 'Resend not configured' });
-        }
-
         const response = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -643,7 +699,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             'Authorization': `Bearer ${RESEND_API_KEY}`
           },
           body: JSON.stringify({
-            from: 'DHD Sales <sales@saletrail.com>',
+            from: `${DEFAULT_FROM_NAME} <${DEFAULT_FROM_EMAIL}>`,
             to: [originalEmail.from_email],
             subject: `Re: ${originalEmail.subject}`,
             html: replyBody,
@@ -787,6 +843,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'aiSuggest': {
         const { emailId } = req.query;
+        const OPENAI_API_KEY = await getSetting('OPENAI_API_KEY', '');
+
         if (!supabase || !OPENAI_API_KEY) {
           return res.json({
             success: false,

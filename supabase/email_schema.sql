@@ -163,6 +163,46 @@ ORDER BY day DESC;
 -- CREATE POLICY "Users can view own emails" ON emails FOR SELECT USING (true);
 
 -- ============================================
+-- APP SETTINGS TABLE (for in-app configuration)
+-- ============================================
+CREATE TABLE IF NOT EXISTS app_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  setting_key VARCHAR(100) UNIQUE NOT NULL,
+  setting_value TEXT,
+  setting_type VARCHAR(50) DEFAULT 'text', -- text, password, number, boolean, json
+  description TEXT,
+  category VARCHAR(50) DEFAULT 'general', -- email, integrations, general, api
+  is_encrypted BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Predefined settings
+INSERT INTO app_settings (setting_key, setting_value, setting_type, description, category, is_encrypted) VALUES
+-- Email Settings
+('IMAP_HOST', '', 'text', 'IMAP server hostname (e.g., imap.gmail.com)', 'email', false),
+('IMAP_PORT', '993', 'number', 'IMAP port (default: 993)', 'email', false),
+('IMAP_USER', '', 'text', 'Your email address for IMAP', 'email', false),
+('IMAP_PASSWORD', '', 'password', 'IMAP password or app password', 'email', true),
+('IMAP_USE_TLS', 'true', 'boolean', 'Use TLS/SSL connection', 'email', false),
+('RESEND_API_KEY', '', 'password', 'Resend API key for sending emails', 'email', true),
+('DEFAULT_FROM_EMAIL', 'sales@saletrail.com', 'text', 'Default sender email address', 'email', false),
+('DEFAULT_FROM_NAME', 'DHD Sales', 'text', 'Default sender name', 'email', false),
+
+-- AI Settings
+('OPENAI_API_KEY', '', 'password', 'OpenAI API key for AI features', 'api', true),
+('AI_ANALYSIS_ENABLED', 'true', 'boolean', 'Enable AI email analysis', 'api', false),
+('AI_SUGGESTIONS_ENABLED', 'true', 'boolean', 'Enable AI reply suggestions', 'api', false),
+
+-- Integration Settings
+('GREEN_API_ID', '', 'text', 'Green API ID for WhatsApp', 'integrations', false),
+('GREEN_API_TOKEN', '', 'password', 'Green API Token', 'integrations', true),
+('WOOCOMMERCE_URL', '', 'text', 'WooCommerce store URL', 'integrations', false),
+('WOOCOMMERCE_KEY', '', 'password', 'WooCommerce Consumer Key', 'integrations', true),
+('WOOCOMMERCE_SECRET', '', 'password', 'WooCommerce Consumer Secret', 'integrations', true)
+ON CONFLICT (setting_key) DO NOTHING;
+
+-- ============================================
 -- IMAP SETUP INSTRUCTIONS
 -- ============================================
 -- To sync emails from your IMAP mailbox, add these environment variables in Vercel:
