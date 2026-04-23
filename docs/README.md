@@ -1,5 +1,10 @@
 # DHD CRM SalesTrail - Technical Documentation
 
+> AI workflow note: before AI-assisted planning or coding, read the guard-rail
+> docs in `docs/context/` and the root `AGENTS.md`. These files define the
+> project brief, architecture, file map, task board, milestones, commenting
+> standard, changelog, and reusable prompt template.
+
 ## Table of Contents
 
 1. [Project Overview](#project-overview)
