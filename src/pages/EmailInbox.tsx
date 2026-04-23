@@ -1,32 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Mail,
-  MailOpen,
   Star,
   StarOff,
   Trash2,
   Send,
   RefreshCw,
   Search,
-  Filter,
   Sparkles,
   TrendingUp,
   TrendingDown,
   Minus,
   MessageSquare,
   UserPlus,
-  ChevronDown,
   X,
   Loader2,
-  AlertCircle,
-  CheckCircle2,
   Zap,
   Brain,
-  Clock,
-  Target,
-  ArrowRight,
-  Inbox,
-  Settings
+  Inbox
 } from 'lucide-react';
 
 // Database field names (snake_case) to component field names (camelCase)
@@ -285,14 +276,14 @@ export default function EmailInbox() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ threadId, replyBody: replyData.body })
         });
-        const replyData = await replyRes.json();
-        if (replyData.success) {
+        const replyResData = await replyRes.json();
+        if (replyResData.success) {
           setReplyData({ body: '' });
           setShowAI(false);
           setAiSuggestion('');
           alert('Reply sent successfully!');
         } else {
-          alert('Failed to send reply: ' + replyData.error);
+          alert('Failed to send reply: ' + replyResData.error);
         }
       }
     } catch (error) {

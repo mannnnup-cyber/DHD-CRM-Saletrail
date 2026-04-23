@@ -1,5 +1,5 @@
-import React from 'react';
-import { FileText, Download, TrendingUp, Phone, DollarSign, Target } from 'lucide-react';
+import { } from 'react';
+import { Download, TrendingUp, Phone, DollarSign, Target } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 

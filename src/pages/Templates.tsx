@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { MessageSquare, Mail, Copy, Check, Send } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -18,7 +18,7 @@ const Templates: React.FC = () => {
   const [filter, setFilter] = useState('All');
   const [copied, setCopied] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
-  const [selected, setSelected] = useState<typeof TEMPLATES[0] | null>(null);
+  const [_selected, _setSelected] = useState<typeof TEMPLATES[0] | null>(null);
 
   const filtered = TEMPLATES.filter(t => filter === 'All' || t.type === filter);
 

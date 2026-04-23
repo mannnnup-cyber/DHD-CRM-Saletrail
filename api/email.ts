@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
+import { logger } from '../src/lib/logger';
 
 const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
@@ -34,7 +35,7 @@ async function getSettings(): Promise<Record<string, string>> {
     });
     settingsCacheTime = now;
   } catch (error) {
-    console.error('Error fetching settings:', error);
+    logger.error('Error fetching settings:', error);
   }
 
   return settingsCache;
@@ -155,7 +156,7 @@ Low score indicators: generic inquiries, auto-responses, newsletters, spam`
       };
     }
   } catch (error) {
-    console.error('AI Analysis Error:', error);
+    logger.error('AI Analysis Error:', error);
   }
 
   // Fallback keyword-based analysis
@@ -250,7 +251,7 @@ async function getPredictiveScore(email: { subject: string; body: string; from: 
         };
       }
     } catch (error) {
-      console.error('Predictive analysis error:', error);
+      logger.error('Predictive analysis error:', error);
     }
   }
 
@@ -402,14 +403,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               let processedCount = 0;
               let newEmails = 0;
 
-              fetch.on('message', (msg, seqno) => {
+              fetch.on('message', (msg: any, seqno: any) => {
                 const headers: any = {};
                 let bodyPreview = '';
                 let messageId = '';
                 let inReplyTo = '';
                 let references = '';
 
-                msg.on('headers', (h) => {
+                msg.on('headers', (h: any) => {
                   headers.from = h.from?.[0] || '';
                   headers.to = h.to?.[0] || '';
                   headers.subject = h.subject?.[0] || 'No Subject';
@@ -419,9 +420,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   references = h.references?.[0] || '';
                 });
 
-                msg.on('body', (stream, info) => {
+                msg.on('body', (stream: any, info: any) => {
                   let buffer = '';
-                  stream.on('data', (chunk) => {
+                  stream.on('data', (chunk: any) => {
                     buffer += chunk.toString('utf8');
                     if (buffer.length > 50000) {
                       stream.destroy();
@@ -522,7 +523,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 });
               });
 
-              fetch.once('error', (err) => {
+              fetch.once('error', (err: any) => {
                 imap.end();
                 resolve(res.status(500).json({ success: false, error: err.message }));
               });
@@ -548,7 +549,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
           });
 
-          imap.once('error', (err) => {
+          imap.once('error', (err: any) => {
             resolve(res.status(500).json({
               success: false,
               error: err.message,
@@ -1043,7 +1044,7 @@ Return ONLY the email body text.`
         });
     }
   } catch (err: any) {
-    console.error('Email API Error:', err);
+    logger.error('Email API Error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }

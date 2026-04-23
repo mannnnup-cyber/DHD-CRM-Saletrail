@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { RefreshCw, Phone, PhoneIncoming, PhoneMissed, CheckCircle, AlertCircle, Wifi, WifiOff, Clock, User, Calendar } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 

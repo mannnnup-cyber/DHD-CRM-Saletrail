@@ -1,7 +1,7 @@
 // Supabase Service - Hybrid approach for DHD CRM
 // This service provides optional Supabase integration while maintaining localStorage fallback
 
-import { supabase, db, type Lead, type Deal, type Call, type Task, type Activity, type Quote, type User } from './supabase';
+import { db, type Lead, type Deal, type Call, type Task, type Activity, type Quote } from './supabase';
 
 // Flag to enable/disable Supabase sync
 let supabaseEnabled = false;

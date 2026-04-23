@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  Save, Shield, Smartphone, Bell, Globe, Database, HelpCircle,
-  Mail, Key, Bot, Link2, CheckCircle, XCircle, Loader2,
-  ChevronRight, Eye, EyeOff
+  Save, Shield, Smartphone, Globe, Mail, Bot, Link2, CheckCircle, XCircle, Loader2, Eye, EyeOff
 } from 'lucide-react';
 
 interface SettingItem {
@@ -19,6 +17,7 @@ interface SettingsByCategory {
   email: SettingItem[];
   api: SettingItem[];
   integrations: SettingItem[];
+  [key: string]: SettingItem[]; // allow dynamic categories
 }
 
 const Settings: React.FC = () => {
@@ -26,7 +25,7 @@ const Settings: React.FC = () => {
   const settings = state.settings;
 
   const [activeTab, setActiveTab] = useState<'email' | 'api' | 'integrations' | 'automation'>('email');
-  const [dbSettings, setDbSettings] = useState<SettingsByCategory>({
+  const [_dbSettings, setDbSettings] = useState<SettingsByCategory>({
     email: [],
     api: [],
     integrations: []
