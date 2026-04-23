@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install
+        run: npm ci
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      - name: Secrets quick-scan
+        run: |
+          if (git rev-parse --is-inside-work-tree > /dev/null 2>&1); then true; fi
+          git grep -n "API_KEY\|PASSWORD\|SECRET\|PRIVATE_KEY" || true

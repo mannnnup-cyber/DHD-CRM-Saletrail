@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Calculator, Receipt, Download, Search, FileText, Printer } from 'lucide-react';
+import { Calculator, Download, Search, Printer } from 'lucide-react';
 
 const Invoices: React.FC = () => {
-  const { state } = useApp();
+  useApp();
   const [amount, setAmount] = useState<string>('');
   const GCT_RATE = 0.15;
 

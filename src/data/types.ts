@@ -39,6 +39,10 @@ export interface Call {
   repId: string;
   notes?: string;
   recordingUrl?: string;
+  // convenience fields used in UI
+  contactPhone?: string;
+  contactName?: string;
+  repName?: string;
 }
 
 export interface Deal {
@@ -51,6 +55,7 @@ export interface Deal {
   createdAt: string;
   updatedAt: string;
   description?: string;
+  expectedCloseDate?: string;
 }
 
 export interface Task {
@@ -61,6 +66,9 @@ export interface Task {
   completed: boolean;
   repId: string;
   priority: 'low' | 'medium' | 'high';
+  // optional legacy fields
+  assignedTo?: string;
+  description?: string;
 }
 
 export interface Activity {

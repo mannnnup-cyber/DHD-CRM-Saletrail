@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppState, Lead, Call, Deal, Task, Quote, Activity, AppSettings, CallType } from '../data/types';
 import { TEAM_MEMBERS, INITIAL_SETTINGS, generateId, generateMockData } from '../data/store';
-import { supabase, db } from '../lib/supabase';
+import { db } from '../lib/supabase';
+import { logger } from '../lib/logger';
+import { rowToLead, rowToDeal, rowToCall, rowToTask, rowToActivity } from '../lib/adapters';
 
 export interface SyncedCall {
   rep: string;
@@ -120,66 +122,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // If we have Supabase data, use it
         if (leads.length > 0 || deals.length > 0 || calls.length > 0) {
-          console.log('✅ Connected to Supabase!');
+          logger.info('✅ Connected to Supabase!');
           setIsSupabaseConnected(true);
-
-          // Convert Supabase data to app format
-          const convertedLeads: Lead[] = leads.map((l: any) => ({
-            id: l.id,
-            name: l.name,
-            company: l.company,
-            email: l.email,
-            phone: l.phone,
-            source: l.source,
-            status: l.status,
-            assignedTo: l.assigned_to,
-            notes: l.notes,
-            createdAt: l.created_at
-          }));
-
-          const convertedDeals: Deal[] = deals.map((d: any) => ({
-            id: d.id,
-            name: d.name,
-            value: d.value,
-            stage: d.stage,
-            contactId: d.lead_id,
-            repId: d.assigned_to,
-            expectedCloseDate: d.expected_close_date,
-            description: d.notes,
-            createdAt: d.created_at,
-            updatedAt: d.updated_at
-          }));
-
-          const convertedCalls: Call[] = calls.map((c: any) => ({
-            id: c.id,
-            type: c.type as CallType,
-            contactPhone: c.phone_number,
-            contactName: c.contact_name,
-            duration: c.duration,
-            notes: c.notes,
-            repId: c.rep_id,
-            timestamp: c.timestamp
-          }));
-
-          const convertedTasks: Task[] = tasks.map((t: any) => ({
-            id: t.id,
-            title: t.title,
-            description: t.description,
-            dueDate: t.due_date,
-            completed: t.completed,
-            priority: t.priority,
-            assignedTo: t.assigned_to,
-            createdAt: t.created_at
-          }));
-
-          const convertedActivities: Activity[] = activities.map((a: any) => ({
-            id: a.id,
-            type: a.type,
-            description: a.description,
-            contactId: '',
-            userId: a.user_id,
-            timestamp: a.timestamp
-          }));
+          // Convert Supabase data to app format using adapters
+          const convertedLeads: Lead[] = leads.map((l: any) => rowToLead(l));
+          const convertedDeals: Deal[] = deals.map((d: any) => rowToDeal(d));
+          const convertedCalls: Call[] = calls.map((c: any) => rowToCall(c));
+          const convertedTasks: Task[] = tasks.map((t: any) => rowToTask(t));
+          const convertedActivities: Activity[] = activities.map((a: any) => rowToActivity(a));
 
           // Load Supabase data into state
           setState(prev => ({
@@ -191,10 +141,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             activities: convertedActivities
           }));
         } else {
-          console.log('📦 No Supabase data found, using local storage');
+          logger.info('📦 No Supabase data found, using local storage');
         }
       } catch (error) {
-        console.log('⚠️ Supabase not connected, using local storage');
+        logger.warn('⚠️ Supabase not connected, using local storage');
       } finally {
         setIsLoading(false);
       }
@@ -309,9 +259,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           email: newLead.email,
           phone: newLead.phone,
           source: newLead.source,
-          status: newLead.status,
+          // DB expects lowercase status
+          status: (String(newLead.status || '').toLowerCase() as any),
           assigned_to: newLead.assignedTo,
-          notes: newLead.notes
+          notes: (newLead as any).notes || newLead.description || ''
         });
         await db.createDeal({
           name: newDeal.name,
@@ -321,7 +272,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           notes: newDeal.description
         });
       } catch (e) {
-        console.error('Error syncing lead to Supabase:', e);
+        logger.error('Error syncing lead to Supabase:', e);
       }
     }
 
@@ -358,17 +309,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase
     if (isSupabaseConnected) {
       try {
+        // Map Missed -> Incoming for DB enum compatibility
+        const dbCallType = (newCall.type === 'Missed') ? 'Incoming' : newCall.type;
         await db.createCall({
-          type: newCall.type,
-          phone_number: newCall.contactPhone,
-          contact_name: newCall.contactName,
+          type: dbCallType as any,
+          phone_number: (newCall as any).contactPhone || undefined,
+          contact_name: (newCall as any).contactName || undefined,
           duration: newCall.duration,
           rep_id: newCall.repId,
           notes: newCall.notes,
           timestamp: newCall.timestamp
         });
       } catch (e) {
-        console.error('Error syncing call to Supabase:', e);
+        logger.error('Error syncing call to Supabase:', e);
       }
     }
 
@@ -401,7 +354,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           notes: newDeal.description
         });
       } catch (e) {
-        console.error('Error syncing deal to Supabase:', e);
+        logger.error('Error syncing deal to Supabase:', e);
       }
     }
 
@@ -432,14 +385,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         await db.createTask({
           title: newTask.title,
-          description: newTask.description,
+          description: (newTask as any).description || '',
           due_date: newTask.dueDate,
           completed: newTask.completed,
           priority: newTask.priority,
-          assigned_to: newTask.assignedTo
+          assigned_to: (newTask as any).assignedTo || newTask.repId
         });
       } catch (e) {
-        console.error('Error syncing task to Supabase:', e);
+        logger.error('Error syncing task to Supabase:', e);
       }
     }
   };

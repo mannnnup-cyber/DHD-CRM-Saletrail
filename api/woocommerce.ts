@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { logger } from '../src/lib/logger';
 
 const WC_API_BASE = process.env.WC_STORE_URL || '';
 const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || '';
@@ -62,12 +63,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'orders': {
-        // Fetch orders with pagination
-        const page = req.query.page || 1;
-        const perPage = req.query.per_page || 50;
-        const status = req.query.status || 'any';
-        
-        const url = `${baseUrl}/wp-json/wc/v3/orders?page=${page}&per_page=${perPage}&status=${status}&orderby=date&order=desc`;
+        // Fetch orders with pagination (coerce query params)
+        const page = Number(req.query.page) || 1;
+        const perPage = Number(req.query.per_page) || 50;
+        const status = String(req.query.status || 'any');
+
+        const url = `${baseUrl}/wp-json/wc/v3/orders?page=${page}&per_page=${perPage}&status=${encodeURIComponent(status)}&orderby=date&order=desc`;
         const response = await fetch(url, { headers });
         
         if (!response.ok) {
@@ -78,8 +79,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         
         const orders = await response.json();
-        const totalOrders = response.headers.get('X-WP-Total') || 0;
-        const totalPages = response.headers.get('X-WP-TotalPages') || 1;
+  const totalOrders = parseInt(response.headers.get('X-WP-Total') || '0', 10);
+  const totalPages = parseInt(response.headers.get('X-WP-TotalPages') || '1', 10);
 
         // Map WooCommerce orders to CRM pipeline stages
         const stageMap: Record<string, string> = {
@@ -95,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const mappedOrders = orders.map((order: any) => ({
           id: `wc_${order.id}`,
           orderId: order.id,
-          orderNumber: order.number,
+          orderNumber: order.number || order.id,
           status: order.status,
           pipelineStage: stageMap[order.status] || 'New Lead',
           customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
@@ -191,8 +192,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           error: `Unknown action: ${action}`
         });
     }
-  } catch (error: any) {
-    console.error('WooCommerce API Error:', error);
+    } catch (error: any) {
+    logger.error('WooCommerce API Error:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error',

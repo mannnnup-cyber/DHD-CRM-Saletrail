@@ -443,23 +443,7 @@ export default function WhatsApp() {
     setTestingDB(false);
   };
 
-  const getMockChats = (): Chat[] => [
-    { id: '18763280220@c.us', name: 'Production Office', lastMessage: 'When will the logo be ready?', timestamp: '10:42', unread: 3, assignedTo: 'Keisha', phone: '18763280220', status: 'active' },
-    { id: '18765408428@c.us', name: 'Sun Island CUG', lastMessage: 'Thanks for the quote!', timestamp: '09:15', unread: 0, assignedTo: 'Andre', phone: '18765408428', status: 'active' },
-    { id: '18764581519@c.us', name: 'Cindy-lue Miller', lastMessage: 'Can we schedule a meeting?', timestamp: 'Yesterday', unread: 1, assignedTo: 'Unassigned', phone: '18764581519', status: 'pending' },
-    { id: '18765079885@c.us', name: 'Aakeem Jones', lastMessage: 'I love the design!', timestamp: 'Yesterday', unread: 0, assignedTo: 'Marcia', phone: '18765079885', status: 'resolved' },
-    { id: '18768835527@c.us', name: 'Mr. Charles Williams', lastMessage: 'Please send invoice', timestamp: 'Mon', unread: 2, assignedTo: 'Unassigned', phone: '18768835527', status: 'pending' },
-  ];
-
-  const getMockMessages = (): Message[] => [
-    { id: '1', text: 'Hi! I am interested in a logo design for my business', timestamp: '09:00', fromMe: false, status: 'read', type: 'text' },
-    { id: '2', text: 'Hi! Thanks for reaching out to Dirty Hand Designs. How can we help you today?', timestamp: '09:02', fromMe: true, status: 'read', type: 'text' },
-    { id: '3', text: 'I need a full branding package — logo, business cards and social media graphics', timestamp: '09:05', fromMe: false, status: 'read', type: 'text' },
-    { id: '4', text: 'Great! We specialize in exactly that. Can I ask about your budget range?', timestamp: '09:07', fromMe: true, status: 'read', type: 'text' },
-    { id: '5', text: 'Budget is around $80,000 JMD', timestamp: '09:10', fromMe: false, status: 'read', type: 'text' },
-    { id: '6', text: 'Perfect! That works well for our branding packages. I will send you a detailed quote today.', timestamp: '09:12', fromMe: true, status: 'delivered', type: 'text' },
-    { id: '7', text: 'When will the logo be ready?', timestamp: '10:42', fromMe: false, status: 'read', type: 'text' },
-  ];
+  // Mock helpers removed to reduce unused-symbol noise
 
   // Initial load
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { User, Lead, Call, Deal, Task, Quote, Activity, AppSettings } from './types';
+import { User, Lead, Call, Deal, Task, AppSettings } from './types';
 
 export const TEAM_MEMBERS: User[] = [
   { id: '1', name: 'Andre Manager', email: 'andre@dirtyhanddesigns.com', role: 'manager', username: 'manager' },
