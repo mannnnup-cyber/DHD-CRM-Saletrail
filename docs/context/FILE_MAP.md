@@ -359,6 +359,11 @@ parseable by AI tools and harness systems.
       "file": "docs/context/PROMPT_TEMPLATE.md",
       "purpose": "Reusable structured prompt format for AI-assisted coding"
     }
+    ,
+    {
+      "file": "docs/context/LOCAL_MODELS.md",
+      "purpose": "Guides for running Claude Code CLI against local model hosts (Ollama) and configuring VS Code"
+    }
   ],
   "tooling": [
     {

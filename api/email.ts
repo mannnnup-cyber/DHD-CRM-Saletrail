@@ -1,6 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+// Packages below don't have bundled type declarations in this project.
+// Use ts-ignore to avoid compile-time errors while keeping runtime behavior.
+// TODO: add proper @types packages or hand-written types in src/types when possible.
+// @ts-ignore
 import Imap from 'imap';
+// @ts-ignore
 import { simpleParser } from 'mailparser';
 import { logger } from '../src/lib/logger';
 
@@ -454,7 +459,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         threadId = `thread-${fromEmail}-${headers.subject}`.replace(/\s+/g, '-');
                       }
 
-                      const emailData = {
+                      const emailData: any = {
                         message_id: messageId,
                         thread_id: threadId,
                         from_email: fromEmail,
@@ -467,6 +472,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         starred: false,
                         category: 'other' as const,
                         lead_score: 50,
+                        ai_analysis: null,
                         source: 'IMAP'
                       };
 
