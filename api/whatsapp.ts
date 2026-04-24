@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { db as supaDb, supabase } from '../src/lib/supabase';
 
 // Use environment variables for security
 const INSTANCE_ID = process.env.GREENAPI_INSTANCE_ID || '';
@@ -16,6 +17,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'POST' && !req.query.action) {
     const body = req.body;
     console.log('WhatsApp Webhook received:', JSON.stringify(body));
+
+    // Try to persist inbound message(s) to Supabase if available
+    try {
+      // Green API may send different shapes; attempt to normalize
+      const events = Array.isArray(body) ? body : [body];
+      for (const ev of events) {
+        // Common payload locations for message data
+        const message = ev?.message || ev?.body || ev?.data || ev;
+        const providerMessageId = message?.idMessage || message?.id || message?.receiptId || null;
+        const from = message?.senderData?.sender || message?.from || message?.chatId || (ev?.sender?.id || null);
+        const text = message?.textMessage || message?.body || message?.message || '';
+        const timestamp = message?.timestamp || Math.floor(Date.now() / 1000);
+
+        // Idempotency: check whatsapp_messages table for provider_message_id
+        if (typeof supabase !== 'undefined' && supabase.from) {
+          try {
+            const exists = await supabase.from('whatsapp_messages').select('id').eq('provider_message_id', providerMessageId).limit(1);
+            if ((exists && (exists as any).data && (exists as any).data.length > 0) || !providerMessageId) {
+              // Already recorded or no provider id — still safe to continue
+              continue;
+            }
+
+            const insert = {
+              provider: 'greenapi',
+              provider_message_id: providerMessageId,
+              chat_id: from,
+              direction: 'inbound',
+              body: text,
+              raw: ev,
+              created_at: new Date(timestamp * 1000).toISOString()
+            };
+
+            await supabase.from('whatsapp_messages').insert(insert);
+
+            // Also create a call/activity row for UI timeline
+            await supaDb.createCall({
+              type: 'WhatsApp',
+              contactName: '',
+              contactPhone: String(from || ''),
+              duration: 0,
+              notes: `Inbound WhatsApp: ${String(text || '').slice(0, 200)}`,
+              repId: null,
+              timestamp: new Date(timestamp * 1000).toISOString()
+            } as any);
+          } catch (err) {
+            console.error('Failed to persist whatsapp webhook event:', err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error processing webhook:', err);
+    }
 
     // Acknowledge receipt
     return res.status(200).json({ success: true, received: true });
@@ -134,6 +187,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, chats });
       }
 
+      case 'chatsFromDb': {
+        // Read recent chats aggregated from whatsapp_messages table
+        if (typeof supabase === 'undefined' || !supabase.from) {
+          return res.json({ success: false, error: 'Supabase not configured' });
+        }
+
+        try {
+          const { data: msgs } = await supabase.from('whatsapp_messages').select('*').order('created_at', { ascending: false }).limit(500);
+          const byChat: Record<string, any> = {};
+          (msgs || []).forEach((m: any) => {
+            const chat = m.chat_id || m.from || m.to || 'unknown';
+            if (!byChat[chat]) byChat[chat] = { id: chat, name: chat, lastMessage: m.body || '', timestamp: m.created_at, unread: 0, phone: chat, status: 'active' };
+            if (new Date(m.created_at) > new Date(byChat[chat].timestamp)) {
+              byChat[chat].lastMessage = m.body || '';
+              byChat[chat].timestamp = m.created_at;
+            }
+          });
+
+          const chats = Object.values(byChat).slice(0, 200);
+          return res.json({ success: true, chats, source: 'db' });
+        } catch (err) {
+          console.error('chatsFromDb error', err);
+          return res.json({ success: false, error: String(err) });
+        }
+      }
+
       case 'syncHistory': {
         // Fetch all chats with their last message - this enables "history" functionality
         const r = await fetch(`${BASE_URL}/getContacts/${API_TOKEN}`);
@@ -231,15 +310,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'messages': {
-        // Get chat history
+        // Get chat history (DB-backed if possible)
         const chatId = req.query.chatId as string;
+        if (typeof supabase !== 'undefined' && supabase.from && chatId) {
+          try {
+            const { data: msgs } = await supabase.from('whatsapp_messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true }).limit(1000);
+            const formatted = (msgs || []).map((m: any) => ({
+              id: m.provider_message_id || m.id,
+              text: m.body || '',
+              timestamp: m.created_at,
+              fromMe: m.direction === 'outbound',
+              status: 'read',
+              type: m.type || 'text',
+              raw: m.raw || null
+            }));
+            return res.json({ success: true, messages: formatted, source: 'db' });
+          } catch (err) {
+            console.error('messagesFromDb error', err);
+            // fallback to provider
+          }
+        }
+
+        // Fallback to provider chat history
         const r = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chatId, count: 100 })
         });
         const data = await r.json();
-        return res.json({ success: true, messages: data });
+        return res.json({ success: true, messages: data, source: 'provider' });
       }
 
       case 'send': {
@@ -251,6 +350,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           body: JSON.stringify({ chatId, message })
         });
         const data = await r.json();
+        // Persist outgoing message to DB if we have supabase
+        try {
+          if (typeof supabase !== 'undefined' && supabase.from) {
+            await supabase.from('whatsapp_messages').insert({
+              provider: 'greenapi',
+              provider_message_id: data?.idMessage || null,
+              chat_id: chatId,
+              direction: 'outbound',
+              body: message,
+              raw: data,
+              created_at: new Date().toISOString()
+            });
+          }
+
+          // Also create a call/activity row for UI timeline
+          await supaDb.createCall({
+            type: 'WhatsApp',
+            contactName: '',
+            contactPhone: String(chatId || ''),
+            duration: 0,
+            notes: `Outbound WhatsApp: ${String(message || '').slice(0, 200)}`,
+            repId: null,
+            timestamp: new Date().toISOString()
+          } as any);
+        } catch (err) {
+          console.error('Failed to persist outgoing whatsapp message:', err);
+        }
+
         return res.json({ success: data.idMessage ? true : false, data, messageId: data.idMessage });
       }
 

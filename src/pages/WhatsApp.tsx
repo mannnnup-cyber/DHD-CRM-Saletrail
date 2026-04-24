@@ -150,8 +150,15 @@ export default function WhatsApp() {
     try {
       // Use syncHistory if enabled to get full chat history with last messages
       const action = messageHistoryEnabled ? 'syncHistory' : 'chats';
-      const r = await fetch(`/api/whatsapp?action=${action}`);
-      const data = await r.json();
+      // Prefer DB-backed chats endpoint
+      const r = await fetch(`/api/whatsapp?action=chatsFromDb`);
+      let data = await r.json();
+
+      // Fallback to provider if DB not available or empty
+      if (!data?.success || !data?.chats || data.chats.length === 0) {
+        const rp = await fetch(`/api/whatsapp?action=${action}`);
+        data = await rp.json();
+      }
 
       if (data.success && data.chats && Array.isArray(data.chats) && data.chats.length > 0) {
         // STRICT check: Real data must have chats with actual names
