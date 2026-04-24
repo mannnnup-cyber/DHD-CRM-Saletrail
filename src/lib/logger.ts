@@ -9,8 +9,21 @@ const LEVELS: Record<LogLevel, number> = {
   error: 40
 };
 
-const env = (name: string, fallback = '') => process.env[name] || fallback;
-const configured = (env('LOG_LEVEL', 'info') as LogLevel) || 'info';
+const env = (name: string, fallback = '') => {
+  // Prefer Vite's import.meta.env in the browser, otherwise fall back to process.env for Node
+  try {
+    // @ts-ignore - import.meta may not be typed in this context but Vite provides it
+    const im = (typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env : undefined;
+    if (im && im[name]) return im[name];
+  } catch (e) {
+    // ignore
+  }
+  if (typeof process !== 'undefined' && (process as any).env && (process as any).env[name]) {
+    return (process as any).env[name];
+  }
+  return fallback;
+};
+const configured = (env('VITE_LOG_LEVEL', env('LOG_LEVEL', 'info')) as LogLevel) || 'info';
 const currentLevel = LEVELS[configured] ?? LEVELS.info;
 
 function shouldLog(level: LogLevel) {

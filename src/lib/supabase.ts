@@ -1,10 +1,17 @@
-import { createClient } from '@supabase/supabase-js';
+let createClient:any;
+try {
+  // Lazy-require to avoid bundling server-only code into the browser build when not available
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  createClient = require('@supabase/supabase-js').createClient;
+} catch (e) {
+  createClient = undefined;
+}
 
 // Supabase configuration (read from environment in Vite/Node)
-const supabaseUrl = (import.meta.env && (import.meta.env.VITE_SUPABASE_URL as string)) || process.env.SUPABASE_PROJECT_URL || '';
-const supabaseAnonKey = (import.meta.env && (import.meta.env.VITE_SUPABASE_ANON_KEY as string)) || process.env.SUPABASE_ANON_KEY || '';
+const supabaseUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SUPABASE_URL) || (typeof process !== 'undefined' && (process as any).env.SUPABASE_PROJECT_URL) || '';
+const supabaseAnonKey = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SUPABASE_ANON_KEY) || (typeof process !== 'undefined' && (process as any).env.SUPABASE_ANON_KEY) || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = (createClient && supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : ({} as any);
 
 // Database types
 export interface User {
