@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall, Database, CheckCircle2, XCircle, Loader2, Plus, X } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
@@ -58,16 +58,6 @@ interface Message {
   type: string;
 }
 
-interface WACall {
-  name: string;
-  number: string;
-  type: string;
-  duration: string;
-  time: string;
-  date: string;
-  rep: string;
-}
-
 interface DBTestResult {
   success: boolean;
   connected: boolean;
@@ -78,8 +68,8 @@ interface DBTestResult {
 }
 
 export default function WhatsApp() {
-  const { state, allCalls, addCall } = useApp();
-  const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
+  const { state, addCall } = useApp();
+  const [activeTab, setActiveTab] = useState<'inbox' | 'stats' | 'setup'>('inbox');
   const [connected, setConnected] = useState<boolean | null>(null);
   const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -92,7 +82,6 @@ export default function WhatsApp() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [assignDropdown, setAssignDropdown] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [waCalls, setWaCalls] = useState<WACall[]>([]);
   const [dbTestResult, setDbTestResult] = useState<DBTestResult | null>(null);
   const [testingDB, setTestingDB] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
@@ -111,21 +100,6 @@ export default function WhatsApp() {
 
   const user = state.user;
 
-  // Extract WhatsApp calls from synced calls
-  useEffect(() => {
-    const whatsappCalls = allCalls
-      .filter(c => c.type === 'WhatsApp')
-      .map(c => ({
-        name: (c as any).contactName || (c as any).notes || 'Unknown',
-        number: (c as any).contactPhone || '',
-        type: 'WhatsApp',
-        duration: c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : '0s',
-        time: new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        date: new Date(c.timestamp).toLocaleDateString(),
-        rep: (c as any).repName || c.repId || 'Unknown'
-      }));
-    setWaCalls(whatsappCalls);
-  }, [allCalls]);
 
   // Check connection status via backend API
   const checkStatus = useCallback(async () => {
@@ -576,7 +550,6 @@ export default function WhatsApp() {
   const totalChats = chats.length;
   const activeChats = chats.filter(c => c.status === 'active').length;
   const resolvedChats = chats.filter(c => c.status === 'resolved').length;
-  const whatsappCallsToday = allCalls.filter(c => c.type === 'WhatsApp' && new Date(c.timestamp).toDateString() === new Date().toDateString()).length;
 
   // Determine if using real or mock data
   const isUsingRealData = hasRealData && connected === true;
@@ -683,7 +656,7 @@ export default function WhatsApp() {
           { label: 'Unread', value: totalUnread, color: 'red' },
           { label: 'Active', value: activeChats, color: 'green' },
           { label: 'Resolved', value: resolvedChats, color: 'gray' },
-          { label: 'WA Calls Today', value: whatsappCallsToday, color: 'purple' },
+          { label: 'Resolved Today', value: resolvedChats, color: 'purple' },
         ].map((stat, i) => (
           <div key={i} className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50">
             <p className="text-gray-400 text-xs mb-1">{stat.label}</p>
@@ -699,7 +672,7 @@ export default function WhatsApp() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-800/40 rounded-xl p-1">
-        {(['inbox', 'calls', 'stats', 'setup'] as const).map(tab => (
+        {(['inbox', 'stats', 'setup'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -708,7 +681,6 @@ export default function WhatsApp() {
             }`}
           >
             {tab === 'inbox' && `Inbox${totalUnread > 0 ? ` (${totalUnread})` : ''}`}
-            {tab === 'calls' && `Activity${waCalls.length > 0 ? ` (${waCalls.length})` : ''}`}
             {tab === 'stats' && 'Stats'}
             {tab === 'setup' && 'Setup'}
           </button>
@@ -962,61 +934,13 @@ export default function WhatsApp() {
         </div>
       )}
 
-      {/* CALLS TAB */}
-      {activeTab === 'calls' && (
-        <div className="space-y-4">
-          <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
-            <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-              <PhoneCall className="w-5 h-5 text-green-400" />
-              WhatsApp Activity Log
-              <span className="ml-auto text-xs text-gray-500">{waCalls.length} entries</span>
-            </h3>
-            {waCalls.length > 0 ? (
-              <div className="space-y-3">
-                {waCalls.map((call, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 bg-gray-700/30 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        call.type === 'Outgoing' ? 'bg-blue-500/20' :
-                        call.type === 'Incoming' ? 'bg-green-500/20' : 'bg-red-500/20'
-                      }`}>
-                        {call.type === 'Outgoing' ? <Phone className="w-5 h-5 text-blue-400" /> :
-                         call.type === 'Incoming' ? <PhoneIncoming className="w-5 h-5 text-green-400" /> :
-                         <PhoneMissed className="w-5 h-5 text-red-400" />}
-                      </div>
-                      <div>
-                        <p className="text-white font-medium text-sm">{call.name || 'Unknown'}</p>
-                        <p className="text-gray-400 text-xs">+{call.number} . {call.rep}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-medium ${
-                        call.type === 'Outgoing' ? 'text-blue-400' :
-                        call.type === 'Incoming' ? 'text-green-400' : 'text-red-400'
-                      }`}>{call.type}</p>
-                      <p className="text-gray-400 text-xs">{call.duration} . {call.time}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <PhoneCall className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-400 font-medium">No WhatsApp calls logged yet</p>
-                <p className="text-gray-500 text-sm mt-1">WhatsApp calls from MacroDroid will appear here when synced</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* STATS TAB */}
       {activeTab === 'stats' && (
         <div className="grid grid-cols-2 gap-4">
           {[
             { label: 'Total Messages Today', value: chats.reduce((s, c) => s + c.unread, 0).toString(), icon: MessageCircle, color: 'green' },
             { label: 'Active Conversations', value: activeChats.toString(), icon: Send, color: 'blue' },
-            { label: 'WhatsApp Calls Today', value: whatsappCallsToday.toString(), icon: Phone, color: 'purple' },
+            { label: 'Resolved Conversations', value: resolvedChats.toString(), icon: Phone, color: 'purple' },
             { label: 'Avg Response Time', value: '4 min', icon: Clock, color: 'amber' },
             { label: 'Conversations Resolved', value: resolvedChats.toString(), icon: CheckCheck, color: 'green' },
             { label: 'Unassigned Chats', value: chats.filter(c => c.assignedTo === 'Unassigned').length.toString(), icon: User, color: 'red' },
