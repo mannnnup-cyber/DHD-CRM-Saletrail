@@ -179,22 +179,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'chats': {
-        // Get contacts and return as chats (no separate getChats endpoint)
-        // Green API doesn't have getChats - we use getContacts and filter
-        const r = await fetch(`${BASE_URL}/getContacts/${API_TOKEN}`);
-        const contacts = await r.json();
+        // Use getChats — returns actual open conversations with last messages
+        const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
+        const rawChats = await r.json();
 
-        // Transform contacts to chat format
-        const chats = Array.isArray(contacts)
-          ? contacts.slice(0, 50).map((c: any) => ({
-              id: c.id || c.wid || '',
-              name: c.name || c.pushname || c.wid || 'Unknown',
-              phone: (c.wid || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
-              lastMessage: '',
-              timestamp: '',
-              unread: 0,
-              status: 'active'
-            }))
+        const chats = Array.isArray(rawChats)
+          ? rawChats.slice(0, 50).map((c: any) => {
+              const lastMsg = c.lastMessage || {};
+              const lastText = lastMsg.textMessage || lastMsg.caption || (lastMsg.typeMessage ? `[${lastMsg.typeMessage}]` : '');
+              const phone = (c.id || '').replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', '');
+              return {
+                id: c.id || '',
+                name: c.name || c.pushname || phone || 'Unknown',
+                phone,
+                lastMessage: lastText.slice(0, 80),
+                timestamp: lastMsg.timestamp
+                  ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : '',
+                rawTimestamp: lastMsg.timestamp || 0,
+                unread: c.unreadCount || 0,
+                status: 'active'
+              };
+            }).sort((a: any, b: any) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0))
           : [];
 
         return res.json({ success: true, chats });
@@ -227,22 +233,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'syncHistory': {
-        // Fetch all chats with their last message - this enables "history" functionality
-        const r = await fetch(`${BASE_URL}/getContacts/${API_TOKEN}`);
-        const contacts = await r.json();
+        // Use getChats for the chat list (real conversations, not address book)
+        const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
+        const rawChats = await r.json();
 
-        if (!Array.isArray(contacts)) {
+        if (!Array.isArray(rawChats)) {
           return res.json({ success: true, chats: [], messages: {} });
         }
 
-        // Get last messages for each chat (limit to 10 most recent to avoid rate limiting)
         const chatsWithHistory: any[] = [];
         const chatMessages: Record<string, any[]> = {};
-        const recentContacts = contacts.slice(0, 20); // Limit to 20 chats for performance
+        const recentChats = rawChats.slice(0, 20); // limit to avoid rate limiting
 
-        for (const contact of recentContacts) {
-          const chatId = contact.id || contact.wid;
+        for (const chat of recentChats) {
+          const chatId = chat.id;
           if (!chatId) continue;
+
+          const phone = chatId.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', '');
+          const lastMsg = chat.lastMessage || {};
+          const lastMsgText = lastMsg.textMessage || lastMsg.caption || (lastMsg.typeMessage ? `[${lastMsg.typeMessage}]` : '');
 
           try {
             const historyRes = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
@@ -253,24 +262,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const history = await historyRes.json();
 
             if (Array.isArray(history) && history.length > 0) {
-              // Get the last message
-              const lastMsg = history[0];
-              const lastMsgText = lastMsg.textMessage || lastMsg.caption || 'Media';
-
+              const newest = history[0];
               chatsWithHistory.push({
                 id: chatId,
-                name: contact.name || contact.pushname || contact.wid || 'Unknown',
-                phone: (contact.wid || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
-                lastMessage: lastMsgText.slice(0, 60),
-                timestamp: lastMsg.timestamp
-                  ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                name: chat.name || chat.pushname || phone || 'Unknown',
+                phone,
+                lastMessage: (newest.textMessage || newest.caption || lastMsgText || '').slice(0, 80),
+                timestamp: newest.timestamp
+                  ? new Date(newest.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                   : '',
-                rawTimestamp: lastMsg.timestamp || 0,
-                unread: 0,
+                rawTimestamp: newest.timestamp || lastMsg.timestamp || 0,
+                unread: chat.unreadCount || 0,
                 status: 'active'
               });
 
-              // Store messages for this chat
               chatMessages[chatId] = history.map((msg: any) => ({
                 id: msg.idMessage || msg.id || Math.random().toString(),
                 text: msg.textMessage || msg.text || msg.caption || 'Media message',
@@ -282,35 +287,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 type: msg.typeMessage || msg.type || 'text'
               })).reverse();
             } else {
-              // No history for this chat
               chatsWithHistory.push({
                 id: chatId,
-                name: contact.name || contact.pushname || contact.wid || 'Unknown',
-                phone: (contact.wid || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
-                lastMessage: '',
-                timestamp: '',
-                rawTimestamp: 0,
-                unread: 0,
+                name: chat.name || chat.pushname || phone || 'Unknown',
+                phone,
+                lastMessage: lastMsgText.slice(0, 80),
+                timestamp: lastMsg.timestamp
+                  ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : '',
+                rawTimestamp: lastMsg.timestamp || 0,
+                unread: chat.unreadCount || 0,
                 status: 'active'
               });
             }
           } catch (err) {
             console.error(`Error fetching history for ${chatId}:`, err);
-            // Still add the chat even if history fetch failed
             chatsWithHistory.push({
               id: chatId,
-              name: contact.name || contact.pushname || contact.wid || 'Unknown',
-              phone: (contact.wid || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
-              lastMessage: '',
+              name: chat.name || chat.pushname || phone || 'Unknown',
+              phone,
+              lastMessage: lastMsgText.slice(0, 80),
               timestamp: '',
-              rawTimestamp: 0,
-              unread: 0,
+              rawTimestamp: lastMsg.timestamp || 0,
+              unread: chat.unreadCount || 0,
               status: 'active'
             });
           }
         }
 
-        // Sort by timestamp (most recent first)
         chatsWithHistory.sort((a, b) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0));
 
         return res.json({
