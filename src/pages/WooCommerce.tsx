@@ -75,6 +75,10 @@ export default function WooCommerce() {
   const [activeTab, setActiveTab]             = useState<'orders' | 'customers' | 'mapping' | 'setup'>('orders');
 
   const [orders, setOrders]                   = useState<WCOrder[]>([]);
+  const [totalOrders, setTotalOrders]         = useState(0);
+  const [totalPages, setTotalPages]           = useState(1);
+  const [currentPage, setCurrentPage]         = useState(1);
+  const [loadingMore, setLoadingMore]         = useState(false);
   const [syncing, setSyncing]                 = useState(false);
   const [lastSync, setLastSync]               = useState('');
   const [searchOrder, setSearchOrder]         = useState('');
@@ -84,6 +88,10 @@ export default function WooCommerce() {
   const [importingOrder, setImportingOrder]   = useState<string | null>(null);
 
   const [customers, setCustomers]             = useState<WCCustomer[]>([]);
+  const [totalCustomers, setTotalCustomers]   = useState(0);
+  const [customerPages, setCustomerPages]     = useState(1);
+  const [customerPage, setCustomerPage]       = useState(1);
+  const [loadingMoreCustomers, setLoadingMoreCustomers] = useState(false);
   const [syncingCustomers, setSyncingCustomers] = useState(false);
   const [importedCustomers, setImportedCustomers] = useState<Set<string>>(new Set());
   const [importingCustomer, setImportingCustomer] = useState<string | null>(null);
@@ -134,10 +142,13 @@ export default function WooCommerce() {
     setSyncing(true);
     setError('');
     try {
-      const r = await fetch('/api/woocommerce?action=orders&per_page=50');
+      const r = await fetch('/api/woocommerce?action=orders&per_page=100&page=1');
       const data = await r.json();
       if (data.success) {
         setOrders(data.orders);
+        setTotalOrders(data.total || data.orders.length);
+        setTotalPages(data.pages || 1);
+        setCurrentPage(1);
         const t = new Date().toLocaleString();
         setLastSync(t);
         localStorage.setItem('wc_orders', JSON.stringify(data.orders));
@@ -151,19 +162,70 @@ export default function WooCommerce() {
     setSyncing(false);
   }, []);
 
+  const loadMoreOrders = useCallback(async () => {
+    if (loadingMore || currentPage >= totalPages) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const r = await fetch(`/api/woocommerce?action=orders&per_page=100&page=${nextPage}`);
+      const data = await r.json();
+      if (data.success) {
+        setOrders(prev => {
+          const existingIds = new Set(prev.map(o => o.id));
+          const newOrders = data.orders.filter((o: WCOrder) => !existingIds.has(o.id));
+          return [...prev, ...newOrders];
+        });
+        setCurrentPage(nextPage);
+      } else {
+        setError(data.error || 'Failed to load more orders');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setLoadingMore(false);
+  }, [currentPage, totalPages, loadingMore]);
+
   const syncCustomers = useCallback(async () => {
     setSyncingCustomers(true);
     setError('');
     try {
-      const r = await fetch('/api/woocommerce?action=customers&per_page=50');
+      const r = await fetch('/api/woocommerce?action=customers&per_page=100&page=1');
       const data = await r.json();
-      if (data.success) setCustomers(data.customers);
-      else setError(data.error || 'Failed to sync customers');
+      if (data.success) {
+        setCustomers(data.customers);
+        setTotalCustomers(data.total || data.customers.length);
+        setCustomerPages(data.pages || 1);
+        setCustomerPage(1);
+      } else {
+        setError(data.error || 'Failed to sync customers');
+      }
     } catch (e: any) {
       setError(e.message);
     }
     setSyncingCustomers(false);
   }, []);
+
+  const loadMoreCustomers = useCallback(async () => {
+    if (loadingMoreCustomers || customerPage >= customerPages) return;
+    setLoadingMoreCustomers(true);
+    try {
+      const nextPage = customerPage + 1;
+      const r = await fetch(`/api/woocommerce?action=customers&per_page=100&page=${nextPage}`);
+      const data = await r.json();
+      if (data.success) {
+        setCustomers(prev => {
+          const existingIds = new Set(prev.map(c => c.id));
+          return [...prev, ...data.customers.filter((c: WCCustomer) => !existingIds.has(c.id))];
+        });
+        setCustomerPage(nextPage);
+      } else {
+        setError(data.error || 'Failed to load more customers');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setLoadingMoreCustomers(false);
+  }, [customerPage, customerPages, loadingMoreCustomers]);
 
   // Auto-sync orders every 15 minutes
   useEffect(() => {
@@ -235,11 +297,11 @@ export default function WooCommerce() {
   });
 
   const stats = {
-    total: orders.length,
+    total: totalOrders || orders.length,
     processing: orders.filter(o => o.status === 'processing').length,
     completed: orders.filter(o => o.status === 'completed').length,
     revenue: orders.filter(o => o.status === 'completed').reduce((s, o) => s + o.total, 0),
-    customers: customers.length,
+    customers: totalCustomers || customers.length,
   };
 
   return (
@@ -414,6 +476,12 @@ export default function WooCommerce() {
                 </select>
               </div>
 
+              {totalOrders > orders.length && (
+                <p className="text-gray-500 text-xs text-right">
+                  Showing {orders.length} of {totalOrders} orders
+                </p>
+              )}
+
               <div className="space-y-3">
                 {filteredOrders.map(order => (
                   <div key={order.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden">
@@ -505,6 +573,19 @@ export default function WooCommerce() {
                   </div>
                 ))}
               </div>
+
+              {currentPage < totalPages && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={loadMoreOrders}
+                    disabled={loadingMore}
+                    className="flex items-center gap-2 px-5 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loadingMore ? 'animate-spin' : ''}`} />
+                    {loadingMore ? 'Loading...' : `Load More (${totalOrders - orders.length} remaining)`}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -537,6 +618,12 @@ export default function WooCommerce() {
               <p className="text-gray-400 font-medium">{syncingCustomers ? 'Loading customers...' : 'No customers loaded'}</p>
             </div>
           ) : (
+            <>
+              {totalCustomers > customers.length && (
+                <p className="text-gray-500 text-xs text-right">
+                  Showing {customers.length} of {totalCustomers} customers
+                </p>
+              )}
             <div className="space-y-3">
               {filteredCustomers.map(c => (
                 <div key={c.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 flex items-center justify-between gap-4">
@@ -577,6 +664,20 @@ export default function WooCommerce() {
                 </div>
               ))}
             </div>
+
+              {customerPage < customerPages && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={loadMoreCustomers}
+                    disabled={loadingMoreCustomers}
+                    className="flex items-center gap-2 px-5 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loadingMoreCustomers ? 'animate-spin' : ''}`} />
+                    {loadingMoreCustomers ? 'Loading...' : `Load More (${totalCustomers - customers.length} remaining)`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

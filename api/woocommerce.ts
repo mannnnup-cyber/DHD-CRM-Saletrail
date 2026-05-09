@@ -106,13 +106,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const page = Number(req.query.page) || 1;
         const perPage = Number(req.query.per_page) || 50;
         const r = await fetch(
-          `${WC_API_BASE}/wp-json/wc/v3/customers?page=${page}&per_page=${perPage}&orderby=registered&order=desc`,
+          `${WC_API_BASE}/wp-json/wc/v3/customers?page=${page}&per_page=${perPage}&orderby=registered_date&order=desc`,
           { headers: wcHeaders() }
         );
         if (!r.ok) return res.status(r.status).json({ success: false, error: `Failed to fetch customers: ${r.status}` });
 
         const customers = await r.json();
         const totalCustomers = parseInt(r.headers.get('X-WP-Total') || '0', 10);
+        const totalCustomerPages = parseInt(r.headers.get('X-WP-TotalPages') || '1', 10);
 
         const mapped = customers.map((c: any) => ({
           id: `wc_customer_${c.id}`,
@@ -128,7 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           avatarUrl: c.avatar_url || ''
         }));
 
-        return res.json({ success: true, total: totalCustomers, customers: mapped });
+        return res.json({ success: true, total: totalCustomers, pages: totalCustomerPages, customers: mapped });
       }
 
       case 'products': {
