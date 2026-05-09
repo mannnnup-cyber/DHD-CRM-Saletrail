@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2 } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
@@ -100,6 +100,17 @@ export default function WhatsApp() {
   const lastMessageCountRef = useRef<number>(0);
   const chatMessagesCache = useRef<Record<string, Message[]>>({});
   const selectedChatRef = useRef<Chat | null>(null);
+  const [avatars, setAvatars] = useState<Record<string, string>>({});
+  const fetchingAvatars = useRef<Set<string>>(new Set());
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [msgSearchQuery, setMsgSearchQuery] = useState('');
+  const [msgSearchResults, setMsgSearchResults] = useState<any[]>([]);
+  const [searchingMsgs, setSearchingMsgs] = useState(false);
+  const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [attachCaption, setAttachCaption] = useState('');
+  const [sendingFile, setSendingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const user = state.user;
 
@@ -507,6 +518,16 @@ export default function WhatsApp() {
           setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
         }
 
+        // Browser notification for inbound messages in background chats
+        if (!isOpenChat && msg.direction === 'inbound' && 'Notification' in window && Notification.permission === 'granted') {
+          const senderName = msg.sender_name || (msg.chat_id || '').replace('@c.us', '');
+          new Notification(`WhatsApp: ${senderName}`, {
+            body: (msg.body || '').slice(0, 100) || 'New message',
+            icon: '/favicon.ico',
+            tag: msg.chat_id
+          });
+        }
+
         // Update (or create) chat entry in the sidebar list, move it to top
         setChats(prev => {
           const existing = prev.find(c => c.id === msg.chat_id);
@@ -567,6 +588,116 @@ export default function WhatsApp() {
   useEffect(() => {
     if (selectedChat) loadMessages(selectedChat.id);
   }, [selectedChat, loadMessages]);
+
+  // Load a single avatar (cached, no duplicate fetches)
+  const loadAvatar = useCallback(async (chatId: string) => {
+    if (fetchingAvatars.current.has(chatId)) return;
+    fetchingAvatars.current.add(chatId);
+    try {
+      const r = await fetch(`/api/whatsapp?action=avatar&chatId=${encodeURIComponent(chatId)}`);
+      const data = await r.json();
+      if (data.available && data.url) {
+        setAvatars(prev => ({ ...prev, [chatId]: data.url }));
+      }
+    } catch {}
+  }, []);
+
+  // Load avatars for top visible chats after chat list updates
+  useEffect(() => {
+    if (chats.length === 0) return;
+    let i = 0;
+    const ids = chats.slice(0, 15).map(c => c.id).filter(id => !fetchingAvatars.current.has(id));
+    const timer = setInterval(() => {
+      if (i >= ids.length) { clearInterval(timer); return; }
+      loadAvatar(ids[i]);
+      i++;
+    }, 250);
+    return () => clearInterval(timer);
+  }, [chats, loadAvatar]);
+
+  // Load avatar for selected chat immediately
+  useEffect(() => {
+    if (selectedChat) loadAvatar(selectedChat.id);
+  }, [selectedChat, loadAvatar]);
+
+  // Request browser notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotifPermission(Notification.permission);
+    }
+  }, []);
+
+  const requestNotifPermission = async () => {
+    if (!('Notification' in window)) return;
+    const perm = await Notification.requestPermission();
+    setNotifPermission(perm);
+  };
+
+  // Message search
+  const searchMessages = useCallback(async (q: string) => {
+    if (q.length < 2) { setMsgSearchResults([]); return; }
+    setSearchingMsgs(true);
+    try {
+      const r = await fetch(`/api/whatsapp?action=searchMessages&q=${encodeURIComponent(q)}`);
+      const data = await r.json();
+      if (data.success) setMsgSearchResults(data.results || []);
+    } catch {}
+    setSearchingMsgs(false);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => searchMessages(msgSearchQuery), 400);
+    return () => clearTimeout(t);
+  }, [msgSearchQuery, searchMessages]);
+
+  // Send file attachment
+  const sendAttachment = async () => {
+    if (!attachFile || !selectedChat) return;
+    if (attachFile.size > 4 * 1024 * 1024) {
+      alert('File too large — max 4 MB');
+      return;
+    }
+    setSendingFile(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(attachFile);
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const r = await fetch('/api/whatsapp?action=sendFile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatId: selectedChat.id,
+            fileBase64: base64,
+            fileName: attachFile.name,
+            mimeType: attachFile.type,
+            caption: attachCaption
+          })
+        });
+        const data = await r.json();
+        if (data.success) {
+          const previewMsg: Message = {
+            id: data.messageId || Date.now().toString(),
+            text: attachCaption || `[File: ${attachFile.name}]`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            fromMe: true,
+            status: 'sent',
+            type: attachFile.type.startsWith('image/') ? 'imageMessage' : 'documentMessage',
+            mediaUrl: URL.createObjectURL(attachFile)
+          };
+          setMessages(prev => [...prev, previewMsg]);
+          setAttachFile(null);
+          setAttachCaption('');
+          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        } else {
+          alert('Failed to send file: ' + (data.error || 'Unknown error'));
+        }
+        setSendingFile(false);
+      };
+    } catch {
+      setSendingFile(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab !== 'setup') return;
@@ -730,10 +861,18 @@ export default function WhatsApp() {
 
       {/* INBOX TAB */}
       {activeTab === 'inbox' && (
-        <div className="flex-1 flex gap-4 min-h-0" style={{ height: 'calc(100vh - 320px)' }}>
+        <div className="flex-1 flex flex-col gap-3 min-h-0">
+          {/* Disconnect banner */}
+          {connected === false && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-red-500/20 border border-red-500/40 rounded-xl text-red-300 text-sm">
+              <WifiOff className="w-4 h-4 flex-shrink-0" />
+              <span><strong>Green API disconnected</strong> — check the business phone is on and connected to WiFi. Messages sent to your number are not being received.</span>
+            </div>
+          )}
+          <div className="flex-1 flex gap-4 min-h-0" style={{ height: 'calc(100vh - 340px)' }}>
           {/* Chat List */}
           <div className="w-80 flex-shrink-0 flex flex-col bg-gray-800/40 rounded-xl border border-gray-700/50 overflow-hidden">
-            <div className="p-3 border-b border-gray-700/50">
+            <div className="p-3 border-b border-gray-700/50 space-y-2">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
@@ -744,6 +883,47 @@ export default function WhatsApp() {
                   className="w-full pl-9 pr-3 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 />
               </div>
+              {/* Message content search toggle */}
+              <button
+                onClick={() => { setShowSearchPanel(p => !p); setMsgSearchQuery(''); setMsgSearchResults([]); }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 bg-gray-700/40 hover:bg-gray-700 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
+              >
+                <Search className="w-3.5 h-3.5" />
+                {showSearchPanel ? 'Close message search' : 'Search message content...'}
+              </button>
+              {showSearchPanel && (
+                <div>
+                  <input
+                    type="text"
+                    value={msgSearchQuery}
+                    onChange={e => setMsgSearchQuery(e.target.value)}
+                    placeholder="Search across all messages..."
+                    autoFocus
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                  />
+                  {searchingMsgs && <p className="text-gray-500 text-xs mt-1 px-1">Searching...</p>}
+                  {msgSearchResults.length > 0 && (
+                    <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                      {msgSearchResults.map((m: any) => (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            const chat = chats.find(c => c.id === m.chat_id);
+                            if (chat) { setSelectedChat(chat); setShowSearchPanel(false); }
+                          }}
+                          className="w-full text-left px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                        >
+                          <p className="text-gray-300 text-xs font-medium truncate">{m.chat_id?.replace('@c.us','')}</p>
+                          <p className="text-gray-500 text-[11px] truncate">{m.body}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {msgSearchQuery.length >= 2 && !searchingMsgs && msgSearchResults.length === 0 && (
+                    <p className="text-gray-600 text-xs mt-1 px-1">No messages found</p>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {filteredChats.length === 0 ? (
@@ -754,14 +934,26 @@ export default function WhatsApp() {
                 filteredChats.map(chat => (
                   <button
                     key={chat.id}
-                    onClick={() => setSelectedChat(chat)}
+                    onClick={() => {
+                      setSelectedChat(chat);
+                      // Clear unread badge locally
+                      setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unread: 0 } : c));
+                      // Mark as read on the phone
+                      fetch('/api/whatsapp?action=readChat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chatId: chat.id })
+                      }).catch(() => {});
+                    }}
                     className={`w-full p-3 text-left hover:bg-gray-700/40 transition-colors border-b border-gray-700/30 ${
                       selectedChat?.id === chat.id ? 'bg-green-600/20 border-l-2 border-l-green-500' : ''
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                        {chat.name.charAt(0).toUpperCase()}
+                      <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm">
+                        {avatars[chat.id]
+                          ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[chat.id])}`} alt="" className="w-full h-full object-cover" />
+                          : chat.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
@@ -794,7 +986,7 @@ export default function WhatsApp() {
                 ))
               )}
             </div>
-          </div>
+          </div> {/* end chat list */}
 
           {/* Message Area */}
           <div className="flex-1 flex flex-col bg-gray-800/40 rounded-xl border border-gray-700/50 overflow-hidden">
@@ -803,8 +995,10 @@ export default function WhatsApp() {
                 {/* Chat Header */}
                 <div className="p-4 border-b border-gray-700/50 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
-                      {selectedChat.name.charAt(0).toUpperCase()}
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold flex-shrink-0">
+                      {avatars[selectedChat.id]
+                        ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[selectedChat.id])}`} alt="" className="w-full h-full object-cover" />
+                        : selectedChat.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <p className="text-white font-medium">{selectedChat.name}</p>
@@ -843,15 +1037,18 @@ export default function WhatsApp() {
                     </div>
                     <button
                       onClick={() => {
+                        const nextStatus = selectedChat.status === 'resolved' ? 'active' : 'resolved';
                         setChats(prev => prev.map(c =>
-                          c.id === selectedChat.id
-                            ? { ...c, status: c.status === 'resolved' ? 'active' : 'resolved' }
-                            : c
+                          c.id === selectedChat.id ? { ...c, status: nextStatus } : c
                         ));
-                        setSelectedChat(prev => prev
-                          ? { ...prev, status: prev.status === 'resolved' ? 'active' : 'resolved' }
-                          : null
-                        );
+                        setSelectedChat(prev => prev ? { ...prev, status: nextStatus } : null);
+                        if (nextStatus === 'resolved') {
+                          fetch('/api/whatsapp?action=archiveChat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ chatId: selectedChat.id })
+                          }).catch(() => {});
+                        }
                       }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                         selectedChat.status === 'resolved'
@@ -959,6 +1156,41 @@ export default function WhatsApp() {
                       </div>
                     </div>
                   )}
+                  {/* File attachment preview */}
+                  {attachFile && (
+                    <div className="mb-2 flex items-center gap-3 p-3 bg-gray-700/60 rounded-xl border border-gray-600/50">
+                      <FileText className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-xs font-medium truncate">{attachFile.name}</p>
+                        <p className="text-gray-500 text-[10px]">{(attachFile.size / 1024).toFixed(0)} KB</p>
+                      </div>
+                      <input
+                        type="text"
+                        value={attachCaption}
+                        onChange={e => setAttachCaption(e.target.value)}
+                        placeholder="Caption (optional)"
+                        className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded-lg text-white text-xs placeholder-gray-500 focus:outline-none focus:border-green-500"
+                      />
+                      <button onClick={() => { setAttachFile(null); setAttachCaption(''); }} className="text-gray-500 hover:text-red-400">
+                        <X className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={sendAttachment}
+                        disabled={sendingFile}
+                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium flex items-center gap-1"
+                      >
+                        {sendingFile ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                        Send
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
+                    className="hidden"
+                    onChange={e => { if (e.target.files?.[0]) setAttachFile(e.target.files[0]); e.target.value = ''; }}
+                  />
                   <div className="flex items-end gap-2">
                     <button
                       onClick={() => setShowTemplates(!showTemplates)}
@@ -966,6 +1198,13 @@ export default function WhatsApp() {
                       title="Message templates"
                     >
                       <Tag className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2 text-gray-400 hover:text-blue-400 transition-colors"
+                      title="Attach file"
+                    >
+                      <Paperclip className="w-5 h-5" />
                     </button>
                     <button className="p-2 text-gray-400 hover:text-yellow-400 transition-colors">
                       <Smile className="w-5 h-5" />
@@ -1006,6 +1245,7 @@ export default function WhatsApp() {
               </div>
             )}
           </div>
+          </div> {/* end inner flex row */}
         </div>
       )}
 
@@ -1145,6 +1385,37 @@ export default function WhatsApp() {
               <p className="text-green-400 text-xs mt-2">
                 {chats.length} conversations loaded with last messages
               </p>
+            )}
+          </div>
+
+          {/* Browser Notifications */}
+          <div className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
+            notifPermission === 'granted' ? 'bg-green-500/10 border-green-500/30' :
+            notifPermission === 'denied' ? 'bg-red-500/10 border-red-500/30' :
+            'bg-gray-800/40 border-gray-700/50'
+          }`}>
+            <div className="flex items-center gap-3">
+              {notifPermission === 'granted' ? <Bell className="w-5 h-5 text-green-400" /> : <BellOff className="w-5 h-5 text-gray-400" />}
+              <div>
+                <p className="text-white text-sm font-medium">
+                  {notifPermission === 'granted' ? 'Desktop notifications enabled' :
+                   notifPermission === 'denied' ? 'Notifications blocked by browser' :
+                   'Enable desktop notifications'}
+                </p>
+                <p className="text-gray-400 text-xs mt-0.5">
+                  {notifPermission === 'granted' ? 'You will be alerted when new messages arrive in background tabs' :
+                   notifPermission === 'denied' ? 'Allow in browser site settings, then refresh' :
+                   'Get alerted instantly when customers message you'}
+                </p>
+              </div>
+            </div>
+            {notifPermission === 'default' && (
+              <button
+                onClick={requestNotifPermission}
+                className="flex-shrink-0 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Enable
+              </button>
             )}
           </div>
 

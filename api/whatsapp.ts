@@ -490,11 +490,84 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, data });
       }
 
+      case 'avatar': {
+        const chatId = req.query.chatId as string;
+        if (!chatId) return res.status(400).json({ error: 'chatId required' });
+        const r = await fetch(`${BASE_URL}/getAvatar/${API_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatId })
+        });
+        const data = await r.json();
+        return res.json({ success: true, url: data.urlAvatar || null, available: !!data.urlAvatar });
+      }
+
+      case 'readChat': {
+        const { chatId } = req.body;
+        if (!chatId) return res.status(400).json({ error: 'chatId required' });
+        const r = await fetch(`${BASE_URL}/readChat/${API_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatId })
+        });
+        const data = await r.json();
+        return res.json({ success: true, data });
+      }
+
+      case 'archiveChat': {
+        const { chatId } = req.body;
+        if (!chatId) return res.status(400).json({ error: 'chatId required' });
+        const r = await fetch(`${BASE_URL}/archiveChat/${API_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatId })
+        });
+        const data = await r.json();
+        return res.json({ success: true, data });
+      }
+
+      case 'sendFile': {
+        const { chatId, fileBase64, fileName, caption, mimeType } = req.body;
+        if (!chatId || !fileBase64 || !fileName) {
+          return res.status(400).json({ error: 'chatId, fileBase64, fileName required' });
+        }
+        const buffer = Buffer.from(fileBase64, 'base64');
+        const { FormData: NodeFormData, Blob: NodeBlob } = await import('node:buffer') as any;
+        const fd = new (globalThis.FormData || NodeFormData)();
+        fd.append('chatId', chatId);
+        fd.append('caption', caption || '');
+        fd.append('file', new Blob([buffer], { type: mimeType || 'application/octet-stream' }), fileName);
+        const r = await fetch(`${BASE_URL}/sendFileByUpload/${API_TOKEN}`, { method: 'POST', body: fd as any });
+        const data = await r.json();
+        if (!data.idMessage) {
+          return res.json({ success: false, error: data.message || data.error || JSON.stringify(data) });
+        }
+        if (supabase) {
+          await supabase.from('whatsapp_messages').insert({
+            provider: 'greenapi', provider_message_id: data.idMessage, chat_id: chatId,
+            direction: 'outbound', body: caption || `[File: ${fileName}]`,
+            type: 'documentMessage', raw: data, created_at: new Date().toISOString()
+          });
+        }
+        return res.json({ success: true, messageId: data.idMessage });
+      }
+
+      case 'searchMessages': {
+        const q = req.query.q as string;
+        if (!q || q.length < 2) return res.json({ success: true, results: [] });
+        if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
+        const { data: msgs } = await supabase
+          .from('whatsapp_messages').select('*')
+          .ilike('body', `%${q}%`)
+          .order('created_at', { ascending: false }).limit(50);
+        return res.json({ success: true, results: msgs || [] });
+      }
+
       default:
         return res.status(400).json({
           success: false,
           error: 'Unknown action',
-          available: ['status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp']
+          available: ['status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'mediaProxy', 'messageCount']
         });
     }
   } catch (err: any) {
