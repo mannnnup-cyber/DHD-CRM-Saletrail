@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ShoppingCart, CheckCircle, XCircle, RefreshCw, ExternalLink,
   Package, Users, DollarSign, ArrowRight, Key, Globe,
-  ChevronDown, ChevronUp, Copy, Zap, UserPlus, AlertCircle
+  ChevronDown, ChevronUp, Copy, Zap, UserPlus, AlertCircle,
+  Printer, Calendar, Download, Bell
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { supabase } from '../lib/supabase';
 
 interface WCOrder {
   id: string;
@@ -83,9 +85,14 @@ export default function WooCommerce() {
   const [lastSync, setLastSync]               = useState('');
   const [searchOrder, setSearchOrder]         = useState('');
   const [filterStatus, setFilterStatus]       = useState('all');
+  const [dateFrom, setDateFrom]               = useState('');
+  const [dateTo, setDateTo]                   = useState('');
   const [expandedOrder, setExpandedOrder]     = useState<string | null>(null);
   const [importedOrders, setImportedOrders]   = useState<Set<string>>(new Set());
   const [importingOrder, setImportingOrder]   = useState<string | null>(null);
+  const [bulkImporting, setBulkImporting]     = useState(false);
+  const [bulkProgress, setBulkProgress]       = useState({ done: 0, total: 0 });
+  const [copiedOrder, setCopiedOrder]         = useState<string | null>(null);
 
   const [customers, setCustomers]             = useState<WCCustomer[]>([]);
   const [totalCustomers, setTotalCustomers]   = useState(0);
@@ -97,9 +104,23 @@ export default function WooCommerce() {
   const [importingCustomer, setImportingCustomer] = useState<string | null>(null);
   const [searchCustomer, setSearchCustomer]   = useState('');
 
+  const [newOrderToast, setNewOrderToast]     = useState<{ orderNumber: string; customerName: string } | null>(null);
+  const toastTimer                            = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const importedOrdersRef                     = useRef(importedOrders);
+
   const [error, setError]                     = useState('');
 
-  // Check if env vars are configured (no credentials leave the browser)
+  // Keep ref in sync for use inside real-time callback
+  useEffect(() => { importedOrdersRef.current = importedOrders; }, [importedOrders]);
+
+  // Show toast for 6 seconds then auto-dismiss
+  const showToast = (orderNumber: string, customerName: string) => {
+    setNewOrderToast({ orderNumber, customerName });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setNewOrderToast(null), 6000);
+  };
+
+  // Check if env vars are configured
   useEffect(() => {
     fetch('/api/woocommerce?action=configured')
       .then(r => r.json())
@@ -117,6 +138,46 @@ export default function WooCommerce() {
     if (savedImported) setImportedOrders(new Set(JSON.parse(savedImported)));
     const savedImportedC = localStorage.getItem('wc_imported_customers');
     if (savedImportedC) setImportedCustomers(new Set(JSON.parse(savedImportedC)));
+  }, []);
+
+  // Real-time subscription — new orders via webhook → Supabase → frontend
+  useEffect(() => {
+    if (!supabase || typeof supabase.channel !== 'function') return;
+
+    const channel = supabase
+      .channel('wc_orders_realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'woocommerce_orders' }, (payload: any) => {
+        const row = payload.new;
+        showToast(row.order_number, row.customer_name);
+
+        const mapped: WCOrder = {
+          id: `wc_${row.wc_order_id}`,
+          orderId: row.wc_order_id,
+          orderNumber: row.order_number,
+          status: row.status,
+          pipelineStage: row.pipeline_stage || 'New Lead',
+          customerName: row.customer_name || '',
+          customerEmail: row.customer_email || '',
+          customerPhone: row.customer_phone || '',
+          company: row.company || '',
+          address: row.address || '',
+          total: row.total || 0,
+          currency: row.currency || 'JMD',
+          lineItems: (() => { try { return JSON.parse(row.line_items || '[]'); } catch { return []; } })(),
+          dateCreated: row.date_created,
+          paymentMethod: row.payment_method || '',
+          notes: row.customer_note || '',
+        };
+
+        setOrders(prev => {
+          if (prev.find(o => o.id === mapped.id)) return prev;
+          return [mapped, ...prev];
+        });
+        setTotalOrders(prev => prev + 1);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const testConnection = async () => {
@@ -138,11 +199,18 @@ export default function WooCommerce() {
     }
   };
 
+  const buildOrdersUrl = (page: number, from = '', to = '') => {
+    let url = `/api/woocommerce?action=orders&per_page=100&page=${page}`;
+    if (from) url += `&after=${encodeURIComponent(from + 'T00:00:00')}`;
+    if (to)   url += `&before=${encodeURIComponent(to + 'T23:59:59')}`;
+    return url;
+  };
+
   const syncOrders = useCallback(async () => {
     setSyncing(true);
     setError('');
     try {
-      const r = await fetch('/api/woocommerce?action=orders&per_page=100&page=1');
+      const r = await fetch(buildOrdersUrl(1));
       const data = await r.json();
       if (data.success) {
         setOrders(data.orders);
@@ -162,18 +230,44 @@ export default function WooCommerce() {
     setSyncing(false);
   }, []);
 
+  const applyDateFilter = async () => {
+    if (!dateFrom && !dateTo) return syncOrders();
+    setSyncing(true);
+    setError('');
+    try {
+      const r = await fetch(buildOrdersUrl(1, dateFrom, dateTo));
+      const data = await r.json();
+      if (data.success) {
+        setOrders(data.orders);
+        setTotalOrders(data.total || data.orders.length);
+        setTotalPages(data.pages || 1);
+        setCurrentPage(1);
+      } else {
+        setError(data.error || 'Failed to fetch orders');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setSyncing(false);
+  };
+
+  const clearDateFilter = () => {
+    setDateFrom('');
+    setDateTo('');
+    syncOrders();
+  };
+
   const loadMoreOrders = useCallback(async () => {
     if (loadingMore || currentPage >= totalPages) return;
     setLoadingMore(true);
     try {
       const nextPage = currentPage + 1;
-      const r = await fetch(`/api/woocommerce?action=orders&per_page=100&page=${nextPage}`);
+      const r = await fetch(buildOrdersUrl(nextPage, dateFrom, dateTo));
       const data = await r.json();
       if (data.success) {
         setOrders(prev => {
           const existingIds = new Set(prev.map(o => o.id));
-          const newOrders = data.orders.filter((o: WCOrder) => !existingIds.has(o.id));
-          return [...prev, ...newOrders];
+          return [...prev, ...data.orders.filter((o: WCOrder) => !existingIds.has(o.id))];
         });
         setCurrentPage(nextPage);
       } else {
@@ -183,7 +277,7 @@ export default function WooCommerce() {
       setError(e.message);
     }
     setLoadingMore(false);
-  }, [currentPage, totalPages, loadingMore]);
+  }, [currentPage, totalPages, loadingMore, dateFrom, dateTo]);
 
   const syncCustomers = useCallback(async () => {
     setSyncingCustomers(true);
@@ -236,7 +330,7 @@ export default function WooCommerce() {
   }, [configured, syncOrders]);
 
   const importOrderToPipeline = async (order: WCOrder) => {
-    if (importedOrders.has(order.id)) return;
+    if (importedOrdersRef.current.has(order.id)) return;
     setImportingOrder(order.id);
     try {
       await addDeal({
@@ -251,13 +345,29 @@ export default function WooCommerce() {
         ].filter(Boolean).join('\n'),
         source: 'WooCommerce'
       } as any);
-      const next = new Set([...importedOrders, order.id]);
-      setImportedOrders(next);
-      localStorage.setItem('wc_imported_orders', JSON.stringify([...next]));
+      setImportedOrders(prev => {
+        const next = new Set([...prev, order.id]);
+        importedOrdersRef.current = next;
+        localStorage.setItem('wc_imported_orders', JSON.stringify([...next]));
+        return next;
+      });
     } catch (e: any) {
       setError('Import failed: ' + e.message);
     }
     setImportingOrder(null);
+  };
+
+  const bulkImportOrders = async (ordersToImport: WCOrder[]) => {
+    const pending = ordersToImport.filter(o => !importedOrdersRef.current.has(o.id));
+    if (!pending.length) return;
+    setBulkImporting(true);
+    setBulkProgress({ done: 0, total: pending.length });
+    for (const order of pending) {
+      await importOrderToPipeline(order);
+      setBulkProgress(p => ({ ...p, done: p.done + 1 }));
+    }
+    setBulkImporting(false);
+    setBulkProgress({ done: 0, total: 0 });
   };
 
   const importCustomerAsLead = async (c: WCCustomer) => {
@@ -282,12 +392,87 @@ export default function WooCommerce() {
     setImportingCustomer(null);
   };
 
+  const copyOrderDetails = (order: WCOrder) => {
+    const text = [
+      `Order #${order.orderNumber} — ${formatDate(order.dateCreated)}`,
+      `Status: ${order.status}`,
+      `Customer: ${order.customerName}`,
+      order.customerEmail && `Email: ${order.customerEmail}`,
+      order.customerPhone && `Phone: ${order.customerPhone}`,
+      order.company && `Company: ${order.company}`,
+      order.address && `Address: ${order.address}`,
+      order.paymentMethod && `Payment: ${order.paymentMethod}`,
+      '',
+      'Items:',
+      ...order.lineItems.map(i => `  ${i.name} × ${i.quantity}  —  ${formatCurrency(i.total, order.currency)}`),
+      '',
+      `Total: ${formatCurrency(order.total, order.currency)}`,
+      order.notes && `Customer Note: ${order.notes}`,
+    ].filter(Boolean).join('\n');
+    navigator.clipboard.writeText(text);
+    setCopiedOrder(order.id);
+    setTimeout(() => setCopiedOrder(null), 2000);
+  };
+
+  const printOrder = (order: WCOrder) => {
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(`<!DOCTYPE html><html><head><title>Order #${order.orderNumber}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: auto; color: #111; }
+        h2 { margin-bottom: 4px; font-size: 1.4em; }
+        .meta { color: #555; font-size: 0.9em; margin-bottom: 20px; }
+        .section { margin: 16px 0; }
+        .label { font-weight: bold; font-size: 0.85em; color: #444; text-transform: uppercase; letter-spacing: 0.05em; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+        th { text-align: left; padding: 8px; background: #f5f5f5; font-size: 0.85em; }
+        td { padding: 8px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+        .total-row { font-weight: bold; font-size: 1.1em; border-top: 2px solid #333; }
+        .note { background: #fffbea; padding: 10px; border-left: 3px solid #f0c040; margin-top: 12px; font-size: 0.9em; }
+        @media print { body { padding: 20px; } }
+      </style>
+    </head><body>
+      <h2>Order #${order.orderNumber}</h2>
+      <div class="meta">${formatDate(order.dateCreated)} &bull; Status: ${order.status} &bull; ${order.paymentMethod || ''}</div>
+
+      <div class="section">
+        <div class="label">Customer</div>
+        <p style="margin:4px 0">${order.customerName}</p>
+        ${order.customerEmail ? `<p style="margin:4px 0">${order.customerEmail}</p>` : ''}
+        ${order.customerPhone ? `<p style="margin:4px 0">${order.customerPhone}</p>` : ''}
+        ${order.company ? `<p style="margin:4px 0">${order.company}</p>` : ''}
+        ${order.address ? `<p style="margin:4px 0">${order.address}</p>` : ''}
+      </div>
+
+      <table>
+        <tr><th>Item</th><th>Qty</th><th style="text-align:right">Total</th></tr>
+        ${order.lineItems.map(i => `
+          <tr>
+            <td>${i.name}</td>
+            <td>${i.quantity}</td>
+            <td style="text-align:right">${formatCurrency(i.total, order.currency)}</td>
+          </tr>`).join('')}
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td style="text-align:right">${formatCurrency(order.total, order.currency)}</td>
+        </tr>
+      </table>
+
+      ${order.notes ? `<div class="note"><strong>Customer Note:</strong> ${order.notes}</div>` : ''}
+      <script>window.onload = function() { window.print(); }</script>
+    </body></html>`);
+    w.document.close();
+  };
+
   const filteredOrders = orders.filter(o => {
     const q = searchOrder.toLowerCase();
     const matchSearch = !q || o.customerName.toLowerCase().includes(q) ||
       o.orderNumber.includes(q) || o.customerEmail.toLowerCase().includes(q);
     const matchStatus = filterStatus === 'all' || o.status === filterStatus;
-    return matchSearch && matchStatus;
+    const orderDate = o.dateCreated ? new Date(o.dateCreated) : null;
+    const matchFrom = !dateFrom || !orderDate || orderDate >= new Date(dateFrom);
+    const matchTo   = !dateTo   || !orderDate || orderDate <= new Date(dateTo + 'T23:59:59');
+    return matchSearch && matchStatus && matchFrom && matchTo;
   });
 
   const filteredCustomers = customers.filter(c => {
@@ -295,6 +480,8 @@ export default function WooCommerce() {
     return !q || c.name.toLowerCase().includes(q) ||
       c.email.toLowerCase().includes(q) || c.phone.includes(q);
   });
+
+  const unimportedCount = filteredOrders.filter(o => !importedOrders.has(o.id)).length;
 
   const stats = {
     total: totalOrders || orders.length,
@@ -306,6 +493,21 @@ export default function WooCommerce() {
 
   return (
     <div className="space-y-6">
+
+      {/* New order toast */}
+      {newOrderToast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-3 p-4 bg-green-600 text-white rounded-xl shadow-2xl border border-green-500">
+          <Bell className="w-5 h-5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-sm">New Order #{newOrderToast.orderNumber}</p>
+            <p className="text-green-200 text-xs">{newOrderToast.customerName}</p>
+          </div>
+          <button onClick={() => setNewOrderToast(null)} className="ml-2 text-green-200 hover:text-white">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -394,10 +596,10 @@ export default function WooCommerce() {
       {orders.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
-            { label: 'Total Orders',  value: stats.total,                       icon: Package,       color: 'text-purple-400' },
-            { label: 'Processing',    value: stats.processing,                  icon: RefreshCw,     color: 'text-yellow-400' },
-            { label: 'Completed',     value: stats.completed,                   icon: CheckCircle,   color: 'text-green-400'  },
-            { label: 'Revenue',       value: formatCurrency(stats.revenue),     icon: DollarSign,    color: 'text-amber-400'  },
+            { label: 'Total Orders',  value: stats.total,                         icon: Package,     color: 'text-purple-400' },
+            { label: 'Processing',    value: stats.processing,                    icon: RefreshCw,   color: 'text-yellow-400' },
+            { label: 'Completed',     value: stats.completed,                     icon: CheckCircle, color: 'text-green-400'  },
+            { label: 'Revenue',       value: formatCurrency(stats.revenue),       icon: DollarSign,  color: 'text-amber-400'  },
             { label: 'Customers',     value: stats.customers || customers.length, icon: Users,       color: 'text-blue-400'   },
           ].map((s, i) => (
             <div key={i} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
@@ -414,8 +616,8 @@ export default function WooCommerce() {
       {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-700/50">
         {[
-          { id: 'orders',    label: `Orders${orders.length ? ` (${orders.length})` : ''}` },
-          { id: 'customers', label: `Customers${customers.length ? ` (${customers.length})` : ''}` },
+          { id: 'orders',    label: `Orders${totalOrders ? ` (${totalOrders})` : orders.length ? ` (${orders.length})` : ''}` },
+          { id: 'customers', label: `Customers${totalCustomers ? ` (${totalCustomers})` : customers.length ? ` (${customers.length})` : ''}` },
           { id: 'mapping',   label: 'Stage Mapping' },
           { id: 'setup',     label: 'Setup Guide' },
         ].map(tab => (
@@ -454,13 +656,14 @@ export default function WooCommerce() {
             </div>
           ) : (
             <>
-              <div className="flex gap-3">
+              {/* Search + Status filter */}
+              <div className="flex gap-3 flex-wrap">
                 <input
                   type="text"
                   value={searchOrder}
                   onChange={e => setSearchOrder(e.target.value)}
                   placeholder="Search by name, order #, email..."
-                  className="flex-1 bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                  className="flex-1 min-w-48 bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
                 />
                 <select
                   value={filterStatus}
@@ -476,11 +679,66 @@ export default function WooCommerce() {
                 </select>
               </div>
 
-              {totalOrders > orders.length && (
-                <p className="text-gray-500 text-xs text-right">
-                  Showing {orders.length} of {totalOrders} orders
+              {/* Date range filter */}
+              <div className="flex gap-3 flex-wrap items-center p-3 bg-gray-800/30 border border-gray-700/40 rounded-lg">
+                <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                <span className="text-gray-400 text-xs">Date range:</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-purple-500"
+                />
+                <span className="text-gray-500 text-xs">to</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  onClick={applyDateFilter}
+                  disabled={syncing}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                >
+                  Apply
+                </button>
+                {(dateFrom || dateTo) && (
+                  <button
+                    onClick={clearDateFilter}
+                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Bulk import bar */}
+              <div className="flex items-center justify-between">
+                <p className="text-gray-500 text-xs">
+                  {filteredOrders.length} orders shown
+                  {totalOrders > orders.length && ` · ${totalOrders} total in WooCommerce`}
                 </p>
-              )}
+                {unimportedCount > 0 && (
+                  <button
+                    onClick={() => bulkImportOrders(filteredOrders)}
+                    disabled={bulkImporting}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {bulkImporting ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        Importing {bulkProgress.done}/{bulkProgress.total}...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3 h-3" />
+                        Import All ({unimportedCount} pending)
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
 
               <div className="space-y-3">
                 {filteredOrders.map(order => (
@@ -516,7 +774,7 @@ export default function WooCommerce() {
                         ) : (
                           <button
                             onClick={() => importOrderToPipeline(order)}
-                            disabled={importingOrder === order.id}
+                            disabled={importingOrder === order.id || bulkImporting}
                             className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                           >
                             {importingOrder === order.id
@@ -568,6 +826,23 @@ export default function WooCommerce() {
                             <p className="text-gray-300 text-sm">{order.notes}</p>
                           </div>
                         )}
+                        {/* Copy + Print */}
+                        <div className="flex justify-end gap-2 pt-1 border-t border-gray-700/40">
+                          <button
+                            onClick={() => copyOrderDetails(order)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium transition-colors"
+                          >
+                            <Copy className="w-3 h-3" />
+                            {copiedOrder === order.id ? 'Copied!' : 'Copy Details'}
+                          </button>
+                          <button
+                            onClick={() => printOrder(order)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium transition-colors"
+                          >
+                            <Printer className="w-3 h-3" />
+                            Print
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -624,46 +899,46 @@ export default function WooCommerce() {
                   Showing {customers.length} of {totalCustomers} customers
                 </p>
               )}
-            <div className="space-y-3">
-              {filteredCustomers.map(c => (
-                <div key={c.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                      {c.name.charAt(0).toUpperCase()}
+              <div className="space-y-3">
+                {filteredCustomers.map(c => (
+                  <div key={c.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {c.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium text-sm truncate">{c.name}</p>
+                        <p className="text-gray-400 text-xs truncate">{c.email}</p>
+                      </div>
+                      <div className="hidden md:block text-center">
+                        <p className="text-white text-sm font-medium">{c.ordersCount}</p>
+                        <p className="text-gray-500 text-xs">orders</p>
+                      </div>
+                      <div className="hidden md:block text-center">
+                        <p className="text-amber-400 text-sm font-bold">{formatCurrency(c.totalSpent)}</p>
+                        <p className="text-gray-500 text-xs">total spent</p>
+                      </div>
+                      {c.phone && <p className="hidden lg:block text-gray-400 text-xs">{c.phone}</p>}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-medium text-sm truncate">{c.name}</p>
-                      <p className="text-gray-400 text-xs truncate">{c.email}</p>
-                    </div>
-                    <div className="hidden md:block text-center">
-                      <p className="text-white text-sm font-medium">{c.ordersCount}</p>
-                      <p className="text-gray-500 text-xs">orders</p>
-                    </div>
-                    <div className="hidden md:block text-center">
-                      <p className="text-amber-400 text-sm font-bold">{formatCurrency(c.totalSpent)}</p>
-                      <p className="text-gray-500 text-xs">total spent</p>
-                    </div>
-                    {c.phone && <p className="hidden lg:block text-gray-400 text-xs">{c.phone}</p>}
+                    {importedCustomers.has(c.id) ? (
+                      <span className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-xs font-medium flex-shrink-0">
+                        <CheckCircle className="w-3 h-3" /> In CRM
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => importCustomerAsLead(c)}
+                        disabled={importingCustomer === c.id}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
+                      >
+                        {importingCustomer === c.id
+                          ? <RefreshCw className="w-3 h-3 animate-spin" />
+                          : <UserPlus className="w-3 h-3" />}
+                        Add as Lead
+                      </button>
+                    )}
                   </div>
-                  {importedCustomers.has(c.id) ? (
-                    <span className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-xs font-medium flex-shrink-0">
-                      <CheckCircle className="w-3 h-3" /> In CRM
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => importCustomerAsLead(c)}
-                      disabled={importingCustomer === c.id}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
-                    >
-                      {importingCustomer === c.id
-                        ? <RefreshCw className="w-3 h-3 animate-spin" />
-                        : <UserPlus className="w-3 h-3" />}
-                      Add as Lead
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
 
               {customerPage < customerPages && (
                 <div className="flex justify-center pt-2">

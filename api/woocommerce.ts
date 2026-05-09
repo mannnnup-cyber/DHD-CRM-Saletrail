@@ -61,8 +61,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const page = Number(req.query.page) || 1;
         const perPage = Number(req.query.per_page) || 50;
         const status = String(req.query.status || 'any');
+        const after  = req.query.after  ? `&after=${encodeURIComponent(String(req.query.after))}`   : '';
+        const before = req.query.before ? `&before=${encodeURIComponent(String(req.query.before))}` : '';
         const r = await fetch(
-          `${WC_API_BASE}/wp-json/wc/v3/orders?page=${page}&per_page=${perPage}&status=${encodeURIComponent(status)}&orderby=date&order=desc`,
+          `${WC_API_BASE}/wp-json/wc/v3/orders?page=${page}&per_page=${perPage}&status=${encodeURIComponent(status)}&orderby=date&order=desc${after}${before}`,
           { headers: wcHeaders() }
         );
         if (!r.ok) return res.status(r.status).json({ success: false, error: `Failed to fetch orders: ${r.status}` });
