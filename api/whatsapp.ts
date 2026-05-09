@@ -252,7 +252,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const historyRes = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chatId, count: 30 })
+              body: JSON.stringify({ chatId, count: 100 })
             });
             const history = await historyRes.json();
 
@@ -273,14 +273,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
               chatMessages[chatId] = history.map((msg: any) => ({
                 id: msg.idMessage || msg.id || Math.random().toString(),
-                text: msg.textMessage || msg.text || msg.caption || 'Media message',
+                text: msg.textMessage || msg.text || msg.caption || '',
                 timestamp: msg.timestamp
                   ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                   : '',
                 fromMe: msg.fromMe === true || msg.type === 'outgoing',
                 status: 'read',
-                type: msg.typeMessage || msg.type || 'text'
+                type: msg.typeMessage || msg.type || 'text',
+                mediaUrl: msg.imageMessage?.downloadUrl || msg.videoMessage?.downloadUrl ||
+                          msg.audioMessage?.downloadUrl || msg.documentMessage?.downloadUrl || undefined
               })).reverse();
+
+              // Persist to DB so future loads skip Green API entirely
+              if (supabase) {
+                const toInsert = history
+                  .filter((msg: any) => msg.idMessage)
+                  .map((msg: any) => ({
+                    provider: 'greenapi',
+                    provider_message_id: msg.idMessage,
+                    chat_id: chatId,
+                    sender_name: msg.fromMe ? '' : (chat.name || chat.pushname || ''),
+                    direction: (msg.fromMe === true || msg.type === 'outgoing') ? 'outbound' : 'inbound',
+                    body: msg.textMessage || msg.caption || '',
+                    type: msg.typeMessage || 'textMessage',
+                    raw: msg,
+                    created_at: msg.timestamp ? new Date(msg.timestamp * 1000).toISOString() : new Date().toISOString()
+                  }));
+                if (toInsert.length > 0) {
+                  await supabase.from('whatsapp_messages').upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
+                }
+              }
             } else {
               chatsWithHistory.push({
                 id: chatId,
@@ -327,19 +349,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (supabase !== null && chatId) {
           try {
             const { data: msgs } = await supabase.from('whatsapp_messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true }).limit(1000);
-            const formatted = (msgs || []).map((m: any) => ({
-              id: m.provider_message_id || m.id,
-              text: m.body || '',
-              timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
-              fromMe: m.direction === 'outbound',
-              status: 'read',
-              type: m.type || 'text',
-              raw: m.raw || null
-            }));
-            return res.json({ success: true, messages: formatted, source: 'db' });
+            if (msgs && msgs.length > 0) {
+              const formatted = msgs.map((m: any) => {
+                const msgData = (m.raw || {}).messageData || {};
+                const mediaUrl =
+                  msgData.imageMessageData?.downloadUrl ||
+                  msgData.videoMessageData?.downloadUrl ||
+                  msgData.audioMessageData?.downloadUrl ||
+                  msgData.documentMessageData?.downloadUrl || null;
+                return {
+                  id: m.provider_message_id || m.id,
+                  text: m.body || '',
+                  timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
+                  fromMe: m.direction === 'outbound',
+                  status: 'read',
+                  type: m.type || 'text',
+                  mediaUrl
+                };
+              });
+              return res.json({ success: true, messages: formatted, source: 'db' });
+            }
           } catch (err) {
             console.error('messagesFromDb error', err);
-            // fallback to provider
           }
         }
 
@@ -351,6 +382,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         const data = await r.json();
         return res.json({ success: true, messages: data, source: 'provider' });
+      }
+
+      case 'messageCount': {
+        if (supabase === null) return res.json({ success: true, count: 0 });
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const { count } = await supabase
+          .from('whatsapp_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('direction', 'outbound')
+          .gte('created_at', startOfMonth.toISOString());
+        return res.json({ success: true, count: count || 0 });
+      }
+
+      case 'mediaProxy': {
+        const mediaUrl = req.query.url as string;
+        if (!mediaUrl) return res.status(400).json({ error: 'url required' });
+        let parsed: URL;
+        try { parsed = new URL(mediaUrl); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
+        if (parsed.protocol !== 'https:') return res.status(400).json({ error: 'HTTPS only' });
+        const mr = await fetch(mediaUrl);
+        const ct = mr.headers.get('content-type') || 'application/octet-stream';
+        res.setHeader('Content-Type', ct);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        const buf = await mr.arrayBuffer();
+        return res.send(Buffer.from(buf));
       }
 
       case 'send': {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
@@ -56,6 +56,7 @@ interface Message {
   fromMe: boolean;
   status: 'sent' | 'delivered' | 'read';
   type: string;
+  mediaUrl?: string;
 }
 
 interface DBTestResult {
@@ -93,6 +94,8 @@ export default function WhatsApp() {
   const [enablingHistory, setEnablingHistory] = useState(false);
   const [syncingHistory, setSyncingHistory] = useState(false);
   const [historyLastSynced, setHistoryLastSynced] = useState<Date | null>(null);
+  const [messageCount, setMessageCount] = useState<number | null>(null);
+  const [loadingCount, setLoadingCount] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageCountRef = useRef<number>(0);
   const chatMessagesCache = useRef<Record<string, Message[]>>({});
@@ -204,7 +207,6 @@ export default function WhatsApp() {
   const loadMessages = useCallback(async (chatId: string) => {
     setLoading(true);
     try {
-      // First check if we have cached messages from syncHistory
       if (chatMessagesCache.current[chatId]) {
         setMessages(chatMessagesCache.current[chatId]);
         lastMessageCountRef.current = chatMessagesCache.current[chatId].length;
@@ -213,26 +215,55 @@ export default function WhatsApp() {
         return;
       }
 
-      // Otherwise fetch from API
       const r = await fetch(`/api/whatsapp?action=messages&chatId=${encodeURIComponent(chatId)}`);
       const data = await r.json();
 
       if (data.success && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
-        const formatted: Message[] = data.messages.map((msg: any) => ({
-          id: msg.idMessage || msg.id || Math.random().toString(),
-          text: msg.textMessage || msg.text || msg.caption || 'Media message',
-          timestamp: msg.timestamp
-            ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : '',
-          fromMe: msg.type === 'outgoing' || msg.type === 'outgoing' || msg.fromMe === true,
-          status: 'read' as const,
-          type: msg.typeMessage || msg.type || 'text'
-        }));
-        setMessages(formatted.reverse());
-        lastMessageCountRef.current = formatted.length;
+        let formatted: Message[];
 
-        // Cache the messages
-        chatMessagesCache.current[chatId] = formatted.reverse();
+        if (data.source === 'db') {
+          // API already normalized these — timestamps are Unix ints, mediaUrl extracted
+          formatted = data.messages.map((msg: any) => ({
+            id: msg.id,
+            text: msg.text || '',
+            timestamp: msg.timestamp
+              ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : '',
+            fromMe: msg.fromMe,
+            status: 'read' as const,
+            type: msg.type || 'text',
+            mediaUrl: msg.mediaUrl || undefined
+          }));
+        } else {
+          // Raw Green API getChatHistory format — newest first, needs reverse
+          formatted = data.messages.map((msg: any) => {
+            const mediaUrl =
+              msg.imageMessage?.downloadUrl ||
+              msg.videoMessage?.downloadUrl ||
+              msg.audioMessage?.downloadUrl ||
+              msg.documentMessage?.downloadUrl || undefined;
+            const text =
+              msg.textMessage || msg.text ||
+              msg.imageMessage?.caption ||
+              msg.videoMessage?.caption ||
+              msg.documentMessage?.fileName || '';
+            return {
+              id: msg.idMessage || msg.id || Math.random().toString(),
+              text,
+              timestamp: msg.timestamp
+                ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '',
+              fromMe: msg.type === 'outgoing' || msg.fromMe === true,
+              status: 'read' as const,
+              type: msg.typeMessage || msg.type || 'text',
+              mediaUrl
+            };
+          }).reverse();
+        }
+
+        setMessages(formatted);
+        lastMessageCountRef.current = formatted.length;
+        chatMessagesCache.current[chatId] = formatted;
       } else {
         setMessages([]);
       }
@@ -536,6 +567,16 @@ export default function WhatsApp() {
   useEffect(() => {
     if (selectedChat) loadMessages(selectedChat.id);
   }, [selectedChat, loadMessages]);
+
+  useEffect(() => {
+    if (activeTab !== 'setup') return;
+    setLoadingCount(true);
+    fetch('/api/whatsapp?action=messageCount')
+      .then(r => r.json())
+      .then(d => { if (d.success) setMessageCount(d.count); })
+      .catch(() => {})
+      .finally(() => setLoadingCount(false));
+  }, [activeTab]);
 
   const filteredChats = chats.filter(c => {
     if (!searchQuery) return true;
@@ -849,7 +890,41 @@ export default function WhatsApp() {
                             ? 'bg-green-600 text-white rounded-br-sm'
                             : 'bg-gray-700 text-gray-100 rounded-bl-sm'
                         }`}>
-                          <p className="text-sm leading-relaxed">{msg.text}</p>
+                          {/* Inline image */}
+                          {msg.mediaUrl && msg.type === 'imageMessage' && (
+                            <img
+                              src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`}
+                              alt="Image"
+                              className="max-w-full rounded-lg mb-1 cursor-pointer"
+                              onClick={() => window.open(`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl!)}`, '_blank')}
+                            />
+                          )}
+                          {/* Audio player */}
+                          {msg.mediaUrl && msg.type === 'audioMessage' && (
+                            <div className="flex items-center gap-2 mb-1">
+                              <Volume2 className="w-4 h-4 flex-shrink-0 opacity-70" />
+                              <audio controls className="w-48 h-8" src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`} />
+                            </div>
+                          )}
+                          {/* Document / video download */}
+                          {msg.mediaUrl && (msg.type === 'documentMessage' || msg.type === 'videoMessage') && (
+                            <a
+                              href={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`}
+                              download
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 mb-1 underline opacity-80 hover:opacity-100 text-xs"
+                            >
+                              {msg.type === 'videoMessage' ? <Download className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                              {msg.type === 'videoMessage' ? 'Download video' : 'Download document'}
+                            </a>
+                          )}
+                          {/* Text / caption */}
+                          {msg.text ? (
+                            <p className="text-sm leading-relaxed">{msg.text}</p>
+                          ) : !msg.mediaUrl ? (
+                            <p className="text-sm leading-relaxed italic opacity-60">Media message</p>
+                          ) : null}
                           <div className={`flex items-center gap-1 mt-1 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
                             <span className="text-[10px] opacity-70">{msg.timestamp}</span>
                             {msg.fromMe && (
@@ -1070,6 +1145,43 @@ export default function WhatsApp() {
               <p className="text-green-400 text-xs mt-2">
                 {chats.length} conversations loaded with last messages
               </p>
+            )}
+          </div>
+
+          {/* Monthly Message Counter */}
+          <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-5">
+            <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-green-400" />
+              Monthly Outbound Usage
+              <span className="text-xs text-gray-500 font-normal ml-1">(Free tier: 500/month)</span>
+            </h3>
+            {loadingCount ? (
+              <div className="flex items-center gap-2 text-gray-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" /> Checking...
+              </div>
+            ) : messageCount !== null ? (
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-400">Messages sent this month</span>
+                  <span className={`font-bold ${messageCount >= 450 ? 'text-red-400' : messageCount >= 350 ? 'text-amber-400' : 'text-green-400'}`}>
+                    {messageCount} / 500
+                  </span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${messageCount >= 450 ? 'bg-red-500' : messageCount >= 350 ? 'bg-amber-500' : 'bg-green-500'}`}
+                    style={{ width: `${Math.min((messageCount / 500) * 100, 100)}%` }}
+                  />
+                </div>
+                {messageCount >= 450 && (
+                  <p className="text-red-400 text-xs mt-2">Approaching free tier limit — upgrade your Green API plan to avoid disruption.</p>
+                )}
+                {messageCount >= 350 && messageCount < 450 && (
+                  <p className="text-amber-400 text-xs mt-2">Past 70% usage. Monitor closely or upgrade before month end.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">Connect Supabase to track message usage.</p>
             )}
           </div>
 
