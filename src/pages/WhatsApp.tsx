@@ -6,6 +6,19 @@ import { useApp } from '../context/AppContext';
 // Frontend calls /api/whatsapp which proxies to Green API
 // This avoids CORS issues and keeps credentials secure
 
+const formatChatTimestamp = (rawTimestamp: number): string => {
+  if (!rawTimestamp) return '';
+  const date = new Date(rawTimestamp * 1000);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+  if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isYesterday) return 'Yesterday';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
 const TEAM_MEMBERS = [
   { id: 'all', name: 'Unassigned' },
   { id: 'keisha', name: 'Keisha' },
@@ -28,6 +41,7 @@ interface Chat {
   name: string;
   lastMessage: string;
   timestamp: string;
+  rawTimestamp: number;
   unread: number;
   assignedTo: string;
   phone: string;
@@ -180,7 +194,8 @@ export default function WhatsApp() {
             id: chat.id || '',
             name: chat.name || chat.phone || 'Unknown',
             lastMessage: chat.lastMessage || '',
-            timestamp: chat.timestamp || '',
+            timestamp: chat.rawTimestamp ? formatChatTimestamp(chat.rawTimestamp) : (chat.timestamp || ''),
+            rawTimestamp: chat.rawTimestamp || 0,
             unread: chat.unread || 0,
             assignedTo: 'Unassigned',
             phone: chat.phone || chat.id?.split('@')[0] || '',
@@ -396,7 +411,8 @@ export default function WhatsApp() {
           id: chat.id || '',
           name: chat.name || chat.phone || 'Unknown',
           lastMessage: chat.lastMessage || '',
-          timestamp: chat.timestamp || '',
+          timestamp: chat.rawTimestamp ? formatChatTimestamp(chat.rawTimestamp) : (chat.timestamp || ''),
+          rawTimestamp: chat.rawTimestamp || 0,
           unread: chat.unread || 0,
           assignedTo: 'Unassigned',
           phone: chat.phone || chat.id?.split('@')[0] || '',
