@@ -1,61 +1,56 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { logger } from '../src/lib/logger';
 
+// Credentials come from env vars only — never from query params
 const WC_API_BASE = process.env.WC_STORE_URL || '';
 const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || '';
 const WC_CONSUMER_SECRET = process.env.WC_CONSUMER_SECRET || '';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  const { action, storeUrl, consumerKey, consumerSecret } = req.query;
-
-  // Use env vars or passed params
-  const baseUrl = (storeUrl as string) || WC_API_BASE;
-  const ck = (consumerKey as string) || WC_CONSUMER_KEY;
-  const cs = (consumerSecret as string) || WC_CONSUMER_SECRET;
-
-  if (!baseUrl || !ck || !cs) {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing WooCommerce credentials. Please configure store URL, consumer key and secret.'
-    });
-  }
-
-  // Build auth header
-  const credentials = Buffer.from(`${ck}:${cs}`).toString('base64');
-  const headers = {
+function wcHeaders() {
+  const credentials = Buffer.from(`${WC_CONSUMER_KEY}:${WC_CONSUMER_SECRET}`).toString('base64');
+  return {
     'Authorization': `Basic ${credentials}`,
     'Content-Type': 'application/json'
   };
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Return config status so frontend knows if env vars are set
+  if (req.query.action === 'configured') {
+    return res.json({
+      success: true,
+      configured: !!(WC_API_BASE && WC_CONSUMER_KEY && WC_CONSUMER_SECRET),
+      storeUrl: WC_API_BASE || null
+    });
+  }
+
+  if (!WC_API_BASE || !WC_CONSUMER_KEY || !WC_CONSUMER_SECRET) {
+    return res.status(400).json({
+      success: false,
+      error: 'WooCommerce credentials not configured. Add WC_STORE_URL, WC_CONSUMER_KEY, WC_CONSUMER_SECRET to Vercel environment variables.'
+    });
+  }
+
+  const action = req.query.action as string;
 
   try {
     switch (action) {
+
       case 'test': {
-        // Test connection by fetching store info
-        const response = await fetch(`${baseUrl}/wp-json/wc/v3/system_status`, { headers });
-        if (!response.ok) {
-          const error = await response.text();
-          return res.status(response.status).json({
-            success: false,
-            error: `WooCommerce API error: ${response.status} ${response.statusText}`,
-            details: error
-          });
+        const r = await fetch(`${WC_API_BASE}/wp-json/wc/v3/system_status`, { headers: wcHeaders() });
+        if (!r.ok) {
+          return res.status(r.status).json({ success: false, error: `WooCommerce API error: ${r.status} ${r.statusText}` });
         }
-        const data = await response.json();
-        return res.status(200).json({
+        const data = await r.json();
+        return res.json({
           success: true,
-          message: 'Connection successful!',
           store: {
             name: data.settings?.general?.blogname || 'Dirty Hand Designs',
-            url: baseUrl,
+            url: WC_API_BASE,
             version: data.environment?.version || 'Unknown',
             currency: data.settings?.currency?.value || 'JMD'
           }
@@ -63,122 +58,87 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'orders': {
-        // Fetch orders with pagination (coerce query params)
         const page = Number(req.query.page) || 1;
         const perPage = Number(req.query.per_page) || 50;
         const status = String(req.query.status || 'any');
+        const r = await fetch(
+          `${WC_API_BASE}/wp-json/wc/v3/orders?page=${page}&per_page=${perPage}&status=${encodeURIComponent(status)}&orderby=date&order=desc`,
+          { headers: wcHeaders() }
+        );
+        if (!r.ok) return res.status(r.status).json({ success: false, error: `Failed to fetch orders: ${r.status}` });
 
-        const url = `${baseUrl}/wp-json/wc/v3/orders?page=${page}&per_page=${perPage}&status=${encodeURIComponent(status)}&orderby=date&order=desc`;
-        const response = await fetch(url, { headers });
-        
-        if (!response.ok) {
-          return res.status(response.status).json({
-            success: false,
-            error: `Failed to fetch orders: ${response.status} ${response.statusText}`
-          });
-        }
-        
-        const orders = await response.json();
-  const totalOrders = parseInt(response.headers.get('X-WP-Total') || '0', 10);
-  const totalPages = parseInt(response.headers.get('X-WP-TotalPages') || '1', 10);
+        const orders = await r.json();
+        const totalOrders = parseInt(r.headers.get('X-WP-Total') || '0', 10);
+        const totalPages = parseInt(r.headers.get('X-WP-TotalPages') || '1', 10);
 
-        // Map WooCommerce orders to CRM pipeline stages
         const stageMap: Record<string, string> = {
-          'pending': 'New Lead',
-          'processing': 'Quote Sent',
-          'on-hold': 'Consultation',
-          'completed': 'Delivered',
-          'cancelled': 'Lost',
-          'refunded': 'Lost',
-          'failed': 'Lost'
+          pending: 'New Lead', processing: 'Quote Sent', 'on-hold': 'Consultation',
+          completed: 'Delivered', cancelled: 'Lost', refunded: 'Lost', failed: 'Lost'
         };
 
-        const mappedOrders = orders.map((order: any) => ({
-          id: `wc_${order.id}`,
-          orderId: order.id,
-          orderNumber: order.number || order.id,
-          status: order.status,
-          pipelineStage: stageMap[order.status] || 'New Lead',
-          customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
-          customerEmail: order.billing?.email || '',
-          customerPhone: order.billing?.phone || '',
-          company: order.billing?.company || '',
-          address: `${order.billing?.address_1 || ''} ${order.billing?.city || ''}, ${order.billing?.state || ''}`.trim(),
-          total: parseFloat(order.total || '0'),
-          currency: order.currency || 'JMD',
-          lineItems: order.line_items?.map((item: any) => ({
-            name: item.name,
-            quantity: item.quantity,
-            price: parseFloat(item.price || '0'),
-            total: parseFloat(item.total || '0')
-          })) || [],
-          dateCreated: order.date_created,
-          dateModified: order.date_modified,
-          paymentMethod: order.payment_method_title || '',
-          notes: order.customer_note || ''
+        const mapped = orders.map((o: any) => ({
+          id: `wc_${o.id}`,
+          orderId: o.id,
+          orderNumber: o.number || o.id,
+          status: o.status,
+          pipelineStage: stageMap[o.status] || 'New Lead',
+          customerName: `${o.billing?.first_name || ''} ${o.billing?.last_name || ''}`.trim(),
+          customerEmail: o.billing?.email || '',
+          customerPhone: o.billing?.phone || '',
+          company: o.billing?.company || '',
+          address: `${o.billing?.address_1 || ''} ${o.billing?.city || ''}, ${o.billing?.state || ''}`.trim(),
+          total: parseFloat(o.total || '0'),
+          currency: o.currency || 'JMD',
+          lineItems: (o.line_items || []).map((item: any) => ({
+            name: item.name, quantity: item.quantity,
+            price: parseFloat(item.price || '0'), total: parseFloat(item.total || '0')
+          })),
+          dateCreated: o.date_created,
+          dateModified: o.date_modified,
+          paymentMethod: o.payment_method_title || '',
+          notes: o.customer_note || ''
         }));
 
-        return res.status(200).json({
-          success: true,
-          total: totalOrders,
-          pages: totalPages,
-          orders: mappedOrders
-        });
+        return res.json({ success: true, total: totalOrders, pages: totalPages, orders: mapped });
       }
 
       case 'customers': {
-        const page = req.query.page || 1;
-        const perPage = req.query.per_page || 50;
-        
-        const url = `${baseUrl}/wp-json/wc/v3/customers?page=${page}&per_page=${perPage}&orderby=registered&order=desc`;
-        const response = await fetch(url, { headers });
-        
-        if (!response.ok) {
-          return res.status(response.status).json({
-            success: false,
-            error: `Failed to fetch customers: ${response.status}`
-          });
-        }
-        
-        const customers = await response.json();
-        
-        const mappedCustomers = customers.map((customer: any) => ({
-          id: `wc_customer_${customer.id}`,
-          name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
-          email: customer.email || '',
-          phone: customer.billing?.phone || '',
-          company: customer.billing?.company || '',
-          address: `${customer.billing?.address_1 || ''} ${customer.billing?.city || ''}`.trim(),
-          totalSpent: parseFloat(customer.total_spent || '0'),
-          ordersCount: customer.orders_count || 0,
-          dateRegistered: customer.date_created,
-          avatarUrl: customer.avatar_url || ''
+        const page = Number(req.query.page) || 1;
+        const perPage = Number(req.query.per_page) || 50;
+        const r = await fetch(
+          `${WC_API_BASE}/wp-json/wc/v3/customers?page=${page}&per_page=${perPage}&orderby=registered&order=desc`,
+          { headers: wcHeaders() }
+        );
+        if (!r.ok) return res.status(r.status).json({ success: false, error: `Failed to fetch customers: ${r.status}` });
+
+        const customers = await r.json();
+        const totalCustomers = parseInt(r.headers.get('X-WP-Total') || '0', 10);
+
+        const mapped = customers.map((c: any) => ({
+          id: `wc_customer_${c.id}`,
+          wcId: c.id,
+          name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.username || 'Unknown',
+          email: c.email || '',
+          phone: c.billing?.phone || '',
+          company: c.billing?.company || '',
+          address: `${c.billing?.address_1 || ''} ${c.billing?.city || ''}`.trim(),
+          totalSpent: parseFloat(c.total_spent || '0'),
+          ordersCount: c.orders_count || 0,
+          dateRegistered: c.date_created,
+          avatarUrl: c.avatar_url || ''
         }));
 
-        return res.status(200).json({
-          success: true,
-          customers: mappedCustomers
-        });
+        return res.json({ success: true, total: totalCustomers, customers: mapped });
       }
 
       case 'products': {
-        const url = `${baseUrl}/wp-json/wc/v3/products?per_page=50&status=publish`;
-        const response = await fetch(url, { headers });
-        
-        if (!response.ok) {
-          return res.status(response.status).json({
-            success: false,
-            error: `Failed to fetch products: ${response.status}`
-          });
-        }
-        
-        const products = await response.json();
-        
-        return res.status(200).json({
+        const r = await fetch(`${WC_API_BASE}/wp-json/wc/v3/products?per_page=50&status=publish`, { headers: wcHeaders() });
+        if (!r.ok) return res.status(r.status).json({ success: false, error: `Failed to fetch products: ${r.status}` });
+        const products = await r.json();
+        return res.json({
           success: true,
           products: products.map((p: any) => ({
-            id: p.id,
-            name: p.name,
+            id: p.id, name: p.name,
             price: parseFloat(p.price || '0'),
             category: p.categories?.[0]?.name || 'General',
             status: p.status
@@ -187,17 +147,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       default:
-        return res.status(400).json({
-          success: false,
-          error: `Unknown action: ${action}`
-        });
+        return res.status(400).json({ success: false, error: `Unknown action: ${action}` });
     }
-    } catch (error: any) {
-    logger.error('WooCommerce API Error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Internal server error',
-      hint: 'Make sure your WooCommerce store URL is correct and API keys have read permissions'
-    });
+  } catch (err: any) {
+    console.error('WooCommerce API error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
   }
 }
