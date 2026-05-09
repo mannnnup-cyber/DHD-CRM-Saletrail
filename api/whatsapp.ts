@@ -243,7 +243,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const chatsWithHistory: any[] = [];
         const chatMessages: Record<string, any[]> = {};
-        const recentChats = rawChats.slice(0, 20); // limit to avoid rate limiting
+        const recentChats = rawChats.slice(0, 50); // top 50 chats
 
         for (const chat of recentChats) {
           const chatId = chat.id;

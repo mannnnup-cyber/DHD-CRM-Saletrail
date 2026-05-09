@@ -493,10 +493,14 @@ export default function WhatsApp() {
     if (selectedChat) loadMessages(selectedChat.id);
   }, [selectedChat, loadMessages]);
 
-  const filteredChats = chats.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.phone.includes(searchQuery)
-  );
+  const filteredChats = chats.filter(c => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase().replace(/\D/g, '');
+    const nameMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
+    // Strip non-digits from both sides so 8768412776 matches 18768412776
+    const phoneMatch = q.length > 0 && c.phone.replace(/\D/g, '').includes(q);
+    return nameMatch || phoneMatch;
+  });
 
   const totalUnread = chats.reduce((sum, c) => sum + c.unread, 0);
   const totalChats = chats.length;
@@ -634,7 +638,7 @@ export default function WhatsApp() {
             }`}
           >
             {tab === 'inbox' && `Inbox${totalUnread > 0 ? ` (${totalUnread})` : ''}`}
-            {tab === 'calls' && `Calls${waCalls.length > 0 ? ` (${waCalls.length})` : ''}`}
+            {tab === 'calls' && `Activity${waCalls.length > 0 ? ` (${waCalls.length})` : ''}`}
             {tab === 'stats' && 'Stats'}
             {tab === 'setup' && 'Setup'}
           </button>
@@ -894,8 +898,8 @@ export default function WhatsApp() {
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <PhoneCall className="w-5 h-5 text-green-400" />
-              WhatsApp Call Log
-              <span className="ml-auto text-xs text-gray-500">{waCalls.length} calls logged</span>
+              WhatsApp Activity Log
+              <span className="ml-auto text-xs text-gray-500">{waCalls.length} entries</span>
             </h3>
             {waCalls.length > 0 ? (
               <div className="space-y-3">
