@@ -1,5 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db as supaDb, supabase } from '../src/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+// Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
+// (that file uses import.meta.env which is Vite-only and crashes in serverless)
+const _supabaseUrl = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
+const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = _supabaseUrl && _supabaseKey ? createClient(_supabaseUrl, _supabaseKey) : null;
+
+const supaDb = {
+  createCall: async (call: any) => {
+    if (!supabase) return;
+    await supabase.from('calls').insert(call);
+  }
+};
 
 // Use environment variables for security
 const INSTANCE_ID = process.env.GREENAPI_INSTANCE_ID || '';
@@ -31,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const timestamp = message?.timestamp || Math.floor(Date.now() / 1000);
 
         // Idempotency: check whatsapp_messages table for provider_message_id
-        if (typeof supabase !== 'undefined' && supabase.from) {
+        if (supabase !== null) {
           try {
             const exists = await supabase.from('whatsapp_messages').select('id').eq('provider_message_id', providerMessageId).limit(1);
             if ((exists && (exists as any).data && (exists as any).data.length > 0) || !providerMessageId) {
@@ -189,7 +202,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'chatsFromDb': {
         // Read recent chats aggregated from whatsapp_messages table
-        if (typeof supabase === 'undefined' || !supabase.from) {
+        if (supabase === null) {
           return res.json({ success: false, error: 'Supabase not configured' });
         }
 
@@ -312,7 +325,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'messages': {
         // Get chat history (DB-backed if possible)
         const chatId = req.query.chatId as string;
-        if (typeof supabase !== 'undefined' && supabase.from && chatId) {
+        if (supabase !== null && chatId) {
           try {
             const { data: msgs } = await supabase.from('whatsapp_messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true }).limit(1000);
             const formatted = (msgs || []).map((m: any) => ({
@@ -352,7 +365,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const data = await r.json();
         // Persist outgoing message to DB if we have supabase
         try {
-          if (typeof supabase !== 'undefined' && supabase.from) {
+          if (supabase !== null) {
             await supabase.from('whatsapp_messages').insert({
               provider: 'greenapi',
               provider_message_id: data?.idMessage || null,
