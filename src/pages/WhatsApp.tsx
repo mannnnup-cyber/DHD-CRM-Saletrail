@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Phone, PhoneIncoming, PhoneMissed, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, PhoneCall, Database, CheckCircle2, XCircle, Loader2, Plus, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { supabase } from '../lib/supabase';
 
 // WhatsApp API is handled by backend /api/whatsapp
 // Frontend calls /api/whatsapp which proxies to Green API
@@ -106,6 +107,7 @@ export default function WhatsApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageCountRef = useRef<number>(0);
   const chatMessagesCache = useRef<Record<string, Message[]>>({});
+  const selectedChatRef = useRef<Chat | null>(null);
 
   const user = state.user;
 
@@ -462,6 +464,74 @@ export default function WhatsApp() {
   };
 
   // Mock helpers removed to reduce unused-symbol noise
+
+  // Keep ref in sync so real-time callback can read it without stale closure
+  useEffect(() => {
+    selectedChatRef.current = selectedChat;
+  }, [selectedChat]);
+
+  // Supabase real-time subscription — receive new messages instantly without polling
+  useEffect(() => {
+    if (!supabase || typeof (supabase as any).channel !== 'function') return;
+
+    const channel = (supabase as any)
+      .channel('whatsapp-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages' }, (payload: any) => {
+        const msg = payload.new;
+        if (!msg) return;
+
+        const ts = msg.created_at ? new Date(msg.created_at) : new Date();
+        const formattedMsg: Message = {
+          id: msg.provider_message_id || msg.id,
+          text: msg.body || '',
+          timestamp: ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          fromMe: msg.direction === 'outbound',
+          status: 'read',
+          type: msg.type || 'text'
+        };
+
+        const rawTs = Math.floor(ts.getTime() / 1000);
+        const isOpenChat = selectedChatRef.current?.id === msg.chat_id;
+
+        // Append to visible conversation (avoid duplicate from optimistic send)
+        if (isOpenChat) {
+          setMessages(prev => {
+            if (prev.some(m => m.id === formattedMsg.id)) return prev;
+            return [...prev, formattedMsg];
+          });
+          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
+
+        // Update (or create) chat entry in the sidebar list, move it to top
+        setChats(prev => {
+          const existing = prev.find(c => c.id === msg.chat_id);
+          const snippet = (msg.body || '').slice(0, 80);
+          const updatedChat: Chat = existing
+            ? {
+                ...existing,
+                lastMessage: snippet,
+                timestamp: formatChatTimestamp(rawTs),
+                rawTimestamp: rawTs,
+                unread: isOpenChat ? 0 : existing.unread + (msg.direction === 'inbound' ? 1 : 0)
+              }
+            : {
+                id: msg.chat_id,
+                name: msg.sender_name || (msg.chat_id || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
+                lastMessage: snippet,
+                timestamp: formatChatTimestamp(rawTs),
+                rawTimestamp: rawTs,
+                unread: msg.direction === 'inbound' && !isOpenChat ? 1 : 0,
+                assignedTo: 'Unassigned',
+                phone: (msg.chat_id || '').replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', ''),
+                status: 'active'
+              };
+          return [updatedChat, ...prev.filter(c => c.id !== msg.chat_id)];
+        });
+      })
+      .subscribe();
+
+    return () => { (supabase as any).removeChannel(channel); };
+  }, []); // subscribe once on mount
 
   // Initial load
   useEffect(() => {

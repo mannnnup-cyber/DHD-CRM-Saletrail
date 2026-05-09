@@ -29,62 +29,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Handle webhook POST from Green API (no action query param)
   if (req.method === 'POST' && !req.query.action) {
     const body = req.body;
-    console.log('WhatsApp Webhook received:', JSON.stringify(body));
 
-    // Try to persist inbound message(s) to Supabase if available
     try {
-      // Green API may send different shapes; attempt to normalize
-      const events = Array.isArray(body) ? body : [body];
-      for (const ev of events) {
-        // Common payload locations for message data
-        const message = ev?.message || ev?.body || ev?.data || ev;
-        const providerMessageId = message?.idMessage || message?.id || message?.receiptId || null;
-        const from = message?.senderData?.sender || message?.from || message?.chatId || (ev?.sender?.id || null);
-        const text = message?.textMessage || message?.body || message?.message || '';
-        const timestamp = message?.timestamp || Math.floor(Date.now() / 1000);
+      const typeWebhook = body?.typeWebhook;
 
-        // Idempotency: check whatsapp_messages table for provider_message_id
-        if (supabase !== null) {
-          try {
-            const exists = await supabase.from('whatsapp_messages').select('id').eq('provider_message_id', providerMessageId).limit(1);
-            if ((exists && (exists as any).data && (exists as any).data.length > 0) || !providerMessageId) {
-              // Already recorded or no provider id — still safe to continue
-              continue;
-            }
+      // Only store actual messages — ignore state/ack events
+      if (typeWebhook === 'incomingMessageReceived' || typeWebhook === 'outgoingAPIMessageReceived' || typeWebhook === 'outgoingMessageReceived') {
+        const isInbound = typeWebhook === 'incomingMessageReceived';
+        const chatId = isInbound
+          ? (body.senderData?.chatId || body.senderData?.sender)
+          : (body.messageData?.chatId || body.senderData?.chatId);
+        const senderName = body.senderData?.senderName || '';
+        const messageId = body.idMessage;
+        const timestamp = body.timestamp;
+        const msgData = body.messageData || {};
+        const text =
+          msgData.textMessageData?.textMessage ||
+          msgData.extendedTextMessageData?.text ||
+          msgData.imageMessageData?.caption ||
+          msgData.videoMessageData?.caption ||
+          msgData.documentMessageData?.caption ||
+          (msgData.typeMessage ? `[${msgData.typeMessage}]` : '');
+        const msgType = msgData.typeMessage || 'textMessage';
 
-            const insert = {
+        if (supabase !== null && chatId && messageId) {
+          // Idempotency check
+          const { data: existing } = await supabase
+            .from('whatsapp_messages')
+            .select('id')
+            .eq('provider_message_id', messageId)
+            .limit(1);
+
+          if (!existing || existing.length === 0) {
+            await supabase.from('whatsapp_messages').insert({
               provider: 'greenapi',
-              provider_message_id: providerMessageId,
-              chat_id: from,
-              direction: 'inbound',
+              provider_message_id: messageId,
+              chat_id: chatId,
+              sender_name: senderName,
+              direction: isInbound ? 'inbound' : 'outbound',
               body: text,
-              raw: ev,
-              created_at: new Date(timestamp * 1000).toISOString()
-            };
-
-            await supabase.from('whatsapp_messages').insert(insert);
-
-            // Also create a call/activity row for UI timeline
-            await supaDb.createCall({
-              type: 'WhatsApp',
-              contactName: '',
-              contactPhone: String(from || ''),
-              duration: 0,
-              notes: `Inbound WhatsApp: ${String(text || '').slice(0, 200)}`,
-              repId: null,
-              timestamp: new Date(timestamp * 1000).toISOString()
-            } as any);
-          } catch (err) {
-            console.error('Failed to persist whatsapp webhook event:', err);
+              type: msgType,
+              raw: body,
+              created_at: timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString()
+            });
           }
         }
       }
     } catch (err) {
-      console.error('Error processing webhook:', err);
+      console.error('Webhook processing error:', err);
     }
 
-    // Acknowledge receipt
-    return res.status(200).json({ success: true, received: true });
+    return res.status(200).json({ success: true });
   }
 
   const action = req.query.action as string;
@@ -335,7 +330,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const formatted = (msgs || []).map((m: any) => ({
               id: m.provider_message_id || m.id,
               text: m.body || '',
-              timestamp: m.created_at,
+              timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
               fromMe: m.direction === 'outbound',
               status: 'read',
               type: m.type || 'text',
