@@ -359,20 +359,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'send': {
-        // Send message
         const { chatId, message } = req.body;
+        if (!chatId || !message) {
+          return res.status(400).json({ success: false, error: 'chatId and message are required' });
+        }
+
         const r = await fetch(`${BASE_URL}/sendMessage/${API_TOKEN}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chatId, message })
         });
         const data = await r.json();
-        // Persist outgoing message to DB if we have supabase
+
+        const succeeded = !!data.idMessage;
+
+        if (!succeeded) {
+          // Surface the actual Green API error so the frontend can show it
+          const errMsg = data.message || data.error || data.description || JSON.stringify(data);
+          console.error('Green API sendMessage failed:', errMsg, 'chatId:', chatId);
+          return res.json({ success: false, error: errMsg, raw: data });
+        }
+
+        // Persist outgoing message
         try {
           if (supabase !== null) {
             await supabase.from('whatsapp_messages').insert({
               provider: 'greenapi',
-              provider_message_id: data?.idMessage || null,
+              provider_message_id: data.idMessage,
               chat_id: chatId,
               direction: 'outbound',
               body: message,
@@ -380,11 +393,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               created_at: new Date().toISOString()
             });
           }
-
-          // Also create a call/activity row for UI timeline
           await supaDb.createCall({
             type: 'WhatsApp',
-            contactName: '',
             contactPhone: String(chatId || ''),
             duration: 0,
             notes: `Outbound WhatsApp: ${String(message || '').slice(0, 200)}`,
@@ -395,7 +405,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.error('Failed to persist outgoing whatsapp message:', err);
         }
 
-        return res.json({ success: data.idMessage ? true : false, data, messageId: data.idMessage });
+        return res.json({ success: true, messageId: data.idMessage });
       }
 
       case 'receive': {

@@ -312,11 +312,17 @@ export default function WhatsApp() {
   const sendNewMessage = async () => {
     if (!newMessagePhone.trim() || !newMessageText.trim()) return;
 
-    // Format phone number
+    // Format phone number — strip non-digits, add Jamaica country code if needed
     let phone = newMessagePhone.replace(/\D/g, '');
-    if (!phone.endsWith('@c.us')) {
-      phone = `${phone}@c.us`;
+    // Jamaica numbers are 10 digits starting with 876 — prepend country code 1
+    if (phone.length === 10 && phone.startsWith('876')) {
+      phone = `1${phone}`;
     }
+    // 7-digit local number — prepend 1876
+    if (phone.length === 7) {
+      phone = `1876${phone}`;
+    }
+    phone = `${phone}@c.us`;
 
     setSendingNew(true);
     try {
@@ -556,7 +562,7 @@ export default function WhatsApp() {
                   type="text"
                   value={newMessagePhone}
                   onChange={(e) => setNewMessagePhone(e.target.value)}
-                  placeholder="18765551234"
+                  placeholder="8761234567 or 18761234567"
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 />
               </div>
