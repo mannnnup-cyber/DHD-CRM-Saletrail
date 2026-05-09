@@ -334,22 +334,11 @@ export default function WhatsApp() {
       const data = await r.json();
 
       if (data.success) {
-        // Add to chats list
-        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const newChat: Chat = {
-          id: phone,
-          name: newMessagePhone,
-          lastMessage: newMessageText,
-          timestamp: timestamp,
-          unread: 0,
-          assignedTo: 'Unassigned',
-          phone: newMessagePhone.replace(/\D/g, ''),
-          status: 'active'
-        };
-        setChats(prev => [newChat, ...prev]);
         setShowNewMessage(false);
         setNewMessagePhone('');
         setNewMessageText('');
+        // Refresh chat list from Green API so the new conversation appears correctly
+        await loadChats();
 
         // Log as WhatsApp activity (NOT a call)
         addCall({
