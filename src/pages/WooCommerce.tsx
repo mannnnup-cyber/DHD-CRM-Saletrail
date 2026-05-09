@@ -103,6 +103,7 @@ export default function WooCommerce() {
   const [importedCustomers, setImportedCustomers] = useState<Set<string>>(new Set());
   const [importingCustomer, setImportingCustomer] = useState<string | null>(null);
   const [searchCustomer, setSearchCustomer]   = useState('');
+  const [customerView, setCustomerView]       = useState<'orders' | 'registered'>('orders');
 
   const [newOrderToast, setNewOrderToast]     = useState<{ orderNumber: string; customerName: string } | null>(null);
   const toastTimer                            = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -464,6 +465,39 @@ export default function WooCommerce() {
     w.document.close();
   };
 
+  // Derive unique customers from loaded orders — captures guests who never registered
+  const ordersCustomers = (() => {
+    const byEmail = new Map<string, {
+      id: string; name: string; email: string; phone: string;
+      company: string; address: string; totalSpent: number;
+      ordersCount: number; lastOrder: string; currency: string;
+    }>();
+    for (const o of orders) {
+      const key = o.customerEmail || o.customerName;
+      if (!key) continue;
+      const existing = byEmail.get(key);
+      if (existing) {
+        existing.totalSpent += o.status !== 'cancelled' && o.status !== 'refunded' && o.status !== 'failed' ? o.total : 0;
+        existing.ordersCount += 1;
+        if (o.dateCreated > existing.lastOrder) existing.lastOrder = o.dateCreated;
+      } else {
+        byEmail.set(key, {
+          id: `orders_customer_${key}`,
+          name: o.customerName || o.customerEmail,
+          email: o.customerEmail,
+          phone: o.customerPhone,
+          company: o.company,
+          address: o.address,
+          totalSpent: o.status !== 'cancelled' && o.status !== 'refunded' && o.status !== 'failed' ? o.total : 0,
+          ordersCount: 1,
+          lastOrder: o.dateCreated,
+          currency: o.currency,
+        });
+      }
+    }
+    return Array.from(byEmail.values()).sort((a, b) => b.totalSpent - a.totalSpent);
+  })();
+
   const filteredOrders = orders.filter(o => {
     const q = searchOrder.toLowerCase();
     const matchSearch = !q || o.customerName.toLowerCase().includes(q) ||
@@ -475,7 +509,13 @@ export default function WooCommerce() {
     return matchSearch && matchStatus && matchFrom && matchTo;
   });
 
-  const filteredCustomers = customers.filter(c => {
+  const filteredOrdersCustomers = ordersCustomers.filter(c => {
+    const q = searchCustomer.toLowerCase();
+    return !q || c.name.toLowerCase().includes(q) ||
+      c.email.toLowerCase().includes(q) || c.phone.includes(q);
+  });
+
+  const filteredRegisteredCustomers = customers.filter(c => {
     const q = searchCustomer.toLowerCase();
     return !q || c.name.toLowerCase().includes(q) ||
       c.email.toLowerCase().includes(q) || c.phone.includes(q);
@@ -488,7 +528,7 @@ export default function WooCommerce() {
     processing: orders.filter(o => o.status === 'processing').length,
     completed: orders.filter(o => o.status === 'completed').length,
     revenue: orders.filter(o => o.status === 'completed').reduce((s, o) => s + o.total, 0),
-    customers: totalCustomers || customers.length,
+    customers: ordersCustomers.length,
   };
 
   return (
@@ -617,7 +657,7 @@ export default function WooCommerce() {
       <div className="flex gap-2 border-b border-gray-700/50">
         {[
           { id: 'orders',    label: `Orders${totalOrders ? ` (${totalOrders})` : orders.length ? ` (${orders.length})` : ''}` },
-          { id: 'customers', label: `Customers${totalCustomers ? ` (${totalCustomers})` : customers.length ? ` (${customers.length})` : ''}` },
+          { id: 'customers', label: `Customers${ordersCustomers.length ? ` (${ordersCustomers.length})` : ''}` },
           { id: 'mapping',   label: 'Stage Mapping' },
           { id: 'setup',     label: 'Setup Guide' },
         ].map(tab => (
@@ -869,88 +909,183 @@ export default function WooCommerce() {
       {/* CUSTOMERS TAB */}
       {activeTab === 'customers' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+
+          {/* Explanation banner */}
+          <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+            <p className="text-blue-300 text-xs">
+              <span className="font-semibold">From Orders</span> shows every person who placed an order — including guests who never created an account.
+              <span className="font-semibold"> Registered</span> shows WordPress user accounts, which may have 0 orders if they checked out as guests.
+            </p>
+          </div>
+
+          {/* View toggle + search + refresh */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex rounded-lg overflow-hidden border border-gray-700/50">
+              <button
+                onClick={() => setCustomerView('orders')}
+                className={`px-4 py-2 text-xs font-medium transition-colors ${customerView === 'orders' ? 'bg-purple-600 text-white' : 'bg-gray-800/50 text-gray-400 hover:text-white'}`}
+              >
+                From Orders ({ordersCustomers.length})
+              </button>
+              <button
+                onClick={() => { setCustomerView('registered'); if (customers.length === 0) syncCustomers(); }}
+                className={`px-4 py-2 text-xs font-medium transition-colors ${customerView === 'registered' ? 'bg-purple-600 text-white' : 'bg-gray-800/50 text-gray-400 hover:text-white'}`}
+              >
+                Registered ({totalCustomers || customers.length})
+              </button>
+            </div>
             <input
               type="text"
               value={searchCustomer}
               onChange={e => setSearchCustomer(e.target.value)}
               placeholder="Search customers..."
-              className="flex-1 mr-3 bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+              className="flex-1 min-w-40 bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
             />
-            <button
-              onClick={syncCustomers}
-              disabled={syncingCustomers}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncingCustomers ? 'animate-spin' : ''}`} />
-              {syncingCustomers ? 'Loading...' : 'Refresh'}
-            </button>
+            {customerView === 'registered' && (
+              <button
+                onClick={syncCustomers}
+                disabled={syncingCustomers}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncingCustomers ? 'animate-spin' : ''}`} />
+                {syncingCustomers ? 'Loading...' : 'Refresh'}
+              </button>
+            )}
           </div>
 
-          {customers.length === 0 ? (
-            <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-12 text-center">
-              <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400 font-medium">{syncingCustomers ? 'Loading customers...' : 'No customers loaded'}</p>
-            </div>
-          ) : (
+          {/* FROM ORDERS VIEW */}
+          {customerView === 'orders' && (
             <>
-              {totalCustomers > customers.length && (
-                <p className="text-gray-500 text-xs text-right">
-                  Showing {customers.length} of {totalCustomers} customers
-                </p>
-              )}
-              <div className="space-y-3">
-                {filteredCustomers.map(c => (
-                  <div key={c.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                        {c.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium text-sm truncate">{c.name}</p>
-                        <p className="text-gray-400 text-xs truncate">{c.email}</p>
-                      </div>
-                      <div className="hidden md:block text-center">
-                        <p className="text-white text-sm font-medium">{c.ordersCount}</p>
-                        <p className="text-gray-500 text-xs">orders</p>
-                      </div>
-                      <div className="hidden md:block text-center">
-                        <p className="text-amber-400 text-sm font-bold">{formatCurrency(c.totalSpent)}</p>
-                        <p className="text-gray-500 text-xs">total spent</p>
-                      </div>
-                      {c.phone && <p className="hidden lg:block text-gray-400 text-xs">{c.phone}</p>}
-                    </div>
-                    {importedCustomers.has(c.id) ? (
-                      <span className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-xs font-medium flex-shrink-0">
-                        <CheckCircle className="w-3 h-3" /> In CRM
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => importCustomerAsLead(c)}
-                        disabled={importingCustomer === c.id}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
-                      >
-                        {importingCustomer === c.id
-                          ? <RefreshCw className="w-3 h-3 animate-spin" />
-                          : <UserPlus className="w-3 h-3" />}
-                        Add as Lead
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {customerPage < customerPages && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    onClick={loadMoreCustomers}
-                    disabled={loadingMoreCustomers}
-                    className="flex items-center gap-2 px-5 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${loadingMoreCustomers ? 'animate-spin' : ''}`} />
-                    {loadingMoreCustomers ? 'Loading...' : `Load More (${totalCustomers - customers.length} remaining)`}
-                  </button>
+              {ordersCustomers.length === 0 ? (
+                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-12 text-center">
+                  <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <p className="text-gray-400 font-medium">No orders loaded yet</p>
+                  <p className="text-gray-500 text-sm mt-1">Sync orders first — customers will appear here automatically.</p>
                 </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredOrdersCustomers.map(c => (
+                    <div key={c.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                          {(c.name || '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium text-sm truncate">{c.name}</p>
+                          <p className="text-gray-400 text-xs truncate">{c.email}</p>
+                          {c.phone && <p className="text-gray-500 text-xs">{c.phone}</p>}
+                        </div>
+                        <div className="hidden md:block text-center">
+                          <p className="text-white text-sm font-medium">{c.ordersCount}</p>
+                          <p className="text-gray-500 text-xs">orders</p>
+                        </div>
+                        <div className="hidden md:block text-center">
+                          <p className="text-amber-400 text-sm font-bold">{formatCurrency(c.totalSpent, c.currency)}</p>
+                          <p className="text-gray-500 text-xs">spent</p>
+                        </div>
+                        <div className="hidden lg:block text-center">
+                          <p className="text-gray-300 text-xs">{formatDate(c.lastOrder)}</p>
+                          <p className="text-gray-500 text-xs">last order</p>
+                        </div>
+                      </div>
+                      {importedCustomers.has(c.id) ? (
+                        <span className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-xs font-medium flex-shrink-0">
+                          <CheckCircle className="w-3 h-3" /> In CRM
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => importCustomerAsLead({ ...c, wcId: 0, dateRegistered: c.lastOrder, avatarUrl: '' })}
+                          disabled={importingCustomer === c.id}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
+                        >
+                          {importingCustomer === c.id
+                            ? <RefreshCw className="w-3 h-3 animate-spin" />
+                            : <UserPlus className="w-3 h-3" />}
+                          Add as Lead
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* REGISTERED VIEW */}
+          {customerView === 'registered' && (
+            <>
+              {customers.length === 0 ? (
+                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-12 text-center">
+                  <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <p className="text-gray-400 font-medium">{syncingCustomers ? 'Loading...' : 'No registered customers loaded'}</p>
+                  {!syncingCustomers && (
+                    <button onClick={syncCustomers} className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                      Load Registered Customers
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {totalCustomers > customers.length && (
+                    <p className="text-gray-500 text-xs text-right">Showing {customers.length} of {totalCustomers}</p>
+                  )}
+                  <div className="space-y-3">
+                    {filteredRegisteredCustomers.map(c => (
+                      <div key={c.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                            {c.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-white font-medium text-sm truncate">{c.name}</p>
+                              <span className="text-gray-600 text-xs hidden md:inline">· registered</span>
+                            </div>
+                            <p className="text-gray-400 text-xs truncate">{c.email}</p>
+                          </div>
+                          <div className="hidden md:block text-center">
+                            <p className="text-white text-sm font-medium">{c.ordersCount}</p>
+                            <p className="text-gray-500 text-xs">orders</p>
+                          </div>
+                          <div className="hidden md:block text-center">
+                            <p className="text-amber-400 text-sm font-bold">{formatCurrency(c.totalSpent)}</p>
+                            <p className="text-gray-500 text-xs">spent</p>
+                          </div>
+                          {c.phone && <p className="hidden lg:block text-gray-400 text-xs">{c.phone}</p>}
+                        </div>
+                        {importedCustomers.has(c.id) ? (
+                          <span className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-xs font-medium flex-shrink-0">
+                            <CheckCircle className="w-3 h-3" /> In CRM
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => importCustomerAsLead(c)}
+                            disabled={importingCustomer === c.id}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
+                          >
+                            {importingCustomer === c.id
+                              ? <RefreshCw className="w-3 h-3 animate-spin" />
+                              : <UserPlus className="w-3 h-3" />}
+                            Add as Lead
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {customerPage < customerPages && (
+                    <div className="flex justify-center pt-2">
+                      <button
+                        onClick={loadMoreCustomers}
+                        disabled={loadingMoreCustomers}
+                        className="flex items-center gap-2 px-5 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${loadingMoreCustomers ? 'animate-spin' : ''}`} />
+                        {loadingMoreCustomers ? 'Loading...' : `Load More (${totalCustomers - customers.length} remaining)`}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
