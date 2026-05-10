@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import Imap from 'imap';
-import { simpleParser } from 'mailparser';
+// imap and mailparser are lazy-imported inside the sync handler so a missing
+// package only breaks sync — not list/send/stats/etc.
+type ImapType = typeof import('imap');
+type SimpleParser = typeof import('mailparser').simpleParser;
 import { logger } from '../src/lib/logger';
 
 const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || '';
@@ -345,6 +347,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'sync': {
+        // Lazy-load imap and mailparser so a missing package only breaks sync
+        let Imap: any, simpleParser: any;
+        try {
+          Imap = require('imap');
+          simpleParser = require('mailparser').simpleParser;
+        } catch (importErr: any) {
+          return res.status(500).json({
+            success: false,
+            error: 'IMAP packages not available: ' + importErr.message,
+            hint: 'Run npm install imap mailparser and redeploy'
+          });
+        }
+
         // Sync emails from IMAP mailbox (get settings from database)
         const settings = await getSettings();
         const IMAP_HOST = settings['IMAP_HOST'] || '';
