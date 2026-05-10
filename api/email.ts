@@ -1,11 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-// Packages below don't have bundled type declarations in this project.
-// Use ts-ignore to avoid compile-time errors while keeping runtime behavior.
-// TODO: add proper @types packages or hand-written types in src/types when possible.
-// @ts-ignore
 import Imap from 'imap';
-// @ts-ignore
 import { simpleParser } from 'mailparser';
 import { logger } from '../src/lib/logger';
 
@@ -28,13 +23,16 @@ async function getSettings(): Promise<Record<string, string>> {
   }
 
   try {
+    // Order newest-first so duplicate rows resolve to the most recently saved value
     const { data } = await supabase
       .from('app_settings')
-      .select('setting_key, setting_value');
+      .select('setting_key, setting_value')
+      .order('updated_at', { ascending: false });
 
     settingsCache = {};
+    // First occurrence of each key wins (most recently updated)
     (data || []).forEach((s: any) => {
-      if (s.setting_value) {
+      if (s.setting_value && !(s.setting_key in settingsCache)) {
         settingsCache[s.setting_key] = s.setting_value;
       }
     });

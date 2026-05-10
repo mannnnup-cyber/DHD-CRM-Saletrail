@@ -226,11 +226,13 @@ export default function EmailInbox() {
         const r = await fetch('/api/email?action=sync', { method: 'POST' });
         const data = await r.json();
         if (data.success) {
-          addToast(`Synced ${data.synced} new email${data.synced !== 1 ? 's' : ''}`);
+          addToast(`Synced ${data.synced} new email${data.synced !== 1 ? 's' : ''}${data.timeout ? ' (timeout — try again for more)' : ''}`);
           await loadEmails();
           await loadStats();
         } else {
-          addToast(`Sync failed: ${data.error || data.message || 'Unknown error'}`, 'error');
+          const detail = data.error || data.message || 'Unknown error';
+          const hint = data.hint ? ` · ${data.hint}` : '';
+          addToast(`Sync failed: ${detail}${hint}`, 'error');
         }
       } catch {
         addToast('Failed to sync emails', 'error');
