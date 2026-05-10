@@ -1,9 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-// imap and mailparser are lazy-imported inside the sync handler so a missing
-// package only breaks sync — not list/send/stats/etc.
-type ImapType = typeof import('imap');
-type SimpleParser = typeof import('mailparser').simpleParser;
 
 const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
@@ -350,11 +346,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'sync': {
-        // Lazy-load imap and mailparser so a missing package only breaks sync
+        // Lazy-load imap and mailparser — dynamic import works in both CJS and ESM Vercel runtimes
         let Imap: any, simpleParser: any;
         try {
-          Imap = require('imap');
-          simpleParser = require('mailparser').simpleParser;
+          const imapMod = await import('imap');
+          Imap = (imapMod as any).default ?? imapMod;
+          const mailMod = await import('mailparser');
+          simpleParser = (mailMod as any).simpleParser ?? (mailMod as any).default?.simpleParser;
         } catch (importErr: any) {
           return res.status(500).json({
             success: false,
