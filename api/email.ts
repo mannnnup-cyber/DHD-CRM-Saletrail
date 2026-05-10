@@ -779,14 +779,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .eq('id', emailId);
 
         // Record conversion
-        await supabase.from('email_conversions').insert({
-          email_id: emailId
-        });
+        await supabase.from('email_conversions').insert({ email_id: emailId });
+
+        // Insert into leads table (skip if email already exists)
+        const { data: existingLead } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('email', email.from_email)
+          .maybeSingle();
+
+        const leadName = email.from_name || email.from_email.split('@')[0];
+        if (!existingLead) {
+          await supabase.from('leads').insert({
+            name: leadName,
+            email: email.from_email,
+            source: 'Email',
+            status: 'new',
+            notes: `Converted from email: "${email.subject}"`,
+          });
+        }
 
         return res.json({
           success: true,
+          alreadyExisted: !!existingLead,
           lead: {
-            name: email.from_name || email.from_email.split('@')[0],
+            name: leadName,
             email: email.from_email,
             score: Math.max(email.lead_score, 70),
             source: 'Email'
