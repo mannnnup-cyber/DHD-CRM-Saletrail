@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 // package only breaks sync — not list/send/stats/etc.
 type ImapType = typeof import('imap');
 type SimpleParser = typeof import('mailparser').simpleParser;
-import { logger } from '../src/lib/logger';
 
 const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
@@ -40,7 +39,7 @@ async function getSettings(): Promise<Record<string, string>> {
     });
     settingsCacheTime = now;
   } catch (error) {
-    logger.error('Error fetching settings:', error);
+    console.error('Error fetching settings:', error);
   }
 
   return settingsCache;
@@ -161,7 +160,7 @@ Low score indicators: generic inquiries, auto-responses, newsletters, spam`
       };
     }
   } catch (error) {
-    logger.error('AI Analysis Error:', error);
+    console.error('AI Analysis Error:', error);
   }
 
   // Fallback keyword-based analysis
@@ -256,7 +255,7 @@ async function getPredictiveScore(email: { subject: string; body: string; from: 
         };
       }
     } catch (error) {
-      logger.error('Predictive analysis error:', error);
+      console.error('Predictive analysis error:', error);
     }
   }
 
@@ -291,7 +290,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .order('date', { ascending: false })
           .limit(100);
 
-        if (error) throw error;
+        if (error) {
+          // Table may not exist yet — return empty list rather than crashing
+          console.error('Email list error:', error.message);
+          return res.json({ success: true, emails: [], tableError: error.message });
+        }
 
         return res.json({ success: true, emails: emails || [] });
       }
@@ -1080,7 +1083,7 @@ Return ONLY the email body text.`
         });
     }
   } catch (err: any) {
-    logger.error('Email API Error:', err);
+    console.error('Email API Error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }
