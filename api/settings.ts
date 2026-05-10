@@ -83,12 +83,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           currentMap[s.setting_key] = s;
         });
 
+        // Determine setting_type from key name
+        const inferType = (key: string): string => {
+          if (key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET')) return 'password';
+          if (key.includes('PORT')) return 'number';
+          if (key.includes('ENABLED')) return 'boolean';
+          return 'text';
+        };
+
         // Upsert each setting
         const upserts = Object.entries(settings).map(async ([key, value]) => {
-          const current = currentMap[key];
+          const settingType = inferType(key);
 
-          // If password field and value is masked, don't update
-          if (current?.setting_type === 'password' && value === '••••••••') {
+          // Skip if value is the mask string (never overwrite with literal bullets)
+          if (value === '••••••••') {
+            return { key, skipped: true };
+          }
+
+          // Skip empty password fields — user didn't re-enter, preserve existing
+          if (settingType === 'password' && value === '') {
             return { key, skipped: true };
           }
 
@@ -97,6 +110,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .upsert({
               setting_key: key,
               setting_value: value,
+              setting_type: settingType,
               updated_at: new Date().toISOString()
             }, {
               onConflict: 'setting_key'

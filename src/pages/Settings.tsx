@@ -31,6 +31,7 @@ const Settings: React.FC = () => {
     integrations: []
   });
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
+  const [isConfigured, setIsConfigured] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
@@ -73,10 +74,16 @@ const Settings: React.FC = () => {
 
         setDbSettings(grouped);
 
-        // Set local values (use raw values if available)
+        // Track which keys have a saved value (for showing "already saved" badge)
+        setIsConfigured(data.isConfigured || {});
+
+        // Set local values — skip masked passwords so we don't pre-fill
+        // the field with '••••••••' (which would be saved literally on next save)
         const rawValues: Record<string, string> = {};
         Object.entries(data.settings).forEach(([key, value]) => {
-          rawValues[key] = value as string;
+          const isPasswordKey = key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET');
+          const isMasked = value === '••••••••';
+          rawValues[key] = (isPasswordKey && isMasked) ? '' : (value as string);
         });
         setLocalValues(rawValues);
       }
@@ -107,7 +114,8 @@ const Settings: React.FC = () => {
       const data = await r.json();
       if (data.success) {
         setMessage({ type: 'success', text: 'Settings saved successfully!' });
-        await loadSettings();
+        // Do NOT reload — reloading replaces password fields with masked '••••••••'
+        // which would corrupt them on the next save
       } else {
         setMessage({ type: 'error', text: data.error || 'Failed to save settings' });
       }
@@ -262,13 +270,18 @@ const Settings: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">Password / App Password</label>
+                    <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+                      Password / App Password
+                      {isConfigured['IMAP_PASSWORD'] && !localValues['IMAP_PASSWORD'] && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded border border-green-500/30">Saved</span>
+                      )}
+                    </label>
                     <div className="relative">
                       <input
                         type={showPasswords['IMAP_PASSWORD'] ? 'text' : 'password'}
                         value={localValues['IMAP_PASSWORD'] || ''}
                         onChange={(e) => handleValueChange('IMAP_PASSWORD', e.target.value)}
-                        placeholder="••••••••"
+                        placeholder={isConfigured['IMAP_PASSWORD'] ? 'Leave blank to keep saved password' : '••••••••'}
                         className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
                       />
                       <button
@@ -314,13 +327,18 @@ const Settings: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">Resend API Key</label>
+                    <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+                      Resend API Key
+                      {isConfigured['RESEND_API_KEY'] && !localValues['RESEND_API_KEY'] && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded border border-green-500/30">Saved</span>
+                      )}
+                    </label>
                     <div className="relative">
                       <input
                         type={showPasswords['RESEND_API_KEY'] ? 'text' : 'password'}
                         value={localValues['RESEND_API_KEY'] || ''}
                         onChange={(e) => handleValueChange('RESEND_API_KEY', e.target.value)}
-                        placeholder="re_••••••••"
+                        placeholder={isConfigured['RESEND_API_KEY'] ? 'Leave blank to keep saved key' : 're_••••••••'}
                         className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
                       />
                       <button
@@ -382,13 +400,18 @@ const Settings: React.FC = () => {
 
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">OpenAI API Key</label>
+                  <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+                    OpenAI API Key
+                    {isConfigured['OPENAI_API_KEY'] && !localValues['OPENAI_API_KEY'] && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded border border-green-500/30">Saved</span>
+                    )}
+                  </label>
                   <div className="relative">
                     <input
                       type={showPasswords['OPENAI_API_KEY'] ? 'text' : 'password'}
                       value={localValues['OPENAI_API_KEY'] || ''}
                       onChange={(e) => handleValueChange('OPENAI_API_KEY', e.target.value)}
-                      placeholder="sk-••••••••"
+                      placeholder={isConfigured['OPENAI_API_KEY'] ? 'Leave blank to keep saved key' : 'sk-••••••••'}
                       className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
                     />
                     <button
