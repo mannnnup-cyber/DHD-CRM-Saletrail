@@ -52,7 +52,12 @@ const STATUS_COLORS: Record<string, string> = {
 
 const fmt = (n: number, cur = 'JMD') => `$${n.toLocaleString()} ${cur}`;
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-JM', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
-const waLink = (phone: string) => `https://wa.me/${phone.replace(/\D/g, '')}`;
+const daysSince = (d: string) => d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : 0;
+
+const openInWhatsApp = (phone: string, name: string) => {
+  localStorage.setItem('wa_open_contact', JSON.stringify({ phone, name }));
+  window.location.hash = '#/whatsapp';
+};
 
 export default function WooCommerce() {
   const { addDeal, addLead } = useApp();
@@ -84,6 +89,8 @@ export default function WooCommerce() {
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
   const [copiedOrder, setCopiedOrder]   = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showTopProducts, setShowTopProducts] = useState(false);
 
   // Customers
   const [customers, setCustomers]       = useState<WCCustomer[]>([]);
@@ -336,6 +343,21 @@ export default function WooCommerce() {
 
   const filteredCurrency = filteredOrders[0]?.currency || 'JMD';
 
+  const topProducts = (() => {
+    const map: Record<string, { count: number; revenue: number; currency: string }> = {};
+    for (const o of orders) {
+      for (const item of o.lineItems) {
+        if (!map[item.name]) map[item.name] = { count: 0, revenue: 0, currency: o.currency };
+        map[item.name].count += item.quantity;
+        map[item.name].revenue += item.total;
+      }
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 6)
+      .map(([name, v]) => ({ name, ...v }));
+  })();
+
   const unimportedCount = filteredOrders.filter(o => !importedOrders.has(o.id)).length;
 
   const stats = {
@@ -402,11 +424,11 @@ export default function WooCommerce() {
                   </a>
                 )}
                 {selectedCustomer.phone && (
-                  <a href={waLink(selectedCustomer.phone)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800 transition-colors group">
+                  <button onClick={() => openInWhatsApp(selectedCustomer.phone, selectedCustomer.name)} className="w-full flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800 transition-colors group text-left">
                     <MessageCircle className="w-4 h-4 text-gray-400 group-hover:text-green-400" />
                     <span className="text-gray-300 text-sm">{selectedCustomer.phone}</span>
                     <span className="ml-auto text-xs text-gray-500 group-hover:text-green-400">WhatsApp →</span>
-                  </a>
+                  </button>
                 )}
                 {selectedCustomer.address && (
                   <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg">
@@ -559,6 +581,32 @@ export default function WooCommerce() {
         </div>
       )}
 
+      {/* Top Products panel */}
+      {topProducts.length > 0 && (
+        <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden">
+          <button onClick={() => setShowTopProducts(p => !p)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800/30 transition-colors">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span className="text-white font-medium text-sm">Top Products by Volume</span>
+            </div>
+            {showTopProducts ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          </button>
+          {showTopProducts && (
+            <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 border-t border-gray-700/40 pt-4">
+              {topProducts.map(p => (
+                <div key={p.name} className="bg-gray-900/40 rounded-lg p-3 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{p.name}</p>
+                    <p className="text-gray-500 text-xs">{fmt(p.revenue, p.currency)} revenue</p>
+                  </div>
+                  <span className="flex-shrink-0 px-2 py-1 bg-amber-500/20 text-amber-400 rounded-full text-xs font-bold">{p.count} sold</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-700/50">
         {[
@@ -649,6 +697,7 @@ export default function WooCommerce() {
               <div className="space-y-3">
                 {filteredOrders.map(order => {
                   const isRepeat = repeatEmails.has(order.customerEmail);
+                  const isStale = order.status === 'processing' && daysSince(order.dateCreated) >= 3;
                   return (
                     <div key={order.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden">
                       <div className="p-4 flex items-center justify-between gap-4">
@@ -658,11 +707,16 @@ export default function WooCommerce() {
                             <p className="text-gray-500 text-xs">{fmtDate(order.dateCreated)}</p>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <p className="text-white text-sm font-medium truncate">{order.customerName}</p>
                               {isRepeat && (
                                 <span className="flex-shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full text-xs font-medium">
                                   <Star className="w-2.5 h-2.5" /> Repeat
+                                </span>
+                              )}
+                              {isStale && (
+                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded-full text-xs font-medium">
+                                  ⚠ {daysSince(order.dateCreated)}d stale
                                 </span>
                               )}
                             </div>
@@ -717,10 +771,10 @@ export default function WooCommerce() {
                             {order.customerEmail && (
                               <div className="flex items-center gap-2">
                                 {order.customerPhone && (
-                                  <a href={waLink(order.customerPhone)} target="_blank" rel="noopener noreferrer"
+                                  <button onClick={() => openInWhatsApp(order.customerPhone, order.customerName)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg text-xs font-medium">
                                     <MessageCircle className="w-3 h-3" /> WhatsApp
-                                  </a>
+                                  </button>
                                 )}
                                 <a href={`mailto:${order.customerEmail}`}
                                   className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium">
@@ -812,7 +866,7 @@ export default function WooCommerce() {
                       <div className="hidden lg:block text-center"><p className="text-gray-300 text-xs">{fmtDate(c.lastOrder)}</p><p className="text-gray-500 text-xs">last order</p></div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                      {c.phone && <a href={waLink(c.phone)} target="_blank" rel="noopener noreferrer" className="p-1.5 text-gray-400 hover:text-green-400 transition-colors"><MessageCircle className="w-4 h-4" /></a>}
+                      {c.phone && <button onClick={() => openInWhatsApp(c.phone, c.name)} className="p-1.5 text-gray-400 hover:text-green-400 transition-colors"><MessageCircle className="w-4 h-4" /></button>}
                       {importedC.has(c.id) ? (
                         <span className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-xs font-medium"><CheckCircle className="w-3 h-3" /> In CRM</span>
                       ) : (

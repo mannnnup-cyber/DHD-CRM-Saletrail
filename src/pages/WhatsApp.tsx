@@ -111,9 +111,45 @@ export default function WhatsApp() {
   const [attachCaption, setAttachCaption] = useState('');
   const [sendingFile, setSendingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingWATarget = useRef<{ phone: string; name: string } | null>(null);
 
   const user = state.user;
 
+  // Read navigation target written by WooCommerce (or any other page)
+  useEffect(() => {
+    const stored = localStorage.getItem('wa_open_contact');
+    if (stored) {
+      try { pendingWATarget.current = JSON.parse(stored); } catch {}
+      localStorage.removeItem('wa_open_contact');
+    }
+  }, []);
+
+  // After chats load: resolve pending navigation target
+  useEffect(() => {
+    const target = pendingWATarget.current;
+    if (!target || chats.length === 0) return;
+    pendingWATarget.current = null;
+
+    const targetDigits = target.phone.replace(/\D/g, '');
+    const match = chats.find(c => {
+      const chatDigits = c.phone.replace(/\D/g, '');
+      return chatDigits.endsWith(targetDigits) || targetDigits.endsWith(chatDigits);
+    });
+
+    if (match) {
+      setSelectedChat(match);
+      selectedChatRef.current = match;
+      setChats(prev => prev.map(c => c.id === match.id ? { ...c, unread: 0 } : c));
+      fetch('/api/whatsapp?action=readChat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: match.id })
+      }).catch(() => {});
+    } else {
+      // No existing chat — open new message dialog pre-filled
+      setNewMessagePhone(target.phone);
+      setShowNewMessage(true);
+    }
+  }, [chats]);
 
   // Check connection status via backend API
   const checkStatus = useCallback(async () => {
