@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, Phone, CheckCircle2, ChartPie, FilePenLine,
@@ -35,7 +35,15 @@ const NAV_ITEMS = [
 const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
   const { state, logout } = useApp();
   const user = state.user;
-  const currentPath = window.location.hash.replace('#', '') || '/dashboard';
+
+  const getPath = () => window.location.hash.replace('#', '') || '/dashboard';
+  const [currentPath, setCurrentPath] = useState(getPath);
+
+  useEffect(() => {
+    const onHashChange = () => setCurrentPath(getPath());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const filteredItems = NAV_ITEMS.filter(item => {
     if (item.role === 'manager' && user?.role !== 'manager') return false;

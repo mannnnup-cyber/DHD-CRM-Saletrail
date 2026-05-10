@@ -23,12 +23,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     switch (action) {
       case 'list': {
-        // Get all settings
+        // Get all settings — order newest-first so duplicates (if any) resolve to most recent
         const { data: settings } = await supabase
           .from('app_settings')
           .select('*')
-          .order('category', { ascending: true })
-          .order('setting_key', { ascending: true });
+          .order('updated_at', { ascending: false });
 
         // Return as key-value object, mask password values
         const result: Record<string, any> = {};
@@ -91,32 +90,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return 'text';
         };
 
-        // Upsert each setting
+        // Save each setting using update-first / insert-fallback to avoid
+        // duplicate rows when the table has no unique constraint on setting_key
         const upserts = Object.entries(settings).map(async ([key, value]) => {
           const settingType = inferType(key);
 
-          // Skip if value is the mask string (never overwrite with literal bullets)
-          if (value === '••••••••') {
-            return { key, skipped: true };
-          }
+          // Never write the mask string or an empty password — preserve what's stored
+          if (value === '••••••••') return { key, skipped: true };
+          if (settingType === 'password' && value === '') return { key, skipped: true };
 
-          // Skip empty password fields — user didn't re-enter, preserve existing
-          if (settingType === 'password' && value === '') {
-            return { key, skipped: true };
-          }
+          const now = new Date().toISOString();
+          const payload = { setting_value: value, setting_type: settingType, updated_at: now };
 
-          const { error } = await supabase
+          // Try update first
+          const { data: updated } = await supabase
             .from('app_settings')
-            .upsert({
-              setting_key: key,
-              setting_value: value,
-              setting_type: settingType,
-              updated_at: new Date().toISOString()
-            }, {
-              onConflict: 'setting_key'
-            });
+            .update(payload)
+            .eq('setting_key', key)
+            .select('id');
 
-          return { key, error };
+          // If no row existed, insert
+          if (!updated || updated.length === 0) {
+            await supabase.from('app_settings').insert({ setting_key: key, ...payload });
+          }
+
+          return { key };
         });
 
         await Promise.all(upserts);
