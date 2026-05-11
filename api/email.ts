@@ -1,6 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
+// Decode quoted-printable encoding (=3D, =20, soft line breaks etc.)
+function decodeQP(str: string): string {
+  return str
+    .replace(/=\r?\n/g, '')
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
 const supabase = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -490,7 +497,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                     // Body preview from TEXT part or parsed text
                     const bodyText = bodyBuffer || parsed.text || '';
-                    const bodyPreview = bodyText.replace(/\r/g, '').slice(0, 5000);
+                    const bodyPreview = decodeQP(bodyText).replace(/\r/g, '').slice(0, 5000);
 
                     const isRead = !!(msg as any)._isRead;
 

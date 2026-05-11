@@ -146,13 +146,15 @@ export default function EmailInbox() {
   const [replyBody, setReplyBody]         = useState('');
   const [aiSuggestion, setAiSuggestion]   = useState('');
   const [stats, setStats]                 = useState<EmailStats | null>(null);
-  const [imported, setImported]           = useState(false);
   const [threadView, setThreadView]       = useState(false);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [templates, setTemplates]         = useState<Template[]>([]);
   const [showCc, setShowCc]               = useState(false);
   const [toasts, setToasts]               = useState<Toast[]>([]);
   const [confirmModal, setConfirmModal]   = useState<{ msg: string; onConfirm: () => void } | null>(null);
+  const [lastSynced, setLastSynced]       = useState<Date | null>(null);
+  const [syncing, setSyncing]             = useState(false);
+  const [dbMissing, setDbMissing]         = useState(false);
 
   const toastIdRef = useRef(0);
 
@@ -173,18 +175,16 @@ export default function EmailInbox() {
     try {
       const r = await fetch('/api/email?action=list');
       const data = await r.json();
+      if (data.tableError) setDbMissing(true);
       if (data.success && (data.emails || []).length > 0) {
+        setDbMissing(false);
         setEmails((data.emails || []).map(mapDbEmail));
       } else {
-        // Fall back to locally-cached emails from last sync
-        try {
-          const cached = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
-          if (cached.length > 0) setEmails(cached.map(mapDbEmail));
-        } catch { /* ignore */ }
+        const cached = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
+        if (cached.length > 0) setEmails(cached.map(mapDbEmail));
       }
     } catch (e) {
       console.error('Error loading emails:', e);
-      // Fallback to cache on network error
       try {
         const cached = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
         if (cached.length > 0) setEmails(cached.map(mapDbEmail));
@@ -215,6 +215,18 @@ export default function EmailInbox() {
     loadTemplates();
   }, [loadEmails, loadStats, loadTemplates]);
 
+  // Auto-sync on mount if IMAP is configured and last sync was >30 min ago
+  useEffect(() => {
+    try {
+      const settings = JSON.parse(localStorage.getItem('dhd_crm_settings') || '{}');
+      if (!settings.IMAP_HOST || !settings.IMAP_USER || !settings.IMAP_PASSWORD) return;
+      const lastSyncTs = parseInt(localStorage.getItem('dhd_last_sync') || '0', 10);
+      const minsAgo = (Date.now() - lastSyncTs) / 60000;
+      if (minsAgo > 30) doSync(true); // silent = true
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Real-time new emails ───────────────────────────────────────────────────
   useEffect(() => {
     if (!supabase || typeof supabase.channel !== 'function') return;
@@ -230,48 +242,52 @@ export default function EmailInbox() {
   }, [addToast, loadStats]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  const syncEmails = () => {
-    askConfirm('Sync emails from your IMAP mailbox? This will fetch the last 50 emails.', async () => {
-      setLoading(true);
+  const doSync = async (silent = false) => {
+    if (syncing) return;
+    setSyncing(true);
+    if (!silent) setLoading(true);
+    try {
+      let storedSettings: Record<string, string> = {};
       try {
-        // Pass locally-stored settings in the request body so sync works
-        // even if the app_settings table hasn't been created in Supabase yet
-        let storedSettings: Record<string, string> = {};
-        try {
-          const raw = localStorage.getItem('dhd_crm_settings');
-          storedSettings = raw ? JSON.parse(raw) : {};
-        } catch { /* ignore */ }
+        const raw = localStorage.getItem('dhd_crm_settings');
+        storedSettings = raw ? JSON.parse(raw) : {};
+      } catch { /* ignore */ }
 
-        const r = await fetch('/api/email?action=sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ settings: storedSettings })
-        });
-        const data = await r.json();
-        if (data.success) {
-          // If API returned emails directly (no DB), cache them in localStorage
-          if (data.emails && data.emails.length > 0) {
-            try {
-              const existing = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
-              const existingIds = new Set(existing.map((e: any) => e.message_id));
-              const fresh = data.emails.filter((e: any) => !existingIds.has(e.message_id));
-              localStorage.setItem('dhd_cached_emails', JSON.stringify([...fresh, ...existing].slice(0, 200)));
-            } catch { /* ignore */ }
-          }
-          addToast(`Synced ${data.synced} new email${data.synced !== 1 ? 's' : ''}`);
-          await loadEmails();
-          await loadStats();
-        } else {
-          const detail = data.error || data.message || 'Unknown error';
-          const hint = data.hint ? ` · ${data.hint}` : '';
-          addToast(`Sync failed: ${detail}${hint}`, 'error');
+      const r = await fetch('/api/email?action=sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: storedSettings })
+      });
+      const data = await r.json();
+      if (data.success) {
+        if (data.emails && data.emails.length > 0) {
+          try {
+            const existing = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
+            const existingIds = new Set(existing.map((e: any) => e.message_id));
+            const fresh = data.emails.filter((e: any) => !existingIds.has(e.message_id));
+            localStorage.setItem('dhd_cached_emails', JSON.stringify([...fresh, ...existing].slice(0, 200)));
+          } catch { /* ignore */ }
         }
-      } catch {
-        addToast('Failed to sync emails', 'error');
+        localStorage.setItem('dhd_last_sync', String(Date.now()));
+        setLastSynced(new Date());
+        if (!silent || data.synced > 0) {
+          addToast(`Synced ${data.synced} new email${data.synced !== 1 ? 's' : ''}${data.timeout ? ' (partial)' : ''}`);
+        }
+        await loadEmails();
+        await loadStats();
+      } else {
+        const detail = data.error || data.message || 'Unknown error';
+        const hint = data.hint ? ` · ${data.hint}` : '';
+        if (!silent) addToast(`Sync failed: ${detail}${hint}`, 'error');
       }
-      setLoading(false);
-    });
+    } catch {
+      if (!silent) addToast('Failed to sync emails', 'error');
+    }
+    setSyncing(false);
+    if (!silent) setLoading(false);
   };
+
+  const syncEmails = () => doSync(false);
 
   const importDemoEmails = async () => {
     setLoading(true);
@@ -281,7 +297,7 @@ export default function EmailInbox() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emails: DEMO_EMAILS })
       });
-      setImported(true);
+      localStorage.setItem('dhd_last_sync', String(Date.now()));
       await loadEmails();
       await loadStats();
       addToast('Demo emails loaded and AI-analyzed');
@@ -522,6 +538,16 @@ export default function EmailInbox() {
         </div>
       )}
 
+      {/* DB missing banner */}
+      {dbMissing && (
+        <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-sm">
+          <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <span className="text-amber-300">
+            Emails are stored locally only. Run <code className="bg-gray-800 px-1 rounded">supabase/email_schema.sql</code> in your Supabase SQL Editor to enable permanent storage.
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
@@ -531,18 +557,22 @@ export default function EmailInbox() {
           <p className="text-gray-400 text-sm mt-1">
             AI-powered email management with lead scoring
             {stats && <span className="ml-2 text-green-400">· {stats.hotLeads} hot leads</span>}
+            {lastSynced && (
+              <span className="ml-2 text-gray-500">· synced {Math.round((Date.now() - lastSynced.getTime()) / 60000) || '<1'}m ago</span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {!imported && emails.length === 0 && (
+          {emails.length === 0 && (
             <button onClick={importDemoEmails} disabled={loading}
               className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
               <Zap className="w-4 h-4" /> Load Demo Emails
             </button>
           )}
-          <button onClick={syncEmails} disabled={loading}
+          <button onClick={syncEmails} disabled={syncing || loading}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
-            <Inbox className="w-4 h-4" /> Sync Emails
+            <Inbox className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync Emails'}
           </button>
           <button onClick={() => { loadEmails(); loadStats(); }} disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
@@ -628,7 +658,7 @@ export default function EmailInbox() {
               </div>
             ) : filteredEmails.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-sm">
-                {emails.length === 0 ? 'No emails yet. Click "Load Demo Emails" to try it out!' : 'No emails match your filters'}
+                {emails.length === 0 ? 'No emails yet — click "Sync Emails" to fetch from your inbox, or "Load Demo Emails" to try it out.' : 'No emails match your filters'}
               </div>
             ) : threadView ? (
               // Threaded view
