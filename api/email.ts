@@ -420,10 +420,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 return resolve(res.json({ success: true, synced: 0, total: 0 }));
               }
 
-              // Fetch last 50 emails (most recent) — request full headers + body preview
+              // Fetch last 50 emails — fetch full raw message so simpleParser
+              // can decode multipart MIME, quoted-printable, base64 itself
               const fetchRange = Math.max(1, totalEmails - 49);
               const fetch = imap.seq.fetch(`${fetchRange}:*`, {
-                bodies: ['HEADER', 'TEXT'],
+                bodies: '',   // '' = entire raw RFC 2822 message
                 struct: true
               });
 
@@ -451,32 +452,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
               fetch.on('message', (msg: any, seqno: any) => {
                 expectedCount++;
-                let headerBuffer = '';
-                let bodyBuffer = '';
+                // Collect the full raw email (headers + body) so simpleParser
+                // can handle multipart splitting and QP/base64 decoding itself
+                let rawEmail = '';
 
-                msg.on('body', (stream: any, info: any) => {
-                  let buf = '';
-                  stream.on('data', (chunk: any) => { buf += chunk.toString('utf8'); });
-                  stream.once('end', () => {
-                    if (info.which === 'HEADER' || info.which.startsWith('HEADER')) {
-                      headerBuffer = buf;
-                    } else {
-                      bodyBuffer += buf.slice(0, 10000);
-                    }
+                msg.on('body', (stream: any) => {
+                  stream.on('data', (chunk: any) => {
+                    if (rawEmail.length < 500000) rawEmail += chunk.toString('utf8');
                   });
                 });
 
                 msg.once('attributes', (attrs: any) => {
-                  // attrs.flags contains \\Seen etc.
                   const flags: string[] = attrs.flags || [];
-                  const isRead = flags.some((f: string) => f === '\\Seen');
-                  (msg as any)._isRead = isRead;
+                  (msg as any)._isRead = flags.some((f: string) => f === '\\Seen');
                 });
 
                 msg.once('end', async () => {
                   try {
-                    // Parse headers using mailparser
-                    const parsed = await simpleParser(headerBuffer);
+                    // simpleParser handles multipart MIME, QP, base64, charsets
+                    const parsed = await simpleParser(rawEmail);
 
                     const fromAddr = parsed.from?.value?.[0];
                     const fromEmail = fromAddr?.address || `unknown-${seqno}@unknown.com`;
@@ -492,12 +486,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       ? (Array.isArray((parsed as any).references) ? (parsed as any).references : [(parsed as any).references])
                       : [];
 
-                    // Determine thread root
+                    // Thread root: prefer In-Reply-To, then first Reference, then own Message-ID
                     let threadId = inReplyTo || (refs.length > 0 ? refs[0] : '') || messageId;
 
-                    // Body preview from TEXT part or parsed text
-                    const bodyText = bodyBuffer || parsed.text || '';
-                    const bodyPreview = decodeQP(bodyText).replace(/\r/g, '').slice(0, 5000);
+                    // parsed.text is already decoded plain text; fall back to stripped HTML
+                    const bodyPreview = (
+                      parsed.text ||
+                      parsed.html?.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                                  .replace(/<[^>]+>/g, ' ')
+                                  .replace(/\s{2,}/g, ' ')
+                                  .trim() ||
+                      ''
+                    ).slice(0, 5000);
 
                     const isRead = !!(msg as any)._isRead;
 
