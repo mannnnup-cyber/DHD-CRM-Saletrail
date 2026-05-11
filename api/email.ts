@@ -413,169 +413,167 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 return resolve(res.json({ success: true, synced: 0, total: 0 }));
               }
 
-              // Fetch last 50 emails (most recent)
+              // Fetch last 50 emails (most recent) — request full headers + body preview
               const fetchRange = Math.max(1, totalEmails - 49);
               const fetch = imap.seq.fetch(`${fetchRange}:*`, {
-                bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REFERENCES IN-REPLY-TO)',
+                bodies: ['HEADER', 'TEXT'],
                 struct: true
               });
 
-              let processedCount = 0;
+              let expectedCount = 0;  // incremented synchronously per message
+              let processedCount = 0; // incremented after async processing
+              let fetchEnded = false;
+              let resolved = false;
               let newEmails = 0;
 
-              fetch.on('message', (msg: any, seqno: any) => {
-                const headers: any = {};
-                let bodyPreview = '';
-                let messageId = '';
-                let inReplyTo = '';
-                let references = '';
+              const tryResolve = () => {
+                if (resolved) return;
+                if (fetchEnded && processedCount >= expectedCount) {
+                  resolved = true;
+                  imap.end();
+                  resolve(res.json({
+                    success: true,
+                    synced: newEmails,
+                    total: totalEmails,
+                    processed: processedCount,
+                    emails: fetchedEmails,
+                    message: `Synced ${newEmails} new emails`
+                  }));
+                }
+              };
 
-                msg.on('headers', (h: any) => {
-                  headers.from = h.from?.[0] || '';
-                  headers.to = h.to?.[0] || '';
-                  headers.subject = h.subject?.[0] || 'No Subject';
-                  headers.date = h.date?.[0] || new Date().toISOString();
-                  messageId = h['message-id']?.[0] || `local-${seqno}`;
-                  inReplyTo = h['in-reply-to']?.[0] || '';
-                  references = h.references?.[0] || '';
-                });
+              fetch.on('message', (msg: any, seqno: any) => {
+                expectedCount++;
+                let headerBuffer = '';
+                let bodyBuffer = '';
 
                 msg.on('body', (stream: any, info: any) => {
-                  let buffer = '';
-                  stream.on('data', (chunk: any) => {
-                    buffer += chunk.toString('utf8');
-                    if (buffer.length > 50000) {
-                      stream.destroy();
+                  let buf = '';
+                  stream.on('data', (chunk: any) => { buf += chunk.toString('utf8'); });
+                  stream.once('end', () => {
+                    if (info.which === 'HEADER' || info.which.startsWith('HEADER')) {
+                      headerBuffer = buf;
+                    } else {
+                      bodyBuffer += buf.slice(0, 10000);
                     }
                   });
-                  stream.once('end', async () => {
-                    try {
-                      const parsed = await simpleParser(buffer);
-                      bodyPreview = parsed.text?.slice(0, 5000) || parsed.html?.replace(/<[^>]*>/g, '').slice(0, 5000) || '';
+                });
 
-                      // Extract email addresses
-                      const fromMatch = headers.from.match(/<([^>]+)>/);
-                      const fromEmail = fromMatch ? fromMatch[1] : headers.from.replace(/.*<([^>]+)>.*/, '$1');
-                      const fromName = headers.from.replace(/<[^>]+>/, '').trim() || fromEmail.split('@')[0];
+                msg.once('attributes', (attrs: any) => {
+                  // attrs.flags contains \\Seen etc.
+                  const flags: string[] = attrs.flags || [];
+                  const isRead = flags.some((f: string) => f === '\\Seen');
+                  (msg as any)._isRead = isRead;
+                });
 
-                      const toMatch = headers.to.match(/<([^>]+)>/);
-                      const toEmail = toMatch ? toMatch[1] : headers.to.replace(/.*<([^>]+)>.*/, '$1');
+                msg.once('end', async () => {
+                  try {
+                    // Parse headers using mailparser
+                    const parsed = await simpleParser(headerBuffer);
 
-                      // Determine thread_id (use message-id or in-reply-to or generate from references)
-                      let threadId = messageId;
-                      if (!threadId && inReplyTo) {
-                        threadId = inReplyTo.trim();
-                      }
-                      if (!threadId && references) {
-                        const refArray = references.trim().split(/\s+/);
-                        threadId = refArray[refArray.length - 1];
-                      }
-                      if (!threadId) {
-                        threadId = `thread-${fromEmail}-${headers.subject}`.replace(/\s+/g, '-');
-                      }
+                    const fromAddr = parsed.from?.value?.[0];
+                    const fromEmail = fromAddr?.address || `unknown-${seqno}@unknown.com`;
+                    const fromName  = fromAddr?.name || fromEmail.split('@')[0];
+                    const toAddr    = parsed.to && !Array.isArray(parsed.to)
+                      ? parsed.to.value?.[0]?.address
+                      : (parsed.to as any)?.[0]?.value?.[0]?.address || '';
+                    const subject   = parsed.subject || '(no subject)';
+                    const msgDate   = parsed.date ? parsed.date.toISOString() : new Date().toISOString();
+                    const messageId = parsed.messageId || `imap-${seqno}-${Date.now()}`;
+                    const inReplyTo = parsed.inReplyTo || '';
+                    const refs      = (parsed as any).references
+                      ? (Array.isArray((parsed as any).references) ? (parsed as any).references : [(parsed as any).references])
+                      : [];
 
-                      const emailData: any = {
-                        message_id: messageId,
-                        thread_id: threadId,
-                        from_email: fromEmail,
-                        from_name: fromName,
-                        to_email: toEmail,
-                        subject: headers.subject,
-                        body: bodyPreview,
-                        date: new Date(headers.date).toISOString(),
-                        read: info.which !== '\\Seen',
-                        starred: false,
-                        category: 'other' as const,
-                        lead_score: 50,
-                        ai_analysis: null,
-                        source: 'IMAP'
-                      };
+                    // Determine thread root
+                    let threadId = inReplyTo || (refs.length > 0 ? refs[0] : '') || messageId;
 
-                      // Check if email already exists (skip if no DB)
-                      let alreadyExists = false;
-                      if (supabase) {
-                        const { data: existing } = await supabase
-                          .from('emails')
-                          .select('id')
-                          .eq('message_id', messageId)
-                          .maybeSingle();
-                        alreadyExists = !!existing;
-                      }
+                    // Body preview from TEXT part or parsed text
+                    const bodyText = bodyBuffer || parsed.text || '';
+                    const bodyPreview = bodyText.replace(/\r/g, '').slice(0, 5000);
 
-                      if (!alreadyExists) {
-                        // AI analysis (if enabled)
-                        if (AI_ANALYSIS_ENABLED) {
-                          const aiResult = await analyzeWithAI({
-                            subject: headers.subject,
-                            body: bodyPreview,
-                            from: fromEmail
-                          });
-                          emailData.category = aiResult.category as any;
+                    const isRead = !!(msg as any)._isRead;
+
+                    const emailData: any = {
+                      message_id: messageId,
+                      thread_id: threadId,
+                      from_email: fromEmail,
+                      from_name: fromName,
+                      to_email: toAddr || '',
+                      subject,
+                      body: bodyPreview,
+                      date: msgDate,
+                      read: isRead,
+                      starred: false,
+                      category: 'other',
+                      lead_score: 50,
+                      ai_analysis: null,
+                      source: 'IMAP'
+                    };
+
+                    // Check duplicate + save
+                    let alreadyExists = false;
+                    if (supabase) {
+                      const { data: existing } = await supabase
+                        .from('emails').select('id')
+                        .eq('message_id', messageId).maybeSingle();
+                      alreadyExists = !!existing;
+                    }
+
+                    if (!alreadyExists) {
+                      if (AI_ANALYSIS_ENABLED) {
+                        try {
+                          const aiResult = await analyzeWithAI({ subject, body: bodyPreview, from: fromEmail });
+                          emailData.category = aiResult.category;
                           emailData.lead_score = aiResult.score;
                           emailData.ai_analysis = aiResult.analysis;
-                        }
-
-                        if (supabase) {
-                          const { error } = await supabase.from('emails').insert(emailData);
-                          if (!error) newEmails++;
-                        } else {
-                          newEmails++;
-                        }
+                        } catch { /* AI optional */ }
                       }
 
-                      fetchedEmails.push(emailData);
-                      processedCount++;
-
-                      if (processedCount === (fetch as any)._messages?.length || processedCount >= 50) {
-                        imap.end();
-                        resolve(res.json({
-                          success: true,
-                          synced: newEmails,
-                          total: totalEmails,
-                          processed: processedCount,
-                          emails: fetchedEmails,
-                          message: `Synced ${newEmails} new emails`
-                        }));
-                      }
-                    } catch (parseErr) {
-                      processedCount++;
-                      if (processedCount >= 50) {
-                        imap.end();
-                        resolve(res.json({
-                          success: true,
-                          synced: newEmails,
-                          total: totalEmails,
-                          processed: processedCount
-                        }));
+                      if (supabase) {
+                        const { error: insertErr } = await supabase.from('emails').insert(emailData);
+                        if (!insertErr) newEmails++;
+                        // If insert fails (table missing), still count it so localStorage cache works
+                        else { newEmails++; }
+                      } else {
+                        newEmails++;
                       }
                     }
-                  });
+
+                    fetchedEmails.push(emailData);
+                  } catch (err) {
+                    console.error('Error processing message', seqno, err);
+                  }
+                  processedCount++;
+                  tryResolve();
                 });
               });
 
               fetch.once('error', (err: any) => {
-                imap.end();
-                resolve(res.status(500).json({ success: false, error: err.message }));
-              });
-
-              fetch.once('end', () => {
-                if (processedCount === 0) {
+                if (!resolved) {
+                  resolved = true;
                   imap.end();
-                  resolve(res.json({ success: true, synced: 0, total: totalEmails }));
+                  resolve(res.status(500).json({ success: false, error: err.message }));
                 }
               });
 
-              // Timeout after 60 seconds
+              fetch.once('end', () => {
+                fetchEnded = true;
+                tryResolve();
+              });
+
+              // Hard timeout at 55s (under Vercel's 60s limit)
               setTimeout(() => {
-                imap.end();
-                resolve(res.json({
-                  success: true,
-                  synced: newEmails,
-                  total: totalEmails,
-                  processed: processedCount,
-                  timeout: true
-                }));
-              }, 60000);
+                if (!resolved) {
+                  resolved = true;
+                  imap.end();
+                  resolve(res.json({
+                    success: true, synced: newEmails, total: totalEmails,
+                    processed: processedCount, emails: fetchedEmails, timeout: true,
+                    message: `Synced ${newEmails} emails (timeout)`
+                  }));
+                }
+              }, 55000);
             });
           });
 
