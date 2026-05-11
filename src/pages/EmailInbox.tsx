@@ -35,6 +35,7 @@ interface DbEmail {
 
 interface Email {
   id: string;
+  messageId: string;
   threadId: string;
   from: string;
   fromName: string;
@@ -112,15 +113,52 @@ const DEMO_EMAILS = [
   }
 ];
 
+// Strip raw MIME structure from bodies stored before the full-message parser fix.
+// New syncs come through clean; this handles the localStorage cache.
+function cleanBody(body: string): string {
+  if (!body) return '';
+  // If no MIME boundary present, nothing to clean
+  if (!body.includes('Content-Type:') && !body.startsWith('--')) return body;
+
+  const lines = body.split('\n');
+  const out: string[] = [];
+  let skipHeaders = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // MIME boundary — start skipping part headers
+    if (trimmed.startsWith('--')) { skipHeaders = true; continue; }
+    // Content-* headers after a boundary
+    if (skipHeaders && (trimmed.startsWith('Content-') || trimmed === '')) {
+      if (trimmed === '') skipHeaders = false; // blank line ends headers
+      continue;
+    }
+    out.push(line);
+  }
+
+  return out.join('\n')
+    // Decode quoted-printable soft line breaks first
+    .replace(/=\r?\n/g, '')
+    // Decode =XX sequences
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    // Strip any HTML tags that leaked through
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    // Collapse runs of blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function mapDbEmail(db: DbEmail): Email {
   return {
     id: db.id,
+    messageId: db.message_id,
     threadId: db.thread_id || db.id,
     from: db.from_email,
     fromName: db.from_name || db.from_email.split('@')[0],
     to: db.to_email,
     subject: db.subject,
-    body: db.body,
+    body: cleanBody(db.body),
     date: db.date,
     read: db.read,
     starred: db.starred,
@@ -444,18 +482,30 @@ export default function EmailInbox() {
   };
 
   // ── Derived data ───────────────────────────────────────────────────────────
-  const filteredEmails = emails.filter(email => {
-    const q = searchQuery.toLowerCase();
-    const matchSearch = !q || email.subject.toLowerCase().includes(q)
-      || email.fromName.toLowerCase().includes(q)
-      || email.from.toLowerCase().includes(q);
-    const matchCat = filterCategory === 'all' || email.category === filterCategory;
-    const matchScore = filterScore === 'all'
-      ? true : filterScore === 'hot'  ? email.leadScore >= 80
-             : filterScore === 'warm' ? email.leadScore >= 50 && email.leadScore < 80
-             : email.leadScore < 50;
-    return matchSearch && matchCat && matchScore;
+  // Deduplicate by messageId (same email can appear from cache + API)
+  const seenIds = new Set<string>();
+  const dedupedEmails = emails.filter(e => {
+    const key = e.messageId || e.id;
+    if (seenIds.has(key)) return false;
+    seenIds.add(key);
+    return true;
   });
+
+  const filteredEmails = dedupedEmails
+    .filter(email => {
+      const q = searchQuery.toLowerCase();
+      const matchSearch = !q || email.subject.toLowerCase().includes(q)
+        || email.fromName.toLowerCase().includes(q)
+        || email.from.toLowerCase().includes(q);
+      const matchCat = filterCategory === 'all' || email.category === filterCategory;
+      const matchScore = filterScore === 'all'
+        ? true : filterScore === 'hot'  ? email.leadScore >= 80
+               : filterScore === 'warm' ? email.leadScore >= 50 && email.leadScore < 80
+               : email.leadScore < 50;
+      return matchSearch && matchCat && matchScore;
+    })
+    // Always newest first
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // Thread grouping: key = threadId, value = sorted emails (newest first)
   const threadMap = new Map<string, Email[]>();
