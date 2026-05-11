@@ -44,59 +44,51 @@ const Settings: React.FC = () => {
     loadSettings();
   }, []);
 
+  const STORAGE_KEY = 'dhd_crm_settings';
+
+  // Always load from localStorage first — instant and reliable
+  const loadFromStorage = (): Record<string, string> => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  };
+
   const loadSettings = async () => {
     setLoading(true);
+
+    // 1. Load localStorage immediately so UI is never blank
+    const stored = loadFromStorage();
+    if (Object.keys(stored).length > 0) {
+      setLocalValues(stored);
+      const configured: Record<string, boolean> = {};
+      Object.entries(stored).forEach(([k, v]) => { configured[k] = !!v; });
+      setIsConfigured(configured);
+    }
+
+    // 2. Try Supabase in background — merge if it returns more/newer data
     try {
       const r = await fetch('/api/settings?action=list');
       const data = await r.json();
       if (!data.success && data.tableError) {
         setTableNotFound(true);
-        setLoading(false);
-        return;
-      }
-
-      if (data.success) {
+      } else if (data.success && data.settings && Object.keys(data.settings).length > 0) {
         setTableNotFound(false);
-        // Group by category
-        const grouped: SettingsByCategory = { email: [], api: [], integrations: [] };
-        Object.entries(data.settings).forEach(([key, value]) => {
-          const item: SettingItem = {
-            key,
-            value: value as string,
-            type: 'text',
-            description: '',
-            category: key.includes('IMAP') || key.includes('RESEND') ? 'email' :
-                       key.includes('OPENAI') || key.includes('AI_') ? 'api' : 'integrations',
-            isEncrypted: false
-          };
-
-          // Set proper types based on key
-          if (key.includes('PORT')) item.type = 'number';
-          if (key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET')) item.type = 'password';
-          if (key.includes('ENABLED')) item.type = 'boolean';
-
-          if (grouped[item.category]) {
-            grouped[item.category].push(item);
-          }
-        });
-
-        setDbSettings(grouped);
-
-        // Track which keys have a saved value (for showing "already saved" badge)
-        setIsConfigured(data.isConfigured || {});
-
-        // Set local values — skip masked passwords so we don't pre-fill
-        // the field with '••••••••' (which would be saved literally on next save)
-        const rawValues: Record<string, string> = {};
+        const rawValues: Record<string, string> = { ...stored };
         Object.entries(data.settings).forEach(([key, value]) => {
           const isPasswordKey = key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET');
           const isMasked = value === '••••••••';
-          rawValues[key] = (isPasswordKey && isMasked) ? '' : (value as string);
+          // Keep locally-typed password over the masked DB value
+          if (isPasswordKey && isMasked) return;
+          rawValues[key] = value as string;
         });
         setLocalValues(rawValues);
+        setIsConfigured(data.isConfigured || {});
+        // Keep localStorage in sync with DB values
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(rawValues));
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
+      console.error('Error loading settings from API:', error);
     }
     setLoading(false);
   };
@@ -113,6 +105,15 @@ const Settings: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
+
+    // Always save to localStorage first — this is the reliable fallback
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(localValues));
+    } catch (e) {
+      console.error('localStorage save failed:', e);
+    }
+
+    // Also attempt to sync to Supabase (best-effort)
     try {
       const r = await fetch('/api/settings?action=save', {
         method: 'POST',
@@ -121,15 +122,15 @@ const Settings: React.FC = () => {
       });
       const data = await r.json();
       if (data.success) {
-        setMessage({ type: 'success', text: 'Settings saved successfully!' });
-        // Do NOT reload — reloading replaces password fields with masked '••••••••'
-        // which would corrupt them on the next save
+        setMessage({ type: 'success', text: 'Settings saved!' });
       } else {
         if (data.tableError) setTableNotFound(true);
-        setMessage({ type: 'error', text: data.error || 'Failed to save settings' });
+        // Still show success since localStorage save worked
+        setMessage({ type: 'success', text: 'Settings saved locally. (Database table not set up yet — see notice above)' });
       }
     } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to save settings' });
+      // API unreachable — localStorage save still succeeded
+      setMessage({ type: 'success', text: 'Settings saved locally.' });
     }
     setSaving(false);
   };

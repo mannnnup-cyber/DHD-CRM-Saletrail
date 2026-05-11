@@ -223,7 +223,19 @@ export default function EmailInbox() {
     askConfirm('Sync emails from your IMAP mailbox? This will fetch the last 50 emails.', async () => {
       setLoading(true);
       try {
-        const r = await fetch('/api/email?action=sync', { method: 'POST' });
+        // Pass locally-stored settings in the request body so sync works
+        // even if the app_settings table hasn't been created in Supabase yet
+        let storedSettings: Record<string, string> = {};
+        try {
+          const raw = localStorage.getItem('dhd_crm_settings');
+          storedSettings = raw ? JSON.parse(raw) : {};
+        } catch { /* ignore */ }
+
+        const r = await fetch('/api/email?action=sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: storedSettings })
+        });
         const data = await r.json();
         if (data.success) {
           addToast(`Synced ${data.synced} new email${data.synced !== 1 ? 's' : ''}${data.timeout ? ' (timeout — try again for more)' : ''}`);

@@ -361,14 +361,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
 
-        // Sync emails from IMAP mailbox (get settings from database)
-        const settings = await getSettings();
-        const IMAP_HOST = settings['IMAP_HOST'] || '';
-        const IMAP_PORT = parseInt(settings['IMAP_PORT'] || '993');
-        const IMAP_USER = settings['IMAP_USER'] || '';
-        const IMAP_PASSWORD = settings['IMAP_PASSWORD'] || '';
-        const IMAP_USE_TLS = settings['IMAP_USE_TLS'] !== 'false';
-        const AI_ANALYSIS_ENABLED = await getBoolSetting('AI_ANALYSIS_ENABLED', true);
+        // Prefer settings passed directly in the request body (from localStorage on the client)
+        // so this works even if the app_settings table doesn't exist in Supabase yet
+        const bodySettings: Record<string, string> = req.body?.settings || {};
+        const dbSettings = Object.keys(bodySettings).length > 0 ? bodySettings : await getSettings();
+
+        const IMAP_HOST = dbSettings['IMAP_HOST'] || '';
+        const IMAP_PORT = parseInt(dbSettings['IMAP_PORT'] || '993');
+        const IMAP_USER = dbSettings['IMAP_USER'] || '';
+        const IMAP_PASSWORD = dbSettings['IMAP_PASSWORD'] || '';
+        const IMAP_USE_TLS = dbSettings['IMAP_USE_TLS'] !== 'false';
+        const AI_ANALYSIS_ENABLED = dbSettings['AI_ANALYSIS_ENABLED'] !== 'false';
 
         if (!IMAP_HOST || !IMAP_USER || !IMAP_PASSWORD) {
           return res.json({
