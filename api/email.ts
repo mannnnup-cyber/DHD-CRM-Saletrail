@@ -382,10 +382,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
 
-        if (!supabase) {
-          return res.status(500).json({ success: false, error: 'Database not configured' });
-        }
-
         return new Promise((resolve) => {
           const imap = new Imap({
             user: IMAP_USER,
@@ -393,7 +389,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             host: IMAP_HOST,
             port: IMAP_PORT,
             tls: IMAP_USE_TLS,
-            tlsOptions: { rejectUnauthorized: false }
+            tlsOptions: { rejectUnauthorized: false },
+            connTimeout: 20000,
+            authTimeout: 15000
           });
 
           function openInbox(cb: (err: Error | null, box: any) => void) {
@@ -493,14 +491,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         source: 'IMAP'
                       };
 
-                      // Check if email already exists
-                      const { data: existing } = await supabase
-                        .from('emails')
-                        .select('id')
-                        .eq('message_id', messageId)
-                        .single();
+                      // Check if email already exists (skip if no DB)
+                      let alreadyExists = false;
+                      if (supabase) {
+                        const { data: existing } = await supabase
+                          .from('emails')
+                          .select('id')
+                          .eq('message_id', messageId)
+                          .maybeSingle();
+                        alreadyExists = !!existing;
+                      }
 
-                      if (!existing) {
+                      if (!alreadyExists) {
                         // AI analysis (if enabled)
                         if (AI_ANALYSIS_ENABLED) {
                           const aiResult = await analyzeWithAI({
@@ -513,8 +515,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                           emailData.ai_analysis = aiResult.analysis;
                         }
 
-                        const { error } = await supabase.from('emails').insert(emailData);
-                        if (!error) newEmails++;
+                        if (supabase) {
+                          const { error } = await supabase.from('emails').insert(emailData);
+                          if (!error) newEmails++;
+                        } else {
+                          newEmails++;
+                        }
                       }
 
                       fetchedEmails.push(emailData);
@@ -527,6 +533,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                           synced: newEmails,
                           total: totalEmails,
                           processed: processedCount,
+                          emails: fetchedEmails,
                           message: `Synced ${newEmails} new emails`
                         }));
                       }
@@ -573,11 +580,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
 
           imap.once('error', (err: any) => {
-            resolve(res.status(500).json({
-              success: false,
-              error: err.message,
-              hint: 'Check IMAP credentials and firewall settings'
-            }));
+            const msg: string = err.message || String(err);
+            let hint = `Tried ${IMAP_HOST}:${IMAP_PORT} with user "${IMAP_USER}". `;
+            if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('timed out')) {
+              hint += 'Connection timed out — verify the host and port are correct. Gmail: imap.gmail.com:993. Outlook: outlook.office365.com:993.';
+            } else if (msg.toLowerCase().includes('auth') || msg.toLowerCase().includes('credentials') || msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('login')) {
+              hint += 'Authentication failed — check your password. Gmail requires an App Password, not your regular password.';
+            } else if (msg.toLowerCase().includes('self signed') || msg.toLowerCase().includes('certificate')) {
+              hint += 'TLS certificate error — try disabling TLS or use port 143.';
+            } else {
+              hint += 'Check IMAP credentials and that your email provider allows IMAP access.';
+            }
+            resolve(res.json({ success: false, error: msg, hint }));
           });
 
           imap.connect();

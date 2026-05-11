@@ -173,11 +173,22 @@ export default function EmailInbox() {
     try {
       const r = await fetch('/api/email?action=list');
       const data = await r.json();
-      if (data.success) {
+      if (data.success && (data.emails || []).length > 0) {
         setEmails((data.emails || []).map(mapDbEmail));
+      } else {
+        // Fall back to locally-cached emails from last sync
+        try {
+          const cached = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
+          if (cached.length > 0) setEmails(cached.map(mapDbEmail));
+        } catch { /* ignore */ }
       }
     } catch (e) {
       console.error('Error loading emails:', e);
+      // Fallback to cache on network error
+      try {
+        const cached = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
+        if (cached.length > 0) setEmails(cached.map(mapDbEmail));
+      } catch { /* ignore */ }
     }
     setLoading(false);
   }, []);
@@ -238,7 +249,16 @@ export default function EmailInbox() {
         });
         const data = await r.json();
         if (data.success) {
-          addToast(`Synced ${data.synced} new email${data.synced !== 1 ? 's' : ''}${data.timeout ? ' (timeout — try again for more)' : ''}`);
+          // If API returned emails directly (no DB), cache them in localStorage
+          if (data.emails && data.emails.length > 0) {
+            try {
+              const existing = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
+              const existingIds = new Set(existing.map((e: any) => e.message_id));
+              const fresh = data.emails.filter((e: any) => !existingIds.has(e.message_id));
+              localStorage.setItem('dhd_cached_emails', JSON.stringify([...fresh, ...existing].slice(0, 200)));
+            } catch { /* ignore */ }
+          }
+          addToast(`Synced ${data.synced} new email${data.synced !== 1 ? 's' : ''}`);
           await loadEmails();
           await loadStats();
         } else {
