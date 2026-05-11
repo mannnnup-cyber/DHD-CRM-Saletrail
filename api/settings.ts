@@ -24,10 +24,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (action) {
       case 'list': {
         // Get all settings — order newest-first so duplicates (if any) resolve to most recent
-        const { data: settings } = await supabase
+        const { data: settings, error: listError } = await supabase
           .from('app_settings')
           .select('*')
           .order('updated_at', { ascending: false });
+
+        if (listError) {
+          return res.json({
+            success: false,
+            tableError: true,
+            error: listError.message,
+            hint: 'Run the SQL in supabase/email_schema.sql to create the app_settings table'
+          });
+        }
 
         // Return as key-value object, mask password values
         const result: Record<string, any> = {};
@@ -103,21 +112,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const payload = { setting_value: value, setting_type: settingType, updated_at: now };
 
           // Try update first
-          const { data: updated } = await supabase
+          const { data: updated, error: updateError } = await supabase!
             .from('app_settings')
             .update(payload)
             .eq('setting_key', key)
             .select('id');
 
+          if (updateError) return { key, error: updateError.message };
+
           // If no row existed, insert
           if (!updated || updated.length === 0) {
-            await supabase.from('app_settings').insert({ setting_key: key, ...payload });
+            const { error: insertError } = await supabase!
+              .from('app_settings')
+              .insert({ setting_key: key, ...payload });
+            if (insertError) return { key, error: insertError.message };
           }
 
           return { key };
         });
 
-        await Promise.all(upserts);
+        const results = await Promise.all(upserts);
+        const failed = results.filter((r: any) => r && r.error);
+
+        if (failed.length > 0) {
+          const firstError = (failed[0] as any).error as string;
+          const tableNotFound = firstError.includes('does not exist') || firstError.includes('relation');
+          return res.status(500).json({
+            success: false,
+            tableError: tableNotFound,
+            error: tableNotFound
+              ? 'The app_settings table does not exist in your Supabase database.'
+              : firstError,
+            hint: tableNotFound
+              ? 'Go to Supabase → SQL Editor and run the contents of supabase/email_schema.sql'
+              : undefined
+          });
+        }
 
         return res.json({ success: true, message: 'Settings saved successfully' });
       }

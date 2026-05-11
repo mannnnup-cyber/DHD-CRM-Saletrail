@@ -37,6 +37,7 @@ const Settings: React.FC = () => {
   const [testing, setTesting] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [tableNotFound, setTableNotFound] = useState(false);
 
   // Load settings from database
   useEffect(() => {
@@ -48,7 +49,14 @@ const Settings: React.FC = () => {
     try {
       const r = await fetch('/api/settings?action=list');
       const data = await r.json();
+      if (!data.success && data.tableError) {
+        setTableNotFound(true);
+        setLoading(false);
+        return;
+      }
+
       if (data.success) {
+        setTableNotFound(false);
         // Group by category
         const grouped: SettingsByCategory = { email: [], api: [], integrations: [] };
         Object.entries(data.settings).forEach(([key, value]) => {
@@ -117,6 +125,7 @@ const Settings: React.FC = () => {
         // Do NOT reload — reloading replaces password fields with masked '••••••••'
         // which would corrupt them on the next save
       } else {
+        if (data.tableError) setTableNotFound(true);
         setMessage({ type: 'error', text: data.error || 'Failed to save settings' });
       }
     } catch (error) {
@@ -183,6 +192,26 @@ const Settings: React.FC = () => {
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-gray-400">Configure your CRM integrations and preferences</p>
       </header>
+
+      {/* Database Setup Banner */}
+      {tableNotFound && (
+        <div className="p-5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+          <div className="flex items-center gap-3">
+            <XCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+            <p className="text-amber-400 font-semibold">Database table not set up yet</p>
+          </div>
+          <p className="text-gray-400 text-sm">
+            The <code className="text-amber-300 bg-gray-800 px-1 py-0.5 rounded">app_settings</code> table doesn't exist in your Supabase database.
+            That's why settings aren't saving. Run this SQL once in your Supabase dashboard to fix it:
+          </p>
+          <ol className="text-gray-400 text-sm space-y-1 list-decimal list-inside">
+            <li>Go to your <strong className="text-white">Supabase project</strong> → <strong className="text-white">SQL Editor</strong></li>
+            <li>Click <strong className="text-white">New Query</strong></li>
+            <li>Paste and run the contents of <code className="text-amber-300 bg-gray-800 px-1 py-0.5 rounded">supabase/email_schema.sql</code></li>
+          </ol>
+          <p className="text-gray-500 text-xs">This creates the settings, emails, and email templates tables all at once.</p>
+        </div>
+      )}
 
       {/* Message Banner */}
       {message && (
