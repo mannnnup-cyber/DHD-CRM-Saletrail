@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { resolveContact } from './contacts';
 
 // Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)
@@ -61,7 +62,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .limit(1);
 
           if (!existing || existing.length === 0) {
-            await supabase.from('whatsapp_messages').insert({
+            // Extract phone from chatId (e.g. "18761234567@c.us" → "18761234567")
+            const phone = isInbound ? chatId.replace(/@.*$/, '') : null;
+            const contact = isInbound && phone
+              ? await resolveContact({ name: senderName || phone, phone, source: 'WHATSAPP' })
+              : null;
+
+            const msgAt = timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString();
+
+            const { data: inserted } = await supabase.from('whatsapp_messages').insert({
               provider: 'greenapi',
               provider_message_id: messageId,
               chat_id: chatId,
@@ -70,8 +79,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               body: text,
               type: msgType,
               raw: body,
-              created_at: timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString()
-            });
+              contact_id: contact?.id ?? null,
+              created_at: msgAt
+            }).select('id').single();
+
+            // Log to unified interactions table
+            if (contact && inserted) {
+              await supabase.from('interactions').insert({
+                contact_id: contact.id,
+                type: 'WHATSAPP',
+                direction: isInbound ? 'INBOUND' : 'OUTBOUND',
+                content: text.slice(0, 500),
+                metadata: { whatsapp_message_id: inserted.id, provider_message_id: messageId, chat_id: chatId },
+                timestamp: msgAt,
+              });
+            }
           }
         }
       }

@@ -1,4 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
+import { resolveContact } from './contacts';
+
+const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
+const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = _url && _key ? createClient(_url, _key) : null;
 
 // Credentials come from env vars only — never from query params
 const WC_API_BASE = process.env.WC_STORE_URL || '';
@@ -147,6 +153,94 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             status: p.status
           }))
         });
+      }
+
+      case 'syncOrders': {
+        // Fetch up to 100 most-recent orders, resolve contacts, upsert to woo_orders
+        if (!supabase) {
+          return res.status(503).json({ success: false, error: 'Supabase not configured' });
+        }
+
+        const perPage = Math.min(Number(req.query.per_page) || 100, 100);
+        const r = await fetch(
+          `${WC_API_BASE}/wp-json/wc/v3/orders?page=1&per_page=${perPage}&orderby=date&order=desc`,
+          { headers: wcHeaders() }
+        );
+        if (!r.ok) {
+          return res.status(r.status).json({ success: false, error: `WooCommerce API error: ${r.status}` });
+        }
+
+        const orders = await r.json();
+        let synced = 0;
+        const errors: string[] = [];
+
+        for (const o of orders) {
+          try {
+            const customerName = `${o.billing?.first_name || ''} ${o.billing?.last_name || ''}`.trim();
+            const customerEmail = (o.billing?.email || '').toLowerCase().trim();
+            const customerPhone = o.billing?.phone || '';
+
+            // Resolve or create a master Contact
+            const contact = (customerEmail || customerPhone)
+              ? await resolveContact({
+                  name: customerName || 'WooCommerce Customer',
+                  email: customerEmail || undefined,
+                  phone: customerPhone || undefined,
+                  company: o.billing?.company || undefined,
+                  source: 'WOOCOMMERCE',
+                })
+              : null;
+
+            const orderRow = {
+              woo_order_id: String(o.id),
+              contact_id: contact?.id ?? null,
+              customer_name: customerName,
+              customer_email: customerEmail,
+              customer_phone: customerPhone,
+              billing_address: [o.billing?.address_1, o.billing?.city, o.billing?.state].filter(Boolean).join(', '),
+              subtotal: parseFloat(o.subtotal || '0'),
+              tax_amount: parseFloat(o.total_tax || '0'),
+              shipping_amount: parseFloat(o.shipping_total || '0'),
+              total_amount: parseFloat(o.total || '0'),
+              currency: o.currency || 'JMD',
+              status: o.status,
+              payment_method: o.payment_method_title || '',
+              order_notes: o.customer_note || '',
+              line_items: o.line_items || [],
+              synced_at: new Date().toISOString(),
+            };
+
+            await supabase
+              .from('woo_orders')
+              .upsert(orderRow, { onConflict: 'woo_order_id', ignoreDuplicates: false });
+
+            // Update contact aggregate stats
+            if (contact) {
+              const { data: stats } = await supabase
+                .from('woo_orders')
+                .select('total_amount')
+                .eq('contact_id', contact.id)
+                .eq('status', 'completed');
+
+              if (stats) {
+                const totalOrders = stats.length;
+                const totalRevenue = stats.reduce((s: number, row: any) => s + (row.total_amount || 0), 0);
+                await supabase.from('contacts').update({
+                  total_orders: totalOrders,
+                  total_revenue: totalRevenue,
+                  average_order_value: totalOrders > 0 ? totalRevenue / totalOrders : 0,
+                  updated_at: new Date().toISOString(),
+                }).eq('id', contact.id);
+              }
+            }
+
+            synced++;
+          } catch (err: any) {
+            errors.push(`Order ${o.id}: ${err.message}`);
+          }
+        }
+
+        return res.json({ success: true, synced, total: orders.length, errors });
       }
 
       default:

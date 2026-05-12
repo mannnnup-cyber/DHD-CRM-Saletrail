@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppState, Lead, Call, Deal, Task, Quote, Activity, AppSettings, Invoice } from '../data/types';
 
 import { INITIAL_SETTINGS, generateId, generateMockData } from '../data/store';
-import { db } from '../lib/supabase';
+import { db, supabase } from '../lib/supabase';
 import { logger } from '../lib/logger';
 import { rowToLead, rowToDeal, rowToCall, rowToTask, rowToActivity } from '../lib/adapters';
 import { useAuth } from './AuthContext';
@@ -150,14 +150,48 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (isSupabaseConnected) {
       try {
+        // Resolve contact identity for this call
+        let contactId: string | null = null;
+        const contactPhone = (newCall as any).contactPhone;
+        const contactName = (newCall as any).contactName;
+        if (contactPhone || contactName) {
+          try {
+            const r = await fetch('/api/contacts?action=resolve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: contactName || contactPhone, phone: contactPhone, source: 'MANUAL' })
+            });
+            if (r.ok) {
+              const resolved = await r.json();
+              contactId = resolved.id ?? null;
+            }
+          } catch { /* non-fatal */ }
+        }
+
         const dbCallType = newCall.type === 'Missed' ? 'Incoming' : newCall.type;
-        await db.createCall({
-          type: dbCallType as any,
-          phone_number: (newCall as any).contactPhone,
-          contact_name: (newCall as any).contactName,
-          duration: newCall.duration, rep_id: newCall.repId,
-          notes: newCall.notes, timestamp: newCall.timestamp
-        });
+        const [callRows] = await Promise.all([
+          db.createCall({
+            type: dbCallType as any,
+            phone_number: contactPhone,
+            contact_name: contactName,
+            duration: newCall.duration, rep_id: newCall.repId,
+            notes: newCall.notes, timestamp: newCall.timestamp,
+            ...(contactId ? { contact_id: contactId } : {})
+          } as any),
+        ]);
+
+        // Log to interactions table
+        if (contactId) {
+          await supabase.from('interactions').insert({
+            contact_id: contactId,
+            type: 'CALL',
+            direction: newCall.type === 'Incoming' || newCall.type === 'Missed' ? 'INBOUND' : 'OUTBOUND',
+            subject: `${newCall.type} call`,
+            content: newCall.notes || '',
+            metadata: { call_id: callRows?.[0]?.id, duration: newCall.duration },
+            timestamp: newCall.timestamp,
+          });
+        }
       } catch (e) { logger.error('Error syncing call to Supabase:', e); }
     }
     addActivity({ contactId: call.contactId || '', type: 'Call Logged', description: `${call.type} call logged` });

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { resolveContact } from './contacts';
 
 // Decode quoted-printable encoding (=3D, =20, soft line breaks etc.)
 function decodeQP(str: string): string {
@@ -528,6 +529,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     }
 
                     if (!alreadyExists) {
+                      // Resolve or create a Contact for the sender
+                      const contact = await resolveContact({
+                        name: fromName,
+                        email: fromEmail,
+                        source: 'WEBSITE',
+                      });
+                      if (contact) emailData.contact_id = contact.id;
+
                       if (AI_ANALYSIS_ENABLED) {
                         try {
                           const aiResult = await analyzeWithAI({ subject, body: bodyPreview, from: fromEmail });
@@ -538,10 +547,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       }
 
                       if (supabase) {
-                        const { error: insertErr } = await supabase.from('emails').insert(emailData);
-                        if (!insertErr) newEmails++;
-                        // If insert fails (table missing), still count it so localStorage cache works
-                        else { newEmails++; }
+                        const { data: inserted, error: insertErr } = await supabase
+                          .from('emails')
+                          .insert(emailData)
+                          .select('id')
+                          .single();
+                        if (!insertErr) {
+                          newEmails++;
+                          // Log to unified interactions table
+                          if (contact && inserted) {
+                            await supabase.from('interactions').insert({
+                              contact_id: contact.id,
+                              type: 'EMAIL',
+                              direction: 'INBOUND',
+                              subject,
+                              content: bodyPreview.slice(0, 500),
+                              metadata: { email_id: inserted.id, message_id: messageId },
+                              timestamp: msgDate,
+                            });
+                          }
+                        } else {
+                          // If insert fails (table missing), still count it so localStorage cache works
+                          newEmails++;
+                        }
                       } else {
                         newEmails++;
                       }
@@ -825,6 +853,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .maybeSingle();
 
         const leadName = email.from_name || email.from_email.split('@')[0];
+
+        // Resolve or create master Contact for this sender
+        const contact = await resolveContact({
+          name: leadName,
+          email: email.from_email,
+          source: 'WEBSITE',
+        });
+
+        // Link the email row to the contact
+        if (contact) {
+          await supabase
+            .from('emails')
+            .update({ contact_id: contact.id })
+            .eq('id', emailId);
+        }
+
         if (!existingLead) {
           await supabase.from('leads').insert({
             name: leadName,
@@ -832,7 +876,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             source: 'Email',
             status: 'new',
             notes: `Converted from email: "${email.subject}"`,
+            contact_id: contact?.id ?? null,
           });
+        } else {
+          // Backfill contact_id on pre-existing lead if missing
+          if (contact) {
+            await supabase
+              .from('leads')
+              .update({ contact_id: contact.id })
+              .eq('id', existingLead.id)
+              .is('contact_id', null);
+          }
         }
 
         return res.json({
