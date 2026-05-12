@@ -346,16 +346,28 @@ export default function EmailInbox() {
   };
 
   const getAISuggestion = async (emailId: string) => {
+    if (!selectedEmail) return;
     setAnalyzing(emailId);
     try {
-      const r = await fetch(`/api/email?action=aiSuggest&emailId=${emailId}`);
+      const r = await fetch('/api/email?action=aiSuggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailId,
+          fromName: selectedEmail.fromName,
+          fromEmail: selectedEmail.from,
+          subject: selectedEmail.subject,
+          body: selectedEmail.body,
+          aiAnalysis: selectedEmail.aiAnalysis,
+        }),
+      });
       const data = await r.json();
       if (data.success) {
         setAiSuggestion(data.suggestion);
         setReplyBody(data.suggestion);
         setShowAI(true);
       } else {
-        addToast('AI suggestion unavailable — check API configuration', 'info');
+        addToast(data.error || 'AI suggestion unavailable — check OpenAI API key in Settings', 'info');
       }
     } catch {
       addToast('AI suggestion failed', 'error');

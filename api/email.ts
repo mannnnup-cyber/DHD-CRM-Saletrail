@@ -944,20 +944,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'aiSuggest': {
-        const { emailId } = req.query;
+        // Accept email content from request body (POST) so it works for
+        // both DB-stored emails and locally-cached / demo emails
+        const posted = req.body || {};
+        const fromName  = posted.fromName  || '';
+        const fromEmail = posted.fromEmail || '';
+        const subject   = posted.subject   || '(No subject)';
+        const body      = (posted.body     || '').slice(0, 2000);
+        const aiAnalysis = posted.aiAnalysis || {};
 
-        if (!supabase) {
-          return res.json({ success: false, suggestion: 'Database not configured' });
-        }
-
-        const { data: email } = await supabase
-          .from('emails')
-          .select('*')
-          .eq('id', emailId)
-          .single();
-
-        if (!email) {
-          return res.status(404).json({ success: false, error: 'Email not found' });
+        // If content wasn't posted, fall back to DB lookup
+        let emailContent = { fromName, fromEmail, subject, body, aiAnalysis };
+        if (!body && supabase && posted.emailId) {
+          const { data: dbEmail } = await supabase
+            .from('emails')
+            .select('from_name, from_email, subject, body, ai_analysis')
+            .eq('id', posted.emailId)
+            .single();
+          if (dbEmail) {
+            emailContent = {
+              fromName:   dbEmail.from_name  || '',
+              fromEmail:  dbEmail.from_email || '',
+              subject:    dbEmail.subject    || '(No subject)',
+              body:       (dbEmail.body      || '').slice(0, 2000),
+              aiAnalysis: dbEmail.ai_analysis || {},
+            };
+          }
         }
 
         try {
@@ -965,16 +977,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             role: 'system',
             content: `You are a sales assistant for Dirty Hand Designs, a Jamaican branding and design company in Kingston.
 Generate a professional, friendly, concise email reply in the first person. Warm but businesslike tone.
-Context from AI analysis: ${JSON.stringify(email.ai_analysis || {})}
+Context from AI analysis: ${JSON.stringify(emailContent.aiAnalysis)}
 Return ONLY the email body text — no subject line, no "Here is a draft:" preamble.`
           }, {
             role: 'user',
-            content: `Original Email:\nFrom: ${email.from_name || email.from_email}\nSubject: ${email.subject}\n\nBody:\n${(email.body || '').slice(0, 2000)}\n\nGenerate a reply:`
+            content: `Original Email:\nFrom: ${emailContent.fromName || emailContent.fromEmail}\nSubject: ${emailContent.subject}\n\nBody:\n${emailContent.body}\n\nGenerate a reply:`
           }]);
 
           return res.json({ success: true, suggestion });
-        } catch (error) {
-          return res.json({ success: false, error: 'AI suggestion failed' });
+        } catch (err: any) {
+          return res.json({ success: false, error: err.message || 'AI suggestion failed' });
         }
       }
 
