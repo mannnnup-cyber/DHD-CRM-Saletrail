@@ -99,27 +99,21 @@ interface Email {
   } | null;
 }
 
-const OPENROUTER_MODEL = 'google/gemini-2.0-flash-exp:free';
-
-async function getOpenRouterKey(): Promise<string> {
-  // Prefer Vercel env var, fall back to value saved in Settings UI
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
-  const key = await getSetting('OPENAI_API_KEY', ''); // field was renamed in UI but kept same DB key
-  return key;
+async function getAIKey(): Promise<string> {
+  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+  return getSetting('OPENAI_API_KEY', '');
 }
 
-async function callOpenRouter(messages: { role: string; content: string }[], jsonMode = false): Promise<string> {
-  const apiKey = await getOpenRouterKey();
-  if (!apiKey) throw new Error('No OpenRouter API key configured');
-  const body: any = { model: OPENROUTER_MODEL, messages };
+async function callOpenAI(messages: { role: string; content: string }[], jsonMode = false): Promise<string> {
+  const apiKey = await getAIKey();
+  if (!apiKey) throw new Error('No OpenAI API key configured');
+  const body: any = { model: 'gpt-4o-mini', messages };
   if (jsonMode) body.response_format = { type: 'json_object' };
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://dhd-crm.vercel.app',
-      'X-Title': 'DHD SalesTrail CRM',
     },
     body: JSON.stringify(body),
   });
@@ -140,7 +134,7 @@ async function analyzeWithAI(email: { subject: string; body: string; from: strin
   };
 }> {
   try {
-    const content = await callOpenRouter([{
+    const content = await callOpenAI([{
       role: 'system',
       content: `You are a CRM AI assistant analyzing emails for lead potential. Analyze the email and return a JSON object with:
 {
@@ -967,7 +961,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const suggestion = await callOpenRouter([{
+          const suggestion = await callOpenAI([{
             role: 'system',
             content: `You are a sales assistant for Dirty Hand Designs, a Jamaican branding and design company in Kingston.
 Generate a professional, friendly, concise email reply in the first person. Warm but businesslike tone.
