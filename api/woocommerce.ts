@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveContact } from './contacts';
+import { resolveContact } from './_resolveContact';
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -170,7 +170,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(r.status).json({ success: false, error: `WooCommerce API error: ${r.status}` });
         }
 
-        const orders = await r.json();
+        const rawOrders = await r.json();
+        if (!Array.isArray(rawOrders)) {
+          return res.status(502).json({ success: false, error: 'WooCommerce returned unexpected response', raw: rawOrders });
+        }
+
+        const orders = rawOrders;
         let synced = 0;
         const errors: string[] = [];
 

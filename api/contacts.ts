@@ -1,86 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { resolveContact } from './_resolveContact';
+
+export { resolveContact } from './_resolveContact';
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = _url && _key ? createClient(_url, _key) : null;
-
-// ---------------------------------------------------------------------------
-// Phone normalisation — strip everything except digits and leading +
-// e.g. "(876) 555-1234" → "8765551234", "+1 876 555 1234" → "18765551234"
-// ---------------------------------------------------------------------------
-export function normalizePhone(raw: string): string {
-  if (!raw) return '';
-  const digits = raw.replace(/[^\d+]/g, '').replace(/^\+/, '');
-  return digits;
-}
-
-// ---------------------------------------------------------------------------
-// resolveContact — core identity resolution function
-//
-// Match order: email → normalized phone → create new
-// Returns the contact row (always, even when newly created).
-// ---------------------------------------------------------------------------
-export async function resolveContact(opts: {
-  name: string;
-  email?: string;
-  phone?: string;
-  source: 'MANUAL' | 'WOOCOMMERCE' | 'CSV_IMPORT' | 'WHATSAPP' | 'WEBSITE';
-  company?: string;
-  notes?: string;
-}): Promise<{ id: string; created: boolean } | null> {
-  if (!supabase) return null;
-
-  const emailLower = opts.email?.toLowerCase().trim() || '';
-  const phoneNorm = normalizePhone(opts.phone || '');
-
-  // 1. Match by email
-  if (emailLower) {
-    const { data } = await supabase
-      .from('contacts')
-      .select('id')
-      .ilike('email', emailLower)
-      .limit(1)
-      .single();
-
-    if (data) return { id: data.id, created: false };
-  }
-
-  // 2. Match by normalised phone
-  if (phoneNorm) {
-    const { data } = await supabase
-      .from('contacts')
-      .select('id')
-      .eq('phone_normalized', phoneNorm)
-      .limit(1)
-      .single();
-
-    if (data) return { id: data.id, created: false };
-  }
-
-  // 3. Create new contact
-  const { data: created, error } = await supabase
-    .from('contacts')
-    .insert({
-      name: opts.name || 'Unknown',
-      email: emailLower || null,
-      phone: opts.phone || null,
-      phone_normalized: phoneNorm || null,
-      company: opts.company || null,
-      source: opts.source,
-      notes: opts.notes || null,
-      status: 'NEW',
-    })
-    .select('id')
-    .single();
-
-  if (error) {
-    console.error('[contacts] insert failed:', error);
-    return null;
-  }
-
-  return { id: created.id, created: true };
-}
 
 // ---------------------------------------------------------------------------
 // HTTP handler
@@ -148,8 +74,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json(result);
   }
 
-  // POST /api/contacts?action=migrate — one-time leads → contacts backfill
-  if (req.method === 'POST' && action === 'migrate') {
+  // GET or POST /api/contacts?action=migrate — one-time leads → contacts backfill
+  if (action === 'migrate') {
     if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
 
     const { data: leads, error: le } = await supabase
