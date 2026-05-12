@@ -99,23 +99,25 @@ interface Email {
   } | null;
 }
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_MODEL = 'google/gemini-2.0-flash-exp:free';
 
+async function getOpenRouterKey(): Promise<string> {
+  // Prefer Vercel env var, fall back to value saved in Settings UI
+  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
+  const key = await getSetting('OPENAI_API_KEY', ''); // field was renamed in UI but kept same DB key
+  return key;
+}
+
 async function callOpenRouter(messages: { role: string; content: string }[], jsonMode = false): Promise<string> {
-  const body: any = {
-    model: OPENROUTER_MODEL,
-    messages,
-  };
-  if (jsonMode) {
-    // Gemini via OpenRouter supports JSON mode via response_format
-    body.response_format = { type: 'json_object' };
-  }
+  const apiKey = await getOpenRouterKey();
+  if (!apiKey) throw new Error('No OpenRouter API key configured');
+  const body: any = { model: OPENROUTER_MODEL, messages };
+  if (jsonMode) body.response_format = { type: 'json_object' };
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': 'https://dhd-crm.vercel.app',
       'X-Title': 'DHD SalesTrail CRM',
     },
@@ -137,20 +139,6 @@ async function analyzeWithAI(email: { subject: string; body: string; from: strin
     suggestedAction: string;
   };
 }> {
-  if (!OPENROUTER_API_KEY) {
-    return {
-      score: 50,
-      category: 'other',
-      analysis: {
-        intent: 'Unknown',
-        sentiment: 'Neutral',
-        urgency: 'Normal',
-        keyPoints: ['Email needs manual review'],
-        suggestedAction: 'Review email manually'
-      }
-    };
-  }
-
   try {
     const content = await callOpenRouter([{
       role: 'system',
@@ -964,11 +952,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'aiSuggest': {
         const { emailId } = req.query;
 
-        if (!supabase || !OPENROUTER_API_KEY) {
-          return res.json({
-            success: false,
-            suggestion: 'AI not configured — add OPENROUTER_API_KEY to environment variables'
-          });
+        if (!supabase) {
+          return res.json({ success: false, suggestion: 'Database not configured' });
         }
 
         const { data: email } = await supabase

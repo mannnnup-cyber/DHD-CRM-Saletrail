@@ -200,7 +200,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'testOpenAI': {
-        // Test OpenAI API key
+        // Test OpenRouter API key
         const { apiKey } = req.body;
 
         if (!apiKey) {
@@ -208,7 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const response = await fetch('https://api.openai.com/v1/models', {
+          const response = await fetch('https://openrouter.ai/api/v1/models', {
             headers: {
               'Authorization': `Bearer ${apiKey}`,
               'Content-Type': 'application/json'
@@ -216,9 +216,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
 
           if (response.ok) {
-            return res.json({ success: true, message: 'OpenAI API key is valid' });
+            return res.json({ success: true, message: 'OpenRouter API key is valid' });
           } else {
-            return res.json({ success: false, error: 'Invalid API key' });
+            return res.json({ success: false, error: 'Invalid API key — check your OpenRouter key' });
           }
         } catch (error) {
           return res.json({ success: false, error: 'Failed to test API key' });

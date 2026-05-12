@@ -425,13 +425,13 @@ const Settings: React.FC = () => {
                 AI Configuration
               </h3>
               <p className="text-gray-400 text-sm mb-6">
-                Configure OpenAI for AI-powered email analysis and reply suggestions.
+                Configure OpenRouter for AI-powered email analysis and reply suggestions. The default model (Gemini Flash) is free.
               </p>
 
               <div className="space-y-6">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
-                    OpenAI API Key
+                    OpenRouter API Key
                     {isConfigured['OPENAI_API_KEY'] && !localValues['OPENAI_API_KEY'] && (
                       <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded border border-green-500/30">Saved</span>
                     )}
@@ -441,7 +441,7 @@ const Settings: React.FC = () => {
                       type={showPasswords['OPENAI_API_KEY'] ? 'text' : 'password'}
                       value={localValues['OPENAI_API_KEY'] || ''}
                       onChange={(e) => handleValueChange('OPENAI_API_KEY', e.target.value)}
-                      placeholder={isConfigured['OPENAI_API_KEY'] ? 'Leave blank to keep saved key' : 'sk-••••••••'}
+                      placeholder={isConfigured['OPENAI_API_KEY'] ? 'Leave blank to keep saved key' : 'sk-or-••••••••'}
                       className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
                     />
                     <button
@@ -452,7 +452,7 @@ const Settings: React.FC = () => {
                       {showPasswords['OPENAI_API_KEY'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Get your API key from platform.openai.com</p>
+                  <p className="text-xs text-gray-500 mt-1">Get your free API key from openrouter.ai — sign up, go to API Keys, create one.</p>
                 </div>
 
                 <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
@@ -488,7 +488,7 @@ const Settings: React.FC = () => {
                 className="mt-6 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
               >
                 {testing === 'openai' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Test OpenAI API Key
+                Test OpenRouter API Key
               </button>
             </div>
           )}
