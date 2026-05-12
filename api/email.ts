@@ -99,6 +99,32 @@ interface Email {
   } | null;
 }
 
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const OPENROUTER_MODEL = 'google/gemini-2.0-flash-exp:free';
+
+async function callOpenRouter(messages: { role: string; content: string }[], jsonMode = false): Promise<string> {
+  const body: any = {
+    model: OPENROUTER_MODEL,
+    messages,
+  };
+  if (jsonMode) {
+    // Gemini via OpenRouter supports JSON mode via response_format
+    body.response_format = { type: 'json_object' };
+  }
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'HTTP-Referer': 'https://dhd-crm.vercel.app',
+      'X-Title': 'DHD SalesTrail CRM',
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
 // Analyze email with AI
 async function analyzeWithAI(email: { subject: string; body: string; from: string }): Promise<{
   score: number;
@@ -111,9 +137,7 @@ async function analyzeWithAI(email: { subject: string; body: string; from: strin
     suggestedAction: string;
   };
 }> {
-  const OPENAI_API_KEY = await getSetting('OPENAI_API_KEY', '');
-
-  if (!OPENAI_API_KEY) {
+  if (!OPENROUTER_API_KEY) {
     return {
       score: 50,
       category: 'other',
@@ -128,17 +152,9 @@ async function analyzeWithAI(email: { subject: string; body: string; from: strin
   }
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{
-          role: 'system',
-          content: `You are a CRM AI assistant analyzing emails for lead potential. Analyze the email and return a JSON object with:
+    const content = await callOpenRouter([{
+      role: 'system',
+      content: `You are a CRM AI assistant analyzing emails for lead potential. Analyze the email and return a JSON object with:
 {
   "score": 0-100 (how likely this is a qualified lead),
   "category": "lead" | "support" | "newsletter" | "other",
@@ -153,16 +169,10 @@ async function analyzeWithAI(email: { subject: string; body: string; from: strin
 
 Lead indicators (high score): mentions of budget, timeline, specific needs, business context, decision-making language
 Low score indicators: generic inquiries, auto-responses, newsletters, spam`
-        }, {
-          role: 'user',
-          content: `Analyze this email:\n\nFrom: ${email.from}\nSubject: ${email.subject}\n\nBody:\n${email.body.slice(0, 1500)}`
-        }],
-        response_format: { type: 'json_object' }
-      })
-    });
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    }, {
+      role: 'user',
+      content: `Analyze this email:\n\nFrom: ${email.from}\nSubject: ${email.subject}\n\nBody:\n${email.body.slice(0, 1500)}`
+    }], true);
 
     if (content) {
       const parsed = JSON.parse(content);
@@ -953,12 +963,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'aiSuggest': {
         const { emailId } = req.query;
-        const OPENAI_API_KEY = await getSetting('OPENAI_API_KEY', '');
 
-        if (!supabase || !OPENAI_API_KEY) {
+        if (!supabase || !OPENROUTER_API_KEY) {
           return res.json({
             success: false,
-            suggestion: 'Connect OpenAI API for AI suggestions'
+            suggestion: 'AI not configured — add OPENROUTER_API_KEY to environment variables'
           });
         }
 
@@ -973,29 +982,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [{
-                role: 'system',
-                content: `You are a sales assistant for Dirty Hand Designs, a branding and design company.
-Generate a professional, friendly email reply. Keep it concise, warm, and professional.
-Consider the AI analysis: ${JSON.stringify(email.ai_analysis || {})}
-Return ONLY the email body text.`
-              }, {
-                role: 'user',
-                content: `Original Email:\nFrom: ${email.from_name || email.from_email}\nSubject: ${email.subject}\n\nBody:\n${email.body}\n\nGenerate a reply:`
-              }]
-            })
-          });
-
-          const data = await response.json();
-          const suggestion = data.choices?.[0]?.message?.content || '';
+          const suggestion = await callOpenRouter([{
+            role: 'system',
+            content: `You are a sales assistant for Dirty Hand Designs, a Jamaican branding and design company in Kingston.
+Generate a professional, friendly, concise email reply in the first person. Warm but businesslike tone.
+Context from AI analysis: ${JSON.stringify(email.ai_analysis || {})}
+Return ONLY the email body text — no subject line, no "Here is a draft:" preamble.`
+          }, {
+            role: 'user',
+            content: `Original Email:\nFrom: ${email.from_name || email.from_email}\nSubject: ${email.subject}\n\nBody:\n${(email.body || '').slice(0, 2000)}\n\nGenerate a reply:`
+          }]);
 
           return res.json({ success: true, suggestion });
         } catch (error) {

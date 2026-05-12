@@ -355,7 +355,7 @@ export default function EmailInbox() {
         setReplyBody(data.suggestion);
         setShowAI(true);
       } else {
-        addToast('AI suggestion unavailable — configure OpenAI API key in Settings', 'info');
+        addToast('AI suggestion unavailable — check API configuration', 'info');
       }
     } catch {
       addToast('AI suggestion failed', 'error');
