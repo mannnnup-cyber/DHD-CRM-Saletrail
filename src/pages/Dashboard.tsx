@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Phone, Clock, DollarSign, TrendingUp, AlertTriangle, CheckCircle2, MessageCircle, ArrowUpRight, Target, Activity } from 'lucide-react';
+import { Phone, Clock, DollarSign, TrendingUp, AlertTriangle, CheckCircle2, MessageCircle, ArrowUpRight, Target, Activity, Zap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import ActionList from '../components/ActionList';
 
 const Dashboard: React.FC = () => {
+  const [opportunityCount, setOpportunityCount] = useState(0);
   const { state, allCalls } = useApp();
   const calls = allCalls || [];
   const deals = state.deals || [];
@@ -100,6 +102,24 @@ const Dashboard: React.FC = () => {
           </p>
         </div>
       )}
+
+      {/* Action Items */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+        <div className="p-5 border-b border-gray-800 flex items-center justify-between">
+          <h2 className="font-semibold text-white flex items-center gap-2">
+            <Zap className="w-4 h-4 text-amber-400" />
+            Action Items
+            {opportunityCount > 0 && (
+              <span className="ml-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {opportunityCount}
+              </span>
+            )}
+          </h2>
+        </div>
+        <div className="p-4">
+          <ActionList onCountChange={setOpportunityCount} compact />
+        </div>
+      </div>
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

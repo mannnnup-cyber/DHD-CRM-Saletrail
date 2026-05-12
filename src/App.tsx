@@ -23,6 +23,7 @@ import EmailInbox from './pages/EmailInbox';
 import Contacts from './pages/Contacts';
 import ContactProfile from './pages/ContactProfile';
 import ContactModal from './components/ContactModal';
+import ActionList from './components/ActionList';
 import {
   Menu, Bell, Search, X, LogOut, User,
   ChevronDown, AlertTriangle
@@ -92,7 +93,7 @@ const AppInner: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [selectedContact, setSelectedContact] = useState<any>(null);
-  const [unreadCount, setUnreadCount] = useState(3);
+  const [unreadCount, setUnreadCount] = useState(0);
   const searchRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -135,13 +136,12 @@ const AppInner: React.FC = () => {
     setSearchResults(results.slice(0, 6));
   }, [searchQuery, state.leads, state.deals]);
 
-  const notifications = [
-    { id: 1, text: 'New lead assigned to you', time: '5 min ago', read: false, color: 'bg-green-500' },
-    { id: 2, text: 'Deal moved to Quote Sent', time: '1 hour ago', read: false, color: 'bg-blue-500' },
-    { id: 3, text: 'Task overdue: Follow up with client', time: '2 hours ago', read: false, color: 'bg-red-500' },
-    { id: 4, text: 'Quote approved by Kingston Media', time: '3 hours ago', read: true, color: 'bg-amber-500' },
-    { id: 5, text: 'WooCommerce sync completed', time: '1 day ago', read: true, color: 'bg-purple-500' },
-  ];
+  useEffect(() => {
+    fetch('/api/opportunities')
+      .then(r => r.json())
+      .then(json => setUnreadCount(json.count || 0))
+      .catch(() => {});
+  }, []);
 
   if (!state.user) {
     return <Login />;
@@ -235,22 +235,13 @@ const AppInner: React.FC = () => {
                 )}
               </button>
               {showNotifications && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-96 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
                   <div className="flex items-center justify-between p-4 border-b border-gray-800">
-                    <h3 className="font-semibold text-white">Notifications</h3>
-                    <button onClick={() => setUnreadCount(0)} className="text-xs text-amber-400 hover:text-amber-300">Mark all read</button>
+                    <h3 className="font-semibold text-white">Action Items</h3>
+                    <button onClick={() => setShowNotifications(false)} className="text-xs text-gray-500 hover:text-gray-300">Close</button>
                   </div>
-                  <div className="max-h-80 overflow-y-auto">
-                    {notifications.map(n => (
-                      <div key={n.id} className={`flex items-start gap-3 p-4 border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${!n.read ? 'bg-gray-800/20' : ''}`}>
-                        <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${n.color}`} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-white">{n.text}</p>
-                          <p className="text-xs text-gray-500 mt-1">{n.time}</p>
-                        </div>
-                        {!n.read && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-2" />}
-                      </div>
-                    ))}
+                  <div className="p-3 max-h-96 overflow-y-auto">
+                    <ActionList onCountChange={setUnreadCount} compact />
                   </div>
                 </div>
               )}
