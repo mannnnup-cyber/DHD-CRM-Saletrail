@@ -1,6 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveContact } from './_lib/resolveContact';
+
+async function resolveContact(sb: any, opts: { name: string; phone?: string; source: string }): Promise<string | null> {
+  const phoneNorm = (opts.phone || '').replace(/[^\d]/g, '');
+  if (phoneNorm) {
+    const { data } = await sb.from('contacts').select('id').eq('phone_normalized', phoneNorm).limit(1).single();
+    if (data) return data.id;
+  }
+  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', phone: opts.phone || null, phone_normalized: phoneNorm || null, source: opts.source, status: 'NEW' }).select('id').single();
+  if (error) { console.error('[whatsapp] resolveContact error:', error.message); return null; }
+  return data.id;
+}
 
 // Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)
@@ -62,10 +72,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .limit(1);
 
           if (!existing || existing.length === 0) {
-            // Extract phone from chatId (e.g. "18761234567@c.us" → "18761234567")
             const phone = isInbound ? chatId.replace(/@.*$/, '') : null;
-            const contact = isInbound && phone
-              ? await resolveContact({ name: senderName || phone, phone, source: 'WHATSAPP' })
+            const contactId = (isInbound && phone && supabase !== null)
+              ? await resolveContact(supabase, { name: senderName || phone, phone, source: 'WHATSAPP' })
               : null;
 
             const msgAt = timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString();
@@ -79,14 +88,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               body: text,
               type: msgType,
               raw: body,
-              contact_id: contact?.id ?? null,
+              contact_id: contactId ?? null,
               created_at: msgAt
             }).select('id').single();
 
-            // Log to unified interactions table
-            if (contact && inserted) {
+            if (contactId && inserted) {
               await supabase.from('interactions').insert({
-                contact_id: contact.id,
+                contact_id: contactId,
                 type: 'WHATSAPP',
                 direction: isInbound ? 'INBOUND' : 'OUTBOUND',
                 content: text.slice(0, 500),

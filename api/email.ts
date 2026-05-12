@@ -1,6 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveContact } from './_lib/resolveContact';
+
+async function resolveContact(sb: any, opts: { name: string; email?: string; phone?: string; source: string }): Promise<string | null> {
+  const emailLower = (opts.email || '').toLowerCase().trim();
+  const phoneNorm = (opts.phone || '').replace(/[^\d]/g, '');
+  if (emailLower) {
+    const { data } = await sb.from('contacts').select('id').ilike('email', emailLower).limit(1).single();
+    if (data) return data.id;
+  }
+  if (phoneNorm) {
+    const { data } = await sb.from('contacts').select('id').eq('phone_normalized', phoneNorm).limit(1).single();
+    if (data) return data.id;
+  }
+  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, source: opts.source, status: 'NEW' }).select('id').single();
+  if (error) { console.error('[email] resolveContact error:', error.message); return null; }
+  return data.id;
+}
 
 // Decode quoted-printable encoding (=3D, =20, soft line breaks etc.)
 function decodeQP(str: string): string {
@@ -530,12 +545,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                     if (!alreadyExists) {
                       // Resolve or create a Contact for the sender
-                      const contact = await resolveContact({
-                        name: fromName,
-                        email: fromEmail,
-                        source: 'WEBSITE',
-                      });
-                      if (contact) emailData.contact_id = contact.id;
+                      const contactId = supabase ? await resolveContact(supabase, { name: fromName, email: fromEmail, source: 'WEBSITE' }) : null;
+                      if (contactId) emailData.contact_id = contactId;
 
                       if (AI_ANALYSIS_ENABLED) {
                         try {
@@ -555,9 +566,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         if (!insertErr) {
                           newEmails++;
                           // Log to unified interactions table
-                          if (contact && inserted) {
+                          if (contactId && inserted) {
                             await supabase.from('interactions').insert({
-                              contact_id: contact.id,
+                              contact_id: contactId,
                               type: 'EMAIL',
                               direction: 'INBOUND',
                               subject,
@@ -855,18 +866,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const leadName = email.from_name || email.from_email.split('@')[0];
 
         // Resolve or create master Contact for this sender
-        const contact = await resolveContact({
-          name: leadName,
-          email: email.from_email,
-          source: 'WEBSITE',
-        });
+        const contactId = supabase ? await resolveContact(supabase, { name: leadName, email: email.from_email, source: 'WEBSITE' }) : null;
 
-        // Link the email row to the contact
-        if (contact) {
-          await supabase
-            .from('emails')
-            .update({ contact_id: contact.id })
-            .eq('id', emailId);
+        if (contactId) {
+          await supabase.from('emails').update({ contact_id: contactId }).eq('id', emailId);
         }
 
         if (!existingLead) {
@@ -876,17 +879,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             source: 'Email',
             status: 'new',
             notes: `Converted from email: "${email.subject}"`,
-            contact_id: contact?.id ?? null,
+            contact_id: contactId ?? null,
           });
-        } else {
-          // Backfill contact_id on pre-existing lead if missing
-          if (contact) {
-            await supabase
-              .from('leads')
-              .update({ contact_id: contact.id })
-              .eq('id', existingLead.id)
-              .is('contact_id', null);
-          }
+        } else if (contactId) {
+          await supabase.from('leads').update({ contact_id: contactId }).eq('id', existingLead.id).is('contact_id', null);
         }
 
         return res.json({

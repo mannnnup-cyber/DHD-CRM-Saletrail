@@ -1,6 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveContact } from './_lib/resolveContact';
+
+async function resolveContact(sb: any, opts: { name: string; email?: string; phone?: string; company?: string; source: string }): Promise<string | null> {
+  const emailLower = (opts.email || '').toLowerCase().trim();
+  const phoneNorm = (opts.phone || '').replace(/[^\d]/g, '');
+  if (emailLower) {
+    const { data } = await sb.from('contacts').select('id').ilike('email', emailLower).limit(1).single();
+    if (data) return data.id;
+  }
+  if (phoneNorm) {
+    const { data } = await sb.from('contacts').select('id').eq('phone_normalized', phoneNorm).limit(1).single();
+    if (data) return data.id;
+  }
+  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, source: opts.source, status: 'NEW' }).select('id').single();
+  if (error) { console.error('[woocommerce] resolveContact error:', error.message); return null; }
+  return data.id;
+}
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -185,20 +200,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const customerEmail = (o.billing?.email || '').toLowerCase().trim();
             const customerPhone = o.billing?.phone || '';
 
-            // Resolve or create a master Contact
-            const contact = (customerEmail || customerPhone)
-              ? await resolveContact({
-                  name: customerName || 'WooCommerce Customer',
-                  email: customerEmail || undefined,
-                  phone: customerPhone || undefined,
-                  company: o.billing?.company || undefined,
-                  source: 'WOOCOMMERCE',
-                })
+            const contactId = (customerEmail || customerPhone)
+              ? await resolveContact(supabase, { name: customerName || 'WooCommerce Customer', email: customerEmail || undefined, phone: customerPhone || undefined, company: o.billing?.company || undefined, source: 'WOOCOMMERCE' })
               : null;
 
             const orderRow = {
               woo_order_id: String(o.id),
-              contact_id: contact?.id ?? null,
+              contact_id: contactId ?? null,
               customer_name: customerName,
               customer_email: customerEmail,
               customer_phone: customerPhone,
@@ -219,12 +227,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               .from('woo_orders')
               .upsert(orderRow, { onConflict: 'woo_order_id', ignoreDuplicates: false });
 
-            // Update contact aggregate stats
-            if (contact) {
+            if (contactId) {
               const { data: stats } = await supabase
                 .from('woo_orders')
                 .select('total_amount')
-                .eq('contact_id', contact.id)
+                .eq('contact_id', contactId)
                 .eq('status', 'completed');
 
               if (stats) {
@@ -235,7 +242,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   total_revenue: totalRevenue,
                   average_order_value: totalOrders > 0 ? totalRevenue / totalOrders : 0,
                   updated_at: new Date().toISOString(),
-                }).eq('id', contact.id);
+                }).eq('id', contactId);
               }
             }
 
