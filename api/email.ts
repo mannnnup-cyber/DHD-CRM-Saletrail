@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveContact } from './_resolveContact';
+import { resolveContact } from './_lib/resolveContact';
 
 // Decode quoted-printable encoding (=3D, =20, soft line breaks etc.)
 function decodeQP(str: string): string {
