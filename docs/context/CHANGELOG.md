@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-05-11
+
+### Phase 1: Data Foundation — Complete
+
+- Created `supabase/v2-contact-links.sql` — adds `contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL` to `emails`, `calls`, `whatsapp_messages`, `leads`, `deals`, `quotes`, `invoices`; creates `dismissed_opportunities` table for Phase 3 rules engine. Run in Supabase SQL Editor to apply.
+- Created `api/contacts.ts` — identity resolution engine. `resolveContact()` matches by email first, normalised phone second, creates Contact if no match. REST endpoints: `GET /api/contacts` (list), `GET /api/contacts?id=<uuid>` (single + interactions), `POST /api/contacts?action=resolve`, `POST /api/contacts?action=migrate` (one-time leads backfill).
+- Updated `api/email.ts` — IMAP sync now resolves sender to Contact on every new email, sets `contact_id`, writes `INBOUND EMAIL` record to `interactions`. `convertToLead` also resolves/creates Contact and links the new lead.
+- Updated `api/whatsapp.ts` — inbound webhook resolves sender phone to Contact, sets `contact_id` on the message row, writes `INBOUND WHATSAPP` to `interactions`.
+- Updated `api/woocommerce.ts` — new `syncOrders` action resolves each order's customer to Contact, upserts to `woo_orders` with `contact_id`, updates `contacts` aggregate stats (`total_orders`, `total_revenue`, `average_order_value`).
+- Updated `src/context/DataContext.tsx` — `addCall` resolves contact phone via `/api/contacts?action=resolve`, passes `contact_id` to Supabase call insert, writes `CALL` record to `interactions`.
+
+**Product owner action required:**
+1. Run `supabase/v2-contact-links.sql` in Supabase SQL Editor.
+2. Trigger `POST /api/contacts?action=migrate` once to backfill existing leads into contacts.
+3. Trigger `POST /api/woocommerce?action=syncOrders` once to seed `woo_orders` and contact stats.
+
 ## 2026-05-09
 
 ### AppContext Decomposition (Sprint 1)

@@ -19,13 +19,13 @@
 
 | Task | Owner | Status | Blockers | Next Step |
 | --- | --- | --- | --- | --- |
-| Write `supabase/v2-contact-links.sql` | AI agent | Planned | None | Add FK columns linking calls/emails/whatsapp/leads/deals/quotes/invoices to contacts |
-| Write `api/contacts.ts` (resolve + list + get) | AI agent | Planned | None | Identity resolution is the core function — match by email then phone, create if no match |
-| Wire email sync to identity resolution | AI agent | Planned | Phase 1 contacts API | Update `api/email.ts` sync handler to set contact_id and write to interactions |
-| Wire call logging to identity resolution | AI agent | Planned | Phase 1 contacts API | Update DataContext and call log to set contact_id and write to interactions |
-| Wire WhatsApp webhook to identity resolution | AI agent | Planned | Phase 1 contacts API | Update `api/whatsapp.ts` webhook handler |
-| Wire WooCommerce sync to identity resolution | AI agent | Planned | Phase 1 contacts API | Update `api/woocommerce.ts` to set contact_id and update contact order stats |
-| Write leads → contacts migration | AI agent | Planned | Phase 1 contacts API | One-time migration: resolve each lead into a contact, set leads.contact_id |
+| Write `supabase/v2-contact-links.sql` | AI agent | Done | None | Run in Supabase SQL Editor to apply FK columns and dismissed_opportunities table |
+| Write `api/contacts.ts` (resolve + list + get + migrate) | AI agent | Done | None | Identity resolution live; POST /api/contacts?action=migrate to backfill leads |
+| Wire email sync to identity resolution | AI agent | Done | None | Sync and convertToLead both set contact_id and write to interactions |
+| Wire call logging to identity resolution | AI agent | Done | None | addCall resolves phone via contacts API, logs to interactions |
+| Wire WhatsApp webhook to identity resolution | AI agent | Done | None | Inbound webhook resolves chat phone to Contact, logs to interactions |
+| Wire WooCommerce sync to identity resolution | AI agent | Done | None | POST /api/woocommerce?action=syncOrders resolves customers and updates contact stats |
+| Write leads → contacts migration | AI agent | Done | None | POST /api/contacts?action=migrate — product owner runs once in Supabase or via curl |
 
 ## Phase 2 — Unified Customer Profile
 

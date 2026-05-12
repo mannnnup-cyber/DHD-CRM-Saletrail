@@ -24,7 +24,7 @@ Status: Done
 
 ## Phase 1: Data Foundation
 
-Status: Planned
+Status: Done
 
 The highest priority phase. Enables every feature in Phases 2–6.
 
