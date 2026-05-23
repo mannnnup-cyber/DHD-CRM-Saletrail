@@ -100,8 +100,20 @@ interface Email {
 }
 
 async function getAIKey(): Promise<string> {
+  // 1. Check direct Vercel env var first (fastest path)
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
-  return getSetting('OPENAI_API_KEY', '');
+
+  // 2. Try to read from Settings DB (if Supabase is available)
+  if (supabase) {
+    try {
+      const key = await getSetting('OPENAI_API_KEY', '');
+      if (key) return key;
+    } catch (err) {
+      console.error('Failed to read OPENAI_API_KEY from settings:', err);
+    }
+  }
+
+  return '';
 }
 
 async function callOpenAI(messages: { role: string; content: string }[], jsonMode = false): Promise<string> {

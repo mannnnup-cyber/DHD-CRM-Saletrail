@@ -118,6 +118,21 @@ export interface AppSettings {
   googleScriptUrl?: string;
 }
 
+export interface Invoice {
+  id: string;
+  quoteId: string;
+  dealId: string;
+  items: QuoteItem[];
+  total: number;
+  gct: number;
+  grandTotal: number;
+  status: 'Unpaid' | 'Paid' | 'Cancelled';
+  createdAt: string;
+  dueDate: string;
+  repId: string;
+  paidAt?: string;
+}
+
 export interface AppState {
   user: User | null;
   leads: Lead[];
@@ -125,6 +140,7 @@ export interface AppState {
   deals: Deal[];
   tasks: Task[];
   quotes: Quote[];
+  invoices: Invoice[];
   activities: Activity[];
   settings: AppSettings;
   notifications: any[];

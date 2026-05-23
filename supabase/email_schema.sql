@@ -199,7 +199,13 @@ INSERT INTO app_settings (setting_key, setting_value, setting_type, description,
 ('GREEN_API_TOKEN', '', 'password', 'Green API Token', 'integrations', true),
 ('WOOCOMMERCE_URL', '', 'text', 'WooCommerce store URL', 'integrations', false),
 ('WOOCOMMERCE_KEY', '', 'password', 'WooCommerce Consumer Key', 'integrations', true),
-('WOOCOMMERCE_SECRET', '', 'password', 'WooCommerce Consumer Secret', 'integrations', true)
+('WOOCOMMERCE_SECRET', '', 'password', 'WooCommerce Consumer Secret', 'integrations', true),
+
+-- Evolution API Settings (WhatsApp Integration)
+('EVOLUTION_INSTANCE_NAME', '', 'text', 'Evolution API instance name for WhatsApp', 'integrations', false),
+('EVOLUTION_API_URL', 'http://localhost:3001', 'text', 'Evolution API server URL', 'integrations', false),
+('EVOLUTION_API_KEY', '', 'password', 'Evolution API authentication key (optional)', 'integrations', true),
+('EVOLUTION_PHONE', '', 'text', 'Linked WhatsApp phone number', 'integrations', false)
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- ============================================

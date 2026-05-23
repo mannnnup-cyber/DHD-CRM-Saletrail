@@ -39,10 +39,28 @@ const Settings: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [tableNotFound, setTableNotFound] = useState(false);
 
+  // Evolution API WhatsApp state
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [whatsAppQrCode, setWhatsAppQrCode] = useState<string | null>(null);
+  const [whatsAppInstanceName, setWhatsAppInstanceName] = useState<string | null>(null);
+  const [whatsAppPhoneLinked, setWhatsAppPhoneLinked] = useState<string | null>(null);
+  const [whatsAppPolling, setWhatsAppPolling] = useState(false);
+  const [whatsAppScanning, setWhatsAppScanning] = useState(false);
+
   // Load settings from database
   useEffect(() => {
     loadSettings();
   }, []);
+
+  // Initialize WhatsApp linked state from settings
+  useEffect(() => {
+    if (localValues['EVOLUTION_PHONE']) {
+      setWhatsAppPhoneLinked(localValues['EVOLUTION_PHONE']);
+      setWhatsAppInstanceName(localValues['EVOLUTION_INSTANCE_NAME']);
+    } else {
+      setWhatsAppPhoneLinked(null);
+    }
+  }, [localValues['EVOLUTION_PHONE']]);
 
   const STORAGE_KEY = 'dhd_crm_settings';
 
@@ -178,6 +196,98 @@ const Settings: React.FC = () => {
 
   const handleToggle = (key: keyof typeof settings) => {
     updateSettings({ [key]: !settings[key] });
+  };
+
+  // WhatsApp Evolution API handlers
+  const handleLinkWhatsApp = async () => {
+    setWhatsAppScanning(true);
+    setMessage(null);
+
+    try {
+      const r = await fetch('/api/whatsapp?action=createInstance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await r.json();
+
+      if (!data.success) {
+        setMessage({ type: 'error', text: data.message || 'Failed to create instance' });
+        setWhatsAppScanning(false);
+        return;
+      }
+
+      setWhatsAppInstanceName(data.instanceName);
+      setWhatsAppQrCode(data.qrCode);
+      setShowWhatsAppModal(true);
+
+      // Start polling for authentication
+      pollWhatsAppStatus(data.instanceName);
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to create WhatsApp instance' });
+      setWhatsAppScanning(false);
+    }
+  };
+
+  const pollWhatsAppStatus = async (instanceName: string, attempt = 0) => {
+    if (attempt > 60) { // 60 second timeout
+      setMessage({ type: 'error', text: 'QR code expired. Please try again.' });
+      setShowWhatsAppModal(false);
+      setWhatsAppPolling(false);
+      setWhatsAppScanning(false);
+      return;
+    }
+
+    setWhatsAppPolling(true);
+
+    try {
+      const r = await fetch(`/api/whatsapp?action=getInstanceStatus&instanceName=${instanceName}`);
+      const data = await r.json();
+
+      if (data.success && data.authenticated) {
+        setWhatsAppPhoneLinked(data.phone || 'WhatsApp Linked');
+        setMessage({ type: 'success', text: `WhatsApp linked: ${data.phone || 'Connected'}` });
+        setShowWhatsAppModal(false);
+        setWhatsAppPolling(false);
+        setWhatsAppScanning(false);
+        // Reload settings to show linked state
+        setTimeout(() => loadSettings(), 1000);
+        return;
+      }
+
+      // Still not authenticated, poll again in 1 second
+      setTimeout(() => pollWhatsAppStatus(instanceName, attempt + 1), 1000);
+    } catch (error) {
+      console.error('Polling error:', error);
+      // Continue polling on error
+      setTimeout(() => pollWhatsAppStatus(instanceName, attempt + 1), 1000);
+    }
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    if (!confirm('Are you sure you want to disconnect WhatsApp?')) return;
+
+    setTesting('whatsapp');
+    setMessage(null);
+
+    try {
+      const r = await fetch('/api/whatsapp?action=disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        setMessage({ type: 'success', text: 'WhatsApp disconnected' });
+        setWhatsAppPhoneLinked(null);
+        setWhatsAppInstanceName(null);
+        setTimeout(() => loadSettings(), 1000);
+      } else {
+        setMessage({ type: 'error', text: data.message || 'Failed to disconnect' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to disconnect WhatsApp' });
+    }
+    setTesting(null);
   };
 
   const tabs = [
@@ -538,6 +648,87 @@ const Settings: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Evolution API WhatsApp Section */}
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Smartphone className="w-5 h-5 text-green-500" />
+                  WhatsApp (Evolution API)
+                </h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Link your WhatsApp Business account using QR code authentication for free messaging automation.
+                </p>
+
+                {whatsAppPhoneLinked ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle className="w-5 h-5 text-green-400" />
+                        <div>
+                          <p className="text-green-400 font-medium">WhatsApp Linked</p>
+                          <p className="text-green-300 text-sm">{whatsAppPhoneLinked.replace(/^(\d{1,3})(?=\d{3})/, '$1•••')}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleDisconnectWhatsApp}
+                      disabled={testing === 'whatsapp'}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    >
+                      {testing === 'whatsapp' ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                      Disconnect WhatsApp
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleLinkWhatsApp}
+                    disabled={whatsAppScanning}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                  >
+                    {whatsAppScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                    {whatsAppScanning ? 'Creating Instance...' : 'Link WhatsApp'}
+                  </button>
+                )}
+              </div>
+
+              {/* QR Code Modal */}
+              {showWhatsAppModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 space-y-6">
+                    <div>
+                      <h4 className="text-white font-bold text-lg mb-2">Scan QR Code</h4>
+                      <p className="text-gray-400 text-sm">Use your WhatsApp phone to scan this QR code to link your account.</p>
+                    </div>
+
+                    {whatsAppQrCode && (
+                      <div className="bg-white p-4 rounded-xl flex justify-center">
+                        <img
+                          src={whatsAppQrCode}
+                          alt="WhatsApp QR Code"
+                          className="w-48 h-48"
+                        />
+                      </div>
+                    )}
+
+                    {whatsAppPolling && (
+                      <div className="flex items-center justify-center gap-2 text-amber-400">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Waiting for scan...</span>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setShowWhatsAppModal(false);
+                        setWhatsAppPolling(false);
+                      }}
+                      className="w-full px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
                 <h3 className="font-bold text-white flex items-center gap-2 mb-4">

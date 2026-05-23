@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { FilePenLine, Plus, X, Trash2, DollarSign, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { FilePenLine, Plus, X, Trash2, DollarSign, CheckCircle, Clock, XCircle, FileText } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 const GCT_RATE = 0.15;
 
 const Quotes: React.FC = () => {
-  const { state, addQuote } = useApp();
+  const { state, addQuote, updateQuote, convertQuoteToInvoice } = useApp();
   const quotes = state.quotes || [];
   const deals = state.deals || [];
   const [showAdd, setShowAdd] = useState(false);
@@ -111,6 +111,32 @@ const Quotes: React.FC = () => {
                   <span>Total</span><span>JMD {q.grandTotal.toLocaleString()}</span>
                 </div>
               </div>
+              {(q.status === 'Sent' || q.status === 'Draft') && (
+                <div className="flex gap-2 pt-3 border-t border-gray-800 mt-2">
+                  <button
+                    onClick={() => updateQuote(q.id, { status: 'Approved' })}
+                    className="flex items-center gap-1 bg-green-500/10 hover:bg-green-500/20 text-green-400 text-xs font-medium px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <CheckCircle className="w-3 h-3" /> Approve
+                  </button>
+                  <button
+                    onClick={() => updateQuote(q.id, { status: 'Declined' })}
+                    className="flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <XCircle className="w-3 h-3" /> Decline
+                  </button>
+                </div>
+              )}
+              {q.status === 'Approved' && (
+                <div className="pt-3 border-t border-gray-800 mt-2">
+                  <button
+                    onClick={() => convertQuoteToInvoice(q.id)}
+                    className="flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <FileText className="w-3 h-3" /> Convert to Invoice
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
