@@ -6,6 +6,11 @@ const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL |
 const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = _url && _key ? createClient(_url, _key) : null;
 
+function normalizePhone(raw: string): string {
+  if (!raw) return '';
+  return raw.replace(/[^\d]/g, '');
+}
+
 function guessCompanyDomains(companyName: string): string[] {
   if (!companyName || companyName.trim().length === 0) {
     return [];
