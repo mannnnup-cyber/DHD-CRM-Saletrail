@@ -447,7 +447,7 @@ const ContactProfile: React.FC = () => {
                   </div>
                 )}
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+              <span className={`px-3 py-1 rounded-full text-xs font-medium pointer-events-none ${statusColor}`} title={`Status: ${contact.status.replace('_', ' ')}`}>
                 {contact.status.replace('_', ' ')}
               </span>
             </div>
@@ -455,19 +455,25 @@ const ContactProfile: React.FC = () => {
             {/* Contact info row */}
             <div className="flex flex-wrap gap-4 mt-4">
               {contact.email && (
-                <a
-                  href={`mailto:${contact.email}`}
-                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-amber-400 transition-colors"
+                <button
+                  onClick={() => {
+                    const emailSection = document.getElementById('email-section');
+                    if (emailSection) {
+                      emailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-blue-400 cursor-pointer transition-colors"
+                  title={`View emails from ${contact.email}`}
                 >
                   <Mail className="w-4 h-4 text-gray-500" />
                   {contact.email}
                   <ExternalLink className="w-3 h-3 text-gray-600" />
-                </a>
+                </button>
               )}
               {contact.phone && (
                 <a
                   href={`tel:${contact.phone}`}
-                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-amber-400 transition-colors"
+                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-amber-400 cursor-pointer transition-colors"
                 >
                   <Phone className="w-4 h-4 text-gray-500" />
                   {contact.phone}
@@ -478,18 +484,33 @@ const ContactProfile: React.FC = () => {
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2 mt-4">
               {contact.email && (
-                <a
-                  href={`mailto:${contact.email}`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 rounded-lg text-xs font-medium transition-colors"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  Send Email
-                </a>
+                <>
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    Send Email
+                  </a>
+                  <button
+                    onClick={() => {
+                      const emailSection = document.getElementById('email-section');
+                      if (emailSection) {
+                        emailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                    title="View email history for this contact"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    View Emails
+                  </button>
+                </>
               )}
               {contact.phone && (
                 <a
                   href={`tel:${contact.phone}`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 rounded-lg text-xs font-medium transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
                 >
                   <PhoneCall className="w-3.5 h-3.5" />
                   Call
@@ -630,8 +651,8 @@ const ContactProfile: React.FC = () => {
         </button>
       )}
 
-      {/* Interaction Timeline */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+      {/* Interaction Timeline / Email Section */}
+      <div id="email-section" className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h2 className="font-semibold text-white">Activity Timeline</h2>
           <div className="flex gap-2">
