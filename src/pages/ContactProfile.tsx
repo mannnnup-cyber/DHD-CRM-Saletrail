@@ -499,13 +499,19 @@ const ContactProfile: React.FC = () => {
             <div className="flex flex-wrap gap-2 mt-4">
               {contact.email && (
                 <>
-                  <a
-                    href={`mailto:${contact.email}`}
+                  <button
+                    onClick={() => {
+                      const emailSection = document.getElementById('email-section');
+                      if (emailSection) {
+                        emailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                    title="Compose and send email to this contact"
                   >
                     <Mail className="w-3.5 h-3.5" />
                     Send Email
-                  </a>
+                  </button>
                   <button
                     onClick={() => {
                       const emailSection = document.getElementById('email-section');
