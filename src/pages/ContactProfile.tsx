@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Phone, Building2, ShoppingCart, MessageCircle,
   PhoneCall, FileText, RefreshCw, AlertCircle, Clock, TrendingUp,
-  DollarSign, Package, User, ExternalLink, ChevronDown, ChevronUp
+  DollarSign, Package, User, ExternalLink, ChevronDown, ChevronUp, Globe, X
 } from 'lucide-react';
 
 interface Contact {
@@ -71,6 +71,11 @@ const ContactProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAllInteractions, setShowAllInteractions] = useState(false);
+  const [showEnrichModal, setShowEnrichModal] = useState(false);
+  const [enrichUrl, setEnrichUrl] = useState('');
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichError, setEnrichError] = useState('');
+  const [enrichSuccess, setEnrichSuccess] = useState('');
 
   const load = async () => {
     if (!id) return;
@@ -86,6 +91,59 @@ const ContactProfile: React.FC = () => {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEnrichLead = async () => {
+    if (!enrichUrl.trim() || !id) return;
+
+    setEnrichLoading(true);
+    setEnrichError('');
+    setEnrichSuccess('');
+
+    try {
+      const response = await fetch('/api/scrape?action=enrichLead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyUrl: enrichUrl.trim(),
+          contactId: id
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Update local contact data
+      if (result.contact) {
+        setContact(result.contact);
+      }
+
+      // Show success message
+      const extracted = result.extracted;
+      const items = [];
+      if (extracted.name) items.push(`name`);
+      if (extracted.email) items.push(`email`);
+      if (extracted.phone) items.push(`phone`);
+      if (extracted.description) items.push(`description`);
+
+      setEnrichSuccess(`✓ Enriched: ${items.join(', ')}`);
+      setEnrichUrl('');
+
+      // Close modal after 2 seconds
+      setTimeout(() => {
+        setShowEnrichModal(false);
+        setEnrichSuccess('');
+      }, 2000);
+
+    } catch (e: any) {
+      setEnrichError(e.message);
+    } finally {
+      setEnrichLoading(false);
     }
   };
 
@@ -219,6 +277,13 @@ const ContactProfile: React.FC = () => {
               >
                 <User className="w-3.5 h-3.5" />
                 Create Lead
+              </button>
+              <button
+                onClick={() => setShowEnrichModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-300 rounded-lg text-xs font-medium transition-colors"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                Enrich
               </button>
             </div>
           </div>
@@ -377,6 +442,87 @@ const ContactProfile: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Enrich Modal */}
+      {showEnrichModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl max-w-sm w-full p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Enrich from Website</h2>
+              <button
+                onClick={() => {
+                  setShowEnrichModal(false);
+                  setEnrichUrl('');
+                  setEnrichError('');
+                  setEnrichSuccess('');
+                }}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm text-gray-400">Website URL</label>
+              <input
+                type="text"
+                placeholder="example.com or https://example.com"
+                value={enrichUrl}
+                onChange={e => setEnrichUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleEnrichLead()}
+                disabled={enrichLoading}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-cyan-500/50 disabled:opacity-50"
+              />
+              <p className="text-xs text-gray-500">We'll extract company name, email, phone, and description from the website.</p>
+            </div>
+
+            {enrichError && (
+              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{enrichError}</span>
+              </div>
+            )}
+
+            {enrichSuccess && (
+              <div className="flex items-start gap-2 bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-green-400 text-sm">
+                <span>{enrichSuccess}</span>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={handleEnrichLead}
+                disabled={!enrichUrl.trim() || enrichLoading}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {enrichLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Enriching...
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-4 h-4" />
+                    Enrich
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setShowEnrichModal(false);
+                  setEnrichUrl('');
+                  setEnrichError('');
+                  setEnrichSuccess('');
+                }}
+                disabled={enrichLoading}
+                className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
