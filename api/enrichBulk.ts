@@ -166,12 +166,13 @@ async function enrichContacts(req: VercelRequest, res: VercelResponse) {
     // Process each contact with company-based enrichment
     for (const contact of contacts) {
       const companyName = contact.company?.trim();
+      const providedUrl = contact.website_url?.trim();
 
-      if (!companyName) {
+      if (!companyName && !providedUrl) {
         results.push({
           input: contact,
           success: false,
-          error: 'No company name provided',
+          error: 'No company name or website URL provided',
           enriched: null
         });
         failureCount++;
@@ -179,15 +180,21 @@ async function enrichContacts(req: VercelRequest, res: VercelResponse) {
       }
 
       try {
-        // Try to find a valid domain for the company
-        const domains = guessCompanyDomains(companyName);
         let found: any = null;
 
-        for (const domain of domains) {
-          const scrapedData = await scrapeWebsite(domain);
-          if (scrapedData && (scrapedData.email || scrapedData.phone || scrapedData.description)) {
-            found = scrapedData;
-            break;
+        // If website_url is provided, use it directly (skip domain guessing)
+        if (providedUrl) {
+          found = await scrapeWebsite(providedUrl);
+        } else {
+          // Fall back to company-based domain guessing
+          const domains = guessCompanyDomains(companyName);
+
+          for (const domain of domains) {
+            const scrapedData = await scrapeWebsite(domain);
+            if (scrapedData && (scrapedData.email || scrapedData.phone || scrapedData.description)) {
+              found = scrapedData;
+              break;
+            }
           }
         }
 
@@ -275,16 +282,30 @@ async function previewEnrichment(req: VercelRequest, res: VercelResponse) {
 
     for (const contact of sample) {
       const companyName = contact.company?.trim();
-      if (!companyName) continue;
+      const providedUrl = contact.website_url?.trim();
+
+      if (!companyName && !providedUrl) continue;
 
       try {
-        const domains = guessCompanyDomains(companyName);
-        for (const domain of domains) {
-          const scrapedData = await scrapeWebsite(domain);
-          if (scrapedData && (scrapedData.email || scrapedData.phone || scrapedData.description)) {
-            successCount++;
-            break;
+        let found = null;
+
+        // If website_url is provided, use it directly
+        if (providedUrl) {
+          found = await scrapeWebsite(providedUrl);
+        } else {
+          // Fall back to company-based domain guessing
+          const domains = guessCompanyDomains(companyName);
+          for (const domain of domains) {
+            const scrapedData = await scrapeWebsite(domain);
+            if (scrapedData && (scrapedData.email || scrapedData.phone || scrapedData.description)) {
+              found = scrapedData;
+              break;
+            }
           }
+        }
+
+        if (found && (found.email || found.phone || found.description)) {
+          successCount++;
         }
       } catch (error) {
         // Skip failed items in preview
