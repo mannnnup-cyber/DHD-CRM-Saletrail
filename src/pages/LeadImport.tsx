@@ -23,6 +23,10 @@ const LeadImport: React.FC = () => {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [enrichmentPreview, setEnrichmentPreview] = useState<any | null>(null);
+  const [enrichedData, setEnrichedData] = useState<any[]>([]);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichError, setEnrichError] = useState('');
 
   const leads = state.leads || [];
 
@@ -142,6 +146,110 @@ const LeadImport: React.FC = () => {
       deleteLead(id);
       showSuccess(`Lead "${company}" deleted.`);
     }
+  };
+
+  const handlePreviewEnrichment = async () => {
+    if (!csvData.length) return;
+
+    setEnrichLoading(true);
+    setEnrichError('');
+
+    try {
+      const response = await fetch('/api/enrichBulk?action=previewEnrichment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contacts: csvData, sampleSize: 5 })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEnrichError(result.error || 'Preview failed');
+        setEnrichLoading(false);
+        return;
+      }
+
+      setEnrichmentPreview(result.preview);
+    } catch (e: any) {
+      setEnrichError(e.message || 'Network error');
+    } finally {
+      setEnrichLoading(false);
+    }
+  };
+
+  const handleBulkEnrich = async () => {
+    if (!csvData.length) return;
+
+    setEnrichLoading(true);
+    setEnrichError('');
+
+    try {
+      const response = await fetch('/api/enrichBulk?action=enrichContacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contacts: csvData })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEnrichError(result.error || 'Enrichment failed');
+        setEnrichLoading(false);
+        return;
+      }
+
+      // Merge enriched data with original CSV data
+      const enriched = result.results
+        .filter((r: any) => r.success && r.enriched)
+        .map((r: any) => r.enriched);
+
+      setEnrichedData(enriched);
+      setEnrichmentPreview(null);
+    } catch (e: any) {
+      setEnrichError(e.message || 'Network error');
+    } finally {
+      setEnrichLoading(false);
+    }
+  };
+
+  const handleImportEnriched = () => {
+    if (!enrichedData.length) return;
+
+    let imported = 0;
+    enrichedData.forEach((row, i) => {
+      const company = row.company || `Lead ${i + 1}`;
+      const name = row.name || company;
+
+      if (company || name) {
+        const repIndex = i % REPS.length;
+        addLead({
+          name: name || company,
+          company: company || name,
+          phone: row.phone || '',
+          email: row.email || '',
+          address: row.address || '',
+          category: row.category || 'Other',
+          description: row.description || '',
+          status: 'New',
+          source: 'CSV Import (Enriched)',
+          assignedTo: REPS[repIndex].id,
+          assignedToName: REPS[repIndex].name,
+          enrichment_source: row.enrichment_source,
+          enrichment_confidence: row.enrichment_confidence,
+          enrichment_timestamp: row.enrichment_timestamp
+        } as any);
+        imported++;
+      }
+    });
+
+    setCsvData([]);
+    setCsvHeaders([]);
+    setEnrichedData([]);
+    const enrichRate = enrichedData.length > 0
+      ? Math.round((enrichedData.length / csvData.length) * 100)
+      : 0;
+    showSuccess(`✅ ${imported} leads imported with enrichment! (${enrichRate}% enriched). Pipeline deals created.`);
+    setActiveTab('list');
   };
 
   return (
@@ -337,6 +445,154 @@ const LeadImport: React.FC = () => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* Enrichment Section */}
+          {csvData.length > 0 && !enrichedData.length && (
+            <div className="bg-gradient-to-r from-purple-600/10 to-blue-600/10 border border-purple-500/30 rounded-2xl p-6 space-y-4">
+              <div>
+                <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
+                  🚀 Enrich Your Leads
+                </h3>
+                <p className="text-gray-400 text-sm">
+                  Automatically extract email, phone, and description from company websites for a richer dataset.
+                </p>
+              </div>
+
+              {enrichError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                  {enrichError}
+                </div>
+              )}
+
+              {enrichmentPreview && (
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <p className="text-gray-400 text-xs mb-1">Sample Size</p>
+                      <p className="text-white font-semibold">{enrichmentPreview.sampleSize}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-xs mb-1">Sample Success</p>
+                      <p className="text-blue-300 font-semibold">{enrichmentPreview.sampleSuccessful}/{enrichmentPreview.sampleSize}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-xs mb-1">Projected Rate</p>
+                      <p className="text-blue-300 font-semibold">{enrichmentPreview.projectedSuccessRate}%</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-xs mb-1">Projected Success</p>
+                      <p className="text-blue-300 font-semibold">{enrichmentPreview.projectedSuccessful}/{enrichmentPreview.totalContacts}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Based on sampling, we estimate <strong>{enrichmentPreview.projectedSuccessful}</strong> of your {enrichmentPreview.totalContacts} leads can be enriched.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                {!enrichmentPreview ? (
+                  <>
+                    <button
+                      onClick={handlePreviewEnrichment}
+                      disabled={enrichLoading}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      {enrichLoading ? (
+                        <>
+                          <span className="animate-spin">⏳</span>
+                          Sampling...
+                        </>
+                      ) : (
+                        <>
+                          📊 Preview Enrichment
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleCSVImport}
+                      className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      Import Without Enrichment
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleBulkEnrich}
+                      disabled={enrichLoading}
+                      className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      {enrichLoading ? (
+                        <>
+                          <span className="animate-spin">⏳</span>
+                          Enriching...
+                        </>
+                      ) : (
+                        <>
+                          ✨ Enrich All {csvData.length} Leads
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setEnrichmentPreview(null)}
+                      className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Enriched Results */}
+          {enrichedData.length > 0 && (
+            <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-6 space-y-4">
+              <div>
+                <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
+                  ✅ Enrichment Complete
+                </h3>
+                <p className="text-gray-400 text-sm">
+                  {enrichedData.length} of {csvData.length} leads enriched ({Math.round((enrichedData.length / csvData.length) * 100)}% success rate)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {enrichedData.slice(0, 3).map((item, i) => (
+                  <div key={i} className="p-2 bg-green-500/5 rounded text-sm">
+                    <p className="text-white font-medium">{item.company || item.name}</p>
+                    <p className="text-xs text-gray-400">
+                      {[item.email && '📧 email', item.phone && '📱 phone', item.description && '📝 description'].filter(Boolean).join(' • ')}
+                    </p>
+                  </div>
+                ))}
+                {enrichedData.length > 3 && (
+                  <p className="text-xs text-gray-500 text-center">+ {enrichedData.length - 3} more enriched leads</p>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleImportEnriched}
+                  className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Import {enrichedData.length} Enriched Leads
+                </button>
+                <button
+                  onClick={() => {
+                    setEnrichedData([]);
+                    setEnrichmentPreview(null);
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Back
+                </button>
               </div>
             </div>
           )}
