@@ -81,6 +81,16 @@ const ContactProfile: React.FC = () => {
   const [duplicateCandidates, setDuplicateCandidates] = useState<any[]>([]);
   const [selectedDuplicateId, setSelectedDuplicateId] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [showOrgModal, setShowOrgModal] = useState(false);
+  const [orgSearch, setOrgSearch] = useState('');
+  const [orgSearchResults, setOrgSearchResults] = useState<any[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState<any | null>(null);
+  const [orgRole, setOrgRole] = useState('');
+  const [orgStartDate, setOrgStartDate] = useState('');
+  const [orgEndDate, setOrgEndDate] = useState('');
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [orgError, setOrgError] = useState('');
 
   const load = async () => {
     if (!id) return;
@@ -256,6 +266,110 @@ const ContactProfile: React.FC = () => {
       setMerging(false);
     }
   };
+
+  const loadOrganizations = async () => {
+    if (!id) return;
+
+    try {
+      const r = await fetch(`/api/organizations?action=getOrganizations&contactId=${id}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const json = await r.json();
+      setOrganizations(json.organizations || []);
+    } catch (e: any) {
+      console.error('Failed to load organizations:', e);
+    }
+  };
+
+  const handleSearchOrganizations = async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setOrgSearchResults([]);
+      return;
+    }
+
+    try {
+      // Search for organizations by name
+      const r = await fetch(`/api/contacts?search=${encodeURIComponent(searchTerm)}&limit=10`);
+      if (r.ok) {
+        const json = await r.json();
+        // Filter for organization-type contacts only
+        const orgs = (json.contacts || []).filter((c: any) => c.contact_type === 'organization');
+        setOrgSearchResults(orgs.length > 0 ? orgs : json.contacts || []);
+      }
+    } catch (e: any) {
+      console.error('Search failed:', e);
+    }
+  };
+
+  const handleLinkOrganization = async () => {
+    if (!id || !selectedOrg) return;
+
+    setOrgLoading(true);
+    setOrgError('');
+
+    try {
+      const r = await fetch('/api/organizations?action=linkContact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactId: id,
+          organizationId: selectedOrg.id,
+          role: orgRole || undefined,
+          startedAt: orgStartDate || undefined,
+          endedAt: orgEndDate || undefined,
+          isPrimary: organizations.length === 0 // First link is primary
+        })
+      });
+
+      const result = await r.json();
+
+      if (!r.ok) {
+        setOrgError(result.error || 'Failed to link organization');
+        setOrgLoading(false);
+        return;
+      }
+
+      // Success - reload organizations and close modal
+      await loadOrganizations();
+      setShowOrgModal(false);
+      setOrgSearch('');
+      setOrgSearchResults([]);
+      setSelectedOrg(null);
+      setOrgRole('');
+      setOrgStartDate('');
+      setOrgEndDate('');
+    } catch (e: any) {
+      setOrgError(e.message || 'Network error');
+    } finally {
+      setOrgLoading(false);
+    }
+  };
+
+  const handleUnlinkOrganization = async (linkId: string) => {
+    if (!confirm('Remove this organizational link?')) return;
+
+    try {
+      const r = await fetch('/api/organizations?action=unlinkContact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linkId })
+      });
+
+      if (!r.ok) {
+        const json = await r.json();
+        console.error('Unlink failed:', json.error);
+        return;
+      }
+
+      // Success - reload organizations
+      await loadOrganizations();
+    } catch (e: any) {
+      console.error('Unlink error:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadOrganizations();
+  }, [id]);
 
   useEffect(() => { load(); }, [id]);
 
@@ -448,6 +562,74 @@ const ContactProfile: React.FC = () => {
         </div>
       </div>
 
+      {/* Organization Links */}
+      {organizations.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-purple-400" />
+              <h2 className="font-semibold text-white">Organizations</h2>
+            </div>
+            <button
+              onClick={() => setShowOrgModal(true)}
+              className="text-xs px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            >
+              + Add
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {organizations.map(org => (
+              <div
+                key={org.linkId}
+                className={`p-3 rounded-lg border ${
+                  org.isCurrent
+                    ? 'border-purple-500/30 bg-purple-500/10'
+                    : 'border-gray-700 bg-gray-800/50'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-white">{org.name}</p>
+                    {org.role && <p className="text-sm text-purple-300">Role: {org.role}</p>}
+                    <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                      {org.startedAt && (
+                        <span>
+                          From {new Date(org.startedAt).toLocaleDateString('en', { year: '2-digit', month: 'short' })}
+                        </span>
+                      )}
+                      {org.endedAt && (
+                        <span>
+                          to {new Date(org.endedAt).toLocaleDateString('en', { year: '2-digit', month: 'short' })}
+                        </span>
+                      )}
+                      {!org.endedAt && <span className="text-purple-400">Ongoing</span>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkOrganization(org.linkId)}
+                    className="text-gray-400 hover:text-red-400 transition-colors text-xs px-2 py-1 hover:bg-red-500/10 rounded"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add Organization Button (if no organizations yet) */}
+      {organizations.length === 0 && (
+        <button
+          onClick={() => setShowOrgModal(true)}
+          className="w-full flex items-center justify-center gap-2 p-4 border border-dashed border-purple-500/50 rounded-lg text-purple-400 hover:bg-purple-500/5 transition-colors"
+        >
+          <Building2 className="w-5 h-5" />
+          <span>Add Organization / Affiliation</span>
+        </button>
+      )}
+
       {/* Interaction Timeline */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
@@ -552,6 +734,158 @@ const ContactProfile: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Organization Link Modal */}
+      {showOrgModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between sticky top-0 bg-gray-900">
+              <h2 className="text-lg font-bold text-white">Link Organization</h2>
+              <button
+                onClick={() => {
+                  setShowOrgModal(false);
+                  setOrgSearch('');
+                  setOrgSearchResults([]);
+                  setSelectedOrg(null);
+                  setOrgRole('');
+                  setOrgStartDate('');
+                  setOrgEndDate('');
+                  setOrgError('');
+                }}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Organization Search */}
+            <div className="space-y-2">
+              <label className="block text-sm text-gray-400">Organization</label>
+              <input
+                type="text"
+                placeholder="Search for school, company, or organization..."
+                value={orgSearch}
+                onChange={e => {
+                  setOrgSearch(e.target.value);
+                  handleSearchOrganizations(e.target.value);
+                }}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-purple-500/50"
+              />
+
+              {/* Search Results */}
+              {orgSearch && orgSearchResults.length > 0 && (
+                <div className="border border-gray-700 rounded-lg max-h-48 overflow-y-auto">
+                  {orgSearchResults.map(org => (
+                    <button
+                      key={org.id}
+                      onClick={() => {
+                        setSelectedOrg(org);
+                        setOrgSearch('');
+                        setOrgSearchResults([]);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-800 border-b border-gray-700 last:border-b-0 transition-colors"
+                    >
+                      <p className="text-white text-sm">{org.name}</p>
+                      {org.company && <p className="text-xs text-gray-400">{org.company}</p>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Selected Organization */}
+            {selectedOrg && (
+              <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
+                <p className="font-medium text-white text-sm">{selectedOrg.name}</p>
+                {selectedOrg.company && <p className="text-xs text-gray-400 mt-0.5">{selectedOrg.company}</p>}
+                <button
+                  onClick={() => {
+                    setSelectedOrg(null);
+                    setOrgSearch('');
+                  }}
+                  className="text-xs text-gray-400 hover:text-gray-300 mt-2"
+                >
+                  Change
+                </button>
+              </div>
+            )}
+
+            {/* Role */}
+            <div className="space-y-2">
+              <label className="block text-sm text-gray-400">Role (optional)</label>
+              <input
+                type="text"
+                placeholder="e.g., Principal, Manager, Director"
+                value={orgRole}
+                onChange={e => setOrgRole(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-purple-500/50"
+              />
+            </div>
+
+            {/* Dates */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="block text-sm text-gray-400">Started (optional)</label>
+                <input
+                  type="date"
+                  value={orgStartDate}
+                  onChange={e => setOrgStartDate(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-gray-400">Ended (optional)</label>
+                <input
+                  type="date"
+                  value={orgEndDate}
+                  onChange={e => setOrgEndDate(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500/50"
+                />
+              </div>
+            </div>
+
+            {orgError && (
+              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{orgError}</span>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={handleLinkOrganization}
+                disabled={!selectedOrg || orgLoading}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {orgLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Linking...
+                  </>
+                ) : (
+                  'Link Organization'
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setShowOrgModal(false);
+                  setOrgSearch('');
+                  setOrgSearchResults([]);
+                  setSelectedOrg(null);
+                  setOrgRole('');
+                  setOrgStartDate('');
+                  setOrgEndDate('');
+                  setOrgError('');
+                }}
+                disabled={orgLoading}
+                className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Duplicate Warning Modal */}
       {showDuplicateWarning && duplicateCandidates.length > 0 && (
