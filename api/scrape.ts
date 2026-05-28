@@ -169,8 +169,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       if (error) {
-        console.error('[scrape] Update error:', error.message);
-        return res.status(500).json({ success: false, error: 'Failed to save enriched data' });
+        console.error('[scrape] Update error:', error.message, error.details);
+        return res.status(500).json({
+          success: false,
+          error: `Database update failed: ${error.message || 'Unknown error'}`,
+          extracted: extractedData,
+          supabaseError: error.message
+        });
       }
 
       // Create enrichment history record
@@ -188,9 +193,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         extracted: extractedData,
         contact: data
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('[scrape] Error:', err);
-      return res.status(500).json({ success: false, error: 'Internal server error' });
+      return res.status(500).json({
+        success: false,
+        error: `Server error: ${err.message || 'Unknown error'}`,
+        details: err.toString()
+      });
     }
   }
 

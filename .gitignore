@@ -33,3 +33,5 @@ coverage/
 *.tgz
 .cache/
 .gitnexus
+.vercel
+.env*.local

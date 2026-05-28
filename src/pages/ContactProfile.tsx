@@ -111,12 +111,24 @@ const ContactProfile: React.FC = () => {
         })
       });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || `HTTP ${response.status}`);
-      }
-
       const result = await response.json();
+
+      if (!response.ok) {
+        // Even on error, show what was extracted
+        if (result.extracted) {
+          const extracted = result.extracted;
+          const items = [];
+          if (extracted.name) items.push(`name`);
+          if (extracted.email) items.push(`email`);
+          if (extracted.phone) items.push(`phone`);
+          if (extracted.description) items.push(`description`);
+
+          setEnrichError(`${result.error || 'Failed to save'}\n\nBut found: ${items.join(', ')}`);
+        } else {
+          setEnrichError(result.error || `HTTP ${response.status}`);
+        }
+        return;
+      }
 
       // Update local contact data
       if (result.contact) {
@@ -141,7 +153,7 @@ const ContactProfile: React.FC = () => {
       }, 2000);
 
     } catch (e: any) {
-      setEnrichError(e.message);
+      setEnrichError(e.message || 'Network error');
     } finally {
       setEnrichLoading(false);
     }
