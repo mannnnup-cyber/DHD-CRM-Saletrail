@@ -77,6 +77,10 @@ const ContactProfile: React.FC = () => {
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState('');
   const [enrichSuccess, setEnrichSuccess] = useState('');
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<any[]>([]);
+  const [selectedDuplicateId, setSelectedDuplicateId] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -103,6 +107,37 @@ const ContactProfile: React.FC = () => {
     setEnrichLoading(true);
     setEnrichError('');
     setEnrichSuccess('');
+
+    try {
+      // First, check for duplicates before enriching
+      if (contact?.email || contact?.phone) {
+        const checkResponse = await fetch(
+          `/api/duplicates?action=checkBeforeEnrich&email=${encodeURIComponent(contact.email || '')}&phone=${encodeURIComponent(contact.phone || '')}`
+        );
+
+        if (checkResponse.ok) {
+          const checkResult = await checkResponse.json();
+
+          if (checkResult.hasConflicts && checkResult.conflicts.length > 0) {
+            // Show duplicate warning and let user decide
+            setDuplicateCandidates(checkResult.conflicts);
+            setShowDuplicateWarning(true);
+            setEnrichLoading(false);
+            return;
+          }
+        }
+      }
+
+      // No conflicts, proceed with enrichment
+      await performEnrichment();
+    } catch (e: any) {
+      setEnrichError(e.message || 'Network error');
+      setEnrichLoading(false);
+    }
+  };
+
+  const performEnrichment = async () => {
+    if (!id) return;
 
     try {
       const requestBody: any = { contactId: id };
@@ -180,6 +215,45 @@ const ContactProfile: React.FC = () => {
       setEnrichError(e.message || 'Network error');
     } finally {
       setEnrichLoading(false);
+    }
+  };
+
+  const handleMergeDuplicate = async () => {
+    if (!selectedDuplicateId || !id) return;
+
+    setMerging(true);
+    setEnrichError('');
+
+    try {
+      const mergeResponse = await fetch('/api/duplicates?action=mergeContacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          primaryContactId: id,
+          duplicateContactId: selectedDuplicateId,
+          strategy: 'merge_enriched'
+        })
+      });
+
+      const mergeResult = await mergeResponse.json();
+
+      if (!mergeResponse.ok) {
+        setEnrichError(`Failed to merge: ${mergeResult.error}`);
+        setMerging(false);
+        return;
+      }
+
+      // Merge successful, now proceed with enrichment
+      setShowDuplicateWarning(false);
+      setSelectedDuplicateId(null);
+      setDuplicateCandidates([]);
+
+      // Reload contact and proceed with enrichment
+      await load();
+      setTimeout(() => performEnrichment(), 500);
+    } catch (e: any) {
+      setEnrichError(e.message || 'Merge failed');
+      setMerging(false);
     }
   };
 
@@ -478,6 +552,112 @@ const ContactProfile: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Duplicate Warning Modal */}
+      {showDuplicateWarning && duplicateCandidates.length > 0 && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 border border-yellow-600/50 rounded-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-yellow-400" />
+                <h2 className="text-lg font-bold text-white">Possible Duplicate Found</h2>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDuplicateWarning(false);
+                  setSelectedDuplicateId(null);
+                  setDuplicateCandidates([]);
+                }}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-400">
+              We found {duplicateCandidates.length} contact{duplicateCandidates.length !== 1 ? 's' : ''} that might be the same person:
+            </p>
+
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {duplicateCandidates.map(dup => (
+                <div
+                  key={dup.id}
+                  onClick={() => setSelectedDuplicateId(dup.id)}
+                  className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                    selectedDuplicateId === dup.id
+                      ? 'border-yellow-500 bg-yellow-500/10'
+                      : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-white truncate">{dup.name || '(No name)'}</p>
+                      {dup.email && <p className="text-xs text-blue-400 truncate">{dup.email}</p>}
+                      {dup.phone && <p className="text-xs text-gray-400">{dup.phone}</p>}
+                      {dup.company && <p className="text-xs text-gray-500">{dup.company}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-semibold text-yellow-400">
+                        {Math.round(dup.confidence * 100)}%
+                      </p>
+                      <p className="text-xs text-gray-500">{dup.reason.replace('_', ' ')}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {enrichError && (
+              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{enrichError}</span>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={handleMergeDuplicate}
+                disabled={!selectedDuplicateId || merging}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {merging ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Merging...
+                  </>
+                ) : (
+                  'Merge & Enrich'
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setShowDuplicateWarning(false);
+                  setSelectedDuplicateId(null);
+                  // Continue with enrichment anyway
+                  setEnrichLoading(true);
+                  performEnrichment();
+                }}
+                disabled={merging}
+                className="w-full px-4 py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Skip & Enrich This Contact Anyway
+              </button>
+              <button
+                onClick={() => {
+                  setShowDuplicateWarning(false);
+                  setSelectedDuplicateId(null);
+                  setDuplicateCandidates([]);
+                  setEnrichLoading(false);
+                }}
+                disabled={merging}
+                className="w-full px-4 py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Enrich Modal */}
       {showEnrichModal && (
