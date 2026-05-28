@@ -284,7 +284,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Build enrichment notes describing what was found
       const foundFields = Object.keys(extractedData)
-        .filter(k => extractedData[k] && k !== 'confidence')
+        .filter(k => (extractedData as any)[k] && k !== 'confidence')
         .map(k => k === 'name' ? 'company' : k); // Map 'name' to 'company' for clarity
 
       updatePayload.enrichment_notes = `Enriched from: ${targetUrl}. Found: ${foundFields.length > 0 ? foundFields.join(', ') : 'no fields'}. Confidence: ${(confidenceScore * 100).toFixed(0)}%${autoDetected ? ' (auto-detected domain)' : ''}`;

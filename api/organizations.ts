@@ -372,7 +372,7 @@ async function unlinkContact(req: VercelRequest, res: VercelResponse) {
         contact_id: link.contact_id,
         type: 'NOTE',
         subject: 'Unlinked from organization',
-        content: `Removed affiliation with ${link.contacts_org?.name || 'organization'}${link.role ? ` (was ${link.role})` : ''}`,
+        content: `Removed affiliation with ${(link.contacts_org as any)?.name || 'organization'}${link.role ? ` (was ${link.role})` : ''}`,
         metadata: {
           organizationId: link.organization_id,
           role: link.role,
