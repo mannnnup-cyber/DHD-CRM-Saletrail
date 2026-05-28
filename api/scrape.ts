@@ -95,6 +95,7 @@ async function scrapeCompanyWebsite(url: string): Promise<{
   email?: string;
   phone?: string;
   description?: string;
+  website_url?: string;
 } | null> {
   try {
     // Ensure URL has protocol
@@ -140,6 +141,9 @@ async function scrapeCompanyWebsite(url: string): Promise<{
       $('meta[name="description"]').attr('content') ||
       $('meta[property="og:description"]').attr('content') ||
       undefined;
+
+    // 2.5. Capture website URL (normalized to HTTPS)
+    extractedData.website_url = targetUrl;
 
     // 3. Extract email from common patterns
     let email = '';
@@ -271,6 +275,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updatePayload.phone_normalized = normalizePhone(extractedData.phone);
       }
       if (extractedData.description) updatePayload.notes = extractedData.description;
+      if (extractedData.website_url) updatePayload.website_url = extractedData.website_url;
 
       // Add enrichment metadata
       updatePayload.enrichment_source = 'web_scrape';

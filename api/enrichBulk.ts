@@ -45,6 +45,7 @@ async function scrapeWebsite(url: string): Promise<{
   email?: string;
   phone?: string;
   description?: string;
+  website_url?: string;
 } | null> {
   try {
     let targetUrl = url;
@@ -83,6 +84,9 @@ async function scrapeWebsite(url: string): Promise<{
       $('meta[name="description"]').attr('content') ||
       $('meta[property="og:description"]').attr('content') ||
       undefined;
+
+    // Capture website URL (normalized to HTTPS)
+    extractedData.website_url = targetUrl;
 
     let email = '';
     const contactHref = $('a').filter((_, el) => {

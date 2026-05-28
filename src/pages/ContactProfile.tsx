@@ -12,6 +12,7 @@ interface Contact {
   email: string | null;
   phone: string | null;
   company: string | null;
+  website_url: string | null;
   source: string;
   status: string;
   notes: string | null;
@@ -477,6 +478,19 @@ const ContactProfile: React.FC = () => {
                 >
                   <Phone className="w-4 h-4 text-gray-500" />
                   {contact.phone}
+                </a>
+              )}
+              {contact.website_url && (
+                <a
+                  href={contact.website_url.startsWith('http') ? contact.website_url : `https://${contact.website_url}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-emerald-400 cursor-pointer transition-colors"
+                  title={`Visit ${contact.website_url}`}
+                >
+                  <Globe className="w-4 h-4 text-gray-500" />
+                  {contact.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                  <ExternalLink className="w-3 h-3 text-gray-600" />
                 </a>
               )}
             </div>
