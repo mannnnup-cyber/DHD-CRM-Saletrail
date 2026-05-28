@@ -184,15 +184,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // Create enrichment history record
-      await supabase.from('interactions').insert({
-        contact_id: contactId,
-        type: 'ENRICHMENT',
-        subject: `Web scrape enrichment: ${companyUrl}`,
-        body: JSON.stringify(extractedData),
-        timestamp: new Date().toISOString(),
-        source: 'WEB_SCRAPE'
-      }).catch(err => console.error('[scrape] History error:', err));
+      // Create enrichment history record (non-critical, don't fail if it fails)
+      try {
+        await supabase.from('interactions').insert({
+          contact_id: contactId,
+          type: 'ENRICHMENT',
+          subject: `Web scrape enrichment: ${companyUrl}`,
+          body: JSON.stringify(extractedData),
+          timestamp: new Date().toISOString(),
+          source: 'WEB_SCRAPE'
+        });
+      } catch (historyErr) {
+        console.error('[scrape] History insert error (non-critical):', historyErr);
+        // Don't fail the request if history insert fails
+      }
 
       return res.status(200).json({
         success: true,
