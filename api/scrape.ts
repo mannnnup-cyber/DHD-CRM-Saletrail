@@ -145,11 +145,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // Prepare update payload
-      const updatePayload: any = {
-        company_website: companyUrl,
-        enriched_from: 'web_scrape'
-      };
+      // Prepare update payload — only use existing database columns
+      const updatePayload: any = {};
 
       // Only update fields that were successfully extracted
       if (extractedData.name) updatePayload.company = extractedData.name;
@@ -159,6 +156,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updatePayload.phone_normalized = normalizePhone(extractedData.phone);
       }
       if (extractedData.description) updatePayload.notes = extractedData.description;
+
+      // Only update if we have something to save
+      if (Object.keys(updatePayload).length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No data extracted from website',
+          extracted: extractedData
+        });
+      }
 
       // Update contact in Supabase
       const { data, error } = await supabase
