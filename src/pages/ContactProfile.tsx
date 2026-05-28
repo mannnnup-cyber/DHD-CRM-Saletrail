@@ -73,6 +73,7 @@ const ContactProfile: React.FC = () => {
   const [showAllInteractions, setShowAllInteractions] = useState(false);
   const [showEnrichModal, setShowEnrichModal] = useState(false);
   const [enrichUrl, setEnrichUrl] = useState('');
+  const [enrichAutoDetect, setEnrichAutoDetect] = useState(false);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState('');
   const [enrichSuccess, setEnrichSuccess] = useState('');
@@ -95,20 +96,29 @@ const ContactProfile: React.FC = () => {
   };
 
   const handleEnrichLead = async () => {
-    if (!enrichUrl.trim() || !id) return;
+    // Validate input
+    if (!id) return;
+    if (!enrichAutoDetect && !enrichUrl.trim()) return;
 
     setEnrichLoading(true);
     setEnrichError('');
     setEnrichSuccess('');
 
     try {
+      const requestBody: any = { contactId: id };
+
+      if (enrichAutoDetect) {
+        // Use company name to auto-detect domain
+        requestBody.useCompanyName = true;
+      } else {
+        // Use manually entered URL
+        requestBody.companyUrl = enrichUrl.trim();
+      }
+
       const response = await fetch('/api/scrape?action=enrichLead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyUrl: enrichUrl.trim(),
-          contactId: id
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const result = await response.json();
@@ -135,7 +145,7 @@ const ContactProfile: React.FC = () => {
         setContact(result.contact);
       }
 
-      // Show success message
+      // Show success message with enrichment details
       const extracted = result.extracted;
       const items = [];
       if (extracted.name) items.push(`name`);
@@ -143,8 +153,22 @@ const ContactProfile: React.FC = () => {
       if (extracted.phone) items.push(`phone`);
       if (extracted.description) items.push(`description`);
 
-      setEnrichSuccess(`✓ Enriched: ${items.join(', ')}`);
+      let successMsg = `✓ Enriched: ${items.join(', ')}`;
+
+      // Add confidence score if available
+      if (result.enrichmentMetadata?.confidence) {
+        const confidencePercent = Math.round(result.enrichmentMetadata.confidence * 100);
+        successMsg += ` (${confidencePercent}% confidence)`;
+      }
+
+      // Add auto-detected domain indicator if applicable
+      if (result.enrichmentMetadata?.autoDetected) {
+        successMsg += ` from ${result.enrichmentMetadata.url}`;
+      }
+
+      setEnrichSuccess(successMsg);
       setEnrichUrl('');
+      setEnrichAutoDetect(false);
 
       // Close modal after 2 seconds
       setTimeout(() => {
@@ -465,6 +489,7 @@ const ContactProfile: React.FC = () => {
                 onClick={() => {
                   setShowEnrichModal(false);
                   setEnrichUrl('');
+                  setEnrichAutoDetect(false);
                   setEnrichError('');
                   setEnrichSuccess('');
                 }}
@@ -474,19 +499,46 @@ const ContactProfile: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-sm text-gray-400">Website URL</label>
+            {/* Auto-detect toggle */}
+            <div className="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3">
               <input
-                type="text"
-                placeholder="example.com or https://example.com"
-                value={enrichUrl}
-                onChange={e => setEnrichUrl(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleEnrichLead()}
+                type="checkbox"
+                id="enrichAutoDetect"
+                checked={enrichAutoDetect}
+                onChange={e => setEnrichAutoDetect(e.target.checked)}
                 disabled={enrichLoading}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-cyan-500/50 disabled:opacity-50"
+                className="w-4 h-4 rounded cursor-pointer"
               />
-              <p className="text-xs text-gray-500">We'll extract company name, email, phone, and description from the website.</p>
+              <label htmlFor="enrichAutoDetect" className="flex-1 text-sm text-cyan-400 cursor-pointer">
+                Auto-detect from company name {contact.company && `"${contact.company}"`}
+              </label>
             </div>
+
+            {/* URL input (shown when not auto-detecting) */}
+            {!enrichAutoDetect && (
+              <div className="space-y-2">
+                <label className="block text-sm text-gray-400">Website URL</label>
+                <input
+                  type="text"
+                  placeholder="example.com or https://example.com"
+                  value={enrichUrl}
+                  onChange={e => setEnrichUrl(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleEnrichLead()}
+                  disabled={enrichLoading}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-cyan-500/50 disabled:opacity-50"
+                />
+                <p className="text-xs text-gray-500">We'll extract company name, email, phone, and description from the website.</p>
+              </div>
+            )}
+
+            {/* Info when auto-detecting */}
+            {enrichAutoDetect && (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-400">We'll try common domains for "{contact.company}":</p>
+                <p className="text-xs text-gray-500">• companyname.com • company-name.com • companyname.co.jm</p>
+                <p className="text-xs text-gray-500">We'll extract email, phone, and description from the website.</p>
+              </div>
+            )}
 
             {enrichError && (
               <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
@@ -504,7 +556,7 @@ const ContactProfile: React.FC = () => {
             <div className="flex gap-2 pt-2">
               <button
                 onClick={handleEnrichLead}
-                disabled={!enrichUrl.trim() || enrichLoading}
+                disabled={(enrichAutoDetect ? false : !enrichUrl.trim()) || enrichLoading || !contact.company && enrichAutoDetect}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
               >
                 {enrichLoading ? (
@@ -515,7 +567,7 @@ const ContactProfile: React.FC = () => {
                 ) : (
                   <>
                     <Globe className="w-4 h-4" />
-                    Enrich
+                    {enrichAutoDetect ? 'Auto-detect & Enrich' : 'Enrich'}
                   </>
                 )}
               </button>
@@ -523,6 +575,7 @@ const ContactProfile: React.FC = () => {
                 onClick={() => {
                   setShowEnrichModal(false);
                   setEnrichUrl('');
+                  setEnrichAutoDetect(false);
                   setEnrichError('');
                   setEnrichSuccess('');
                 }}
