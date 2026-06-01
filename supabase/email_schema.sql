@@ -205,7 +205,8 @@ INSERT INTO app_settings (setting_key, setting_value, setting_type, description,
 ('EVOLUTION_INSTANCE_NAME', '', 'text', 'Evolution API instance name for WhatsApp', 'integrations', false),
 ('EVOLUTION_API_URL', 'http://localhost:3001', 'text', 'Evolution API server URL', 'integrations', false),
 ('EVOLUTION_API_KEY', '', 'password', 'Evolution API authentication key (optional)', 'integrations', true),
-('EVOLUTION_PHONE', '', 'text', 'Linked WhatsApp phone number', 'integrations', false)
+('EVOLUTION_PHONE', '', 'text', 'Linked WhatsApp phone number', 'integrations', false),
+('WHATSAPP_ACTIVE_PROVIDER', 'greenapi', 'text', 'Active WhatsApp provider: greenapi or evolution', 'integrations', false)
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- ============================================

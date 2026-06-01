@@ -556,32 +556,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ success: false, error: 'chatId and message are required' });
         }
 
-        const r = await fetch(`${BASE_URL}/sendMessage/${API_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId, message })
-        });
-        const data = await r.json();
+        // Get active provider from settings (default to greenapi for backward compatibility)
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
 
-        const succeeded = !!data.idMessage;
+        let succeeded = false;
+        let messageId: string | undefined;
+        let rawData: any = {};
 
-        if (!succeeded) {
-          // Surface the actual Green API error so the frontend can show it
-          const errMsg = data.message || data.error || data.description || JSON.stringify(data);
-          console.error('Green API sendMessage failed:', errMsg, 'chatId:', chatId);
-          return res.json({ success: false, error: errMsg, raw: data });
+        if (activeProvider === 'evolution') {
+          // Route to Evolution API
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (!instanceName) {
+            return res.status(400).json({ success: false, error: 'Evolution API not linked (no instance name)' });
+          }
+
+          const evolutionUrl = new URL(`/instance/${instanceName}/send`, EVOLUTION_API_URL).toString();
+          try {
+            const r = await fetch(evolutionUrl, {
+              method: 'POST',
+              headers: {
+                'apikey': EVOLUTION_API_KEY,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ number: chatId, text: message })
+            });
+            rawData = await r.json();
+
+            // Evolution API returns { status: 'success', data: { key: {...} } } or similar
+            succeeded = r.ok && (rawData.status === 'success' || !!rawData.key);
+            messageId = rawData.key?.id || rawData.data?.key?.id || 'unknown';
+
+            if (!succeeded) {
+              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
+              console.error('Evolution API send failed:', errMsg, 'chatId:', chatId);
+              return res.json({ success: false, error: errMsg, raw: rawData });
+            }
+          } catch (err: any) {
+            console.error('Evolution API send error:', err.message);
+            return res.json({ success: false, error: err.message });
+          }
+        } else {
+          // Route to Green API (default)
+          if (!INSTANCE_ID || !API_TOKEN) {
+            return res.status(400).json({ success: false, error: 'Green API not configured' });
+          }
+
+          const r = await fetch(`${BASE_URL}/sendMessage/${API_TOKEN}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chatId, message })
+          });
+          rawData = await r.json();
+
+          succeeded = !!rawData.idMessage;
+          messageId = rawData.idMessage;
+
+          if (!succeeded) {
+            const errMsg = rawData.message || rawData.error || rawData.description || JSON.stringify(rawData);
+            console.error('Green API sendMessage failed:', errMsg, 'chatId:', chatId);
+            return res.json({ success: false, error: errMsg, raw: rawData });
+          }
         }
 
         // Persist outgoing message
         try {
           if (supabase !== null) {
             await supabase.from('whatsapp_messages').insert({
-              provider: 'greenapi',
-              provider_message_id: data.idMessage,
+              provider: activeProvider,
+              provider_message_id: messageId,
               chat_id: chatId,
               direction: 'outbound',
               body: message,
-              raw: data,
+              raw: rawData,
               created_at: new Date().toISOString()
             });
           }
@@ -597,7 +643,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.error('Failed to persist outgoing whatsapp message:', err);
         }
 
-        return res.json({ success: true, messageId: data.idMessage });
+        return res.json({ success: true, messageId });
       }
 
       case 'receive': {
@@ -1011,6 +1057,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'selectProvider': {
+        // POST /api/whatsapp?action=selectProvider
+        // Switches between Green API and Evolution API for sending messages
+        const { provider } = req.body;
+
+        if (provider !== 'greenapi' && provider !== 'evolution') {
+          return res.status(400).json({
+            success: false,
+            error: 'Provider must be "greenapi" or "evolution"'
+          });
+        }
+
+        // Validate provider is available
+        if (provider === 'greenapi' && (!INSTANCE_ID || !API_TOKEN)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Green API not configured (missing GREENAPI_INSTANCE_ID or GREENAPI_TOKEN env vars)'
+          });
+        }
+
+        if (provider === 'evolution') {
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (!instanceName) {
+            return res.status(400).json({
+              success: false,
+              error: 'Evolution API not linked (run "Link WhatsApp" first in Settings)'
+            });
+          }
+        }
+
+        // Save to app_settings
+        const saved = await setSetting('WHATSAPP_ACTIVE_PROVIDER', provider);
+
+        if (!saved) {
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to save provider preference'
+          });
+        }
+
+        return res.json({
+          success: true,
+          activeProvider: provider,
+          message: `Switched to ${provider === 'evolution' ? 'Evolution API' : 'Green API'}`
+        });
+      }
+
       default:
         return res.status(400).json({
           success: false,
@@ -1019,7 +1112,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Green API actions
             'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'mediaProxy', 'messageCount',
             // Evolution API actions
-            'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig'
+            'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'selectProvider'
           ]
         });
     }
