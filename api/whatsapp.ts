@@ -747,39 +747,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
           }
 
-          // Get QR code for the new instance
-          // Note: QR code endpoint path still being investigated
-          // Trying multiple paths: /instance/{name}/qrcode, /qrcode/{name}, etc.
-          let qrcodeData: any = null;
-          let qrcodeError: any = null;
-
-          // Try path 1: /instance/{name}/qrcode
+          // Get QR code for the new instance using /instance/connect/{name}
           try {
-            const qrcodeUrl1 = new URL(`/instance/${instanceName}/qrcode`, EVOLUTION_API_URL).toString();
-            const qrcodeRes1 = await fetch(qrcodeUrl1, {
+            const connectUrl = new URL(`/instance/connect/${instanceName}`, EVOLUTION_API_URL).toString();
+            const connectRes = await fetch(connectUrl, {
               method: 'GET',
               headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
             });
-            if (qrcodeRes1.ok) {
-              qrcodeData = await qrcodeRes1.json();
+
+            const connectData = await connectRes.json();
+
+            if (!connectRes.ok) {
+              console.error('[whatsapp] Evolution getQRCode failed:', connectData);
+              return res.status(400).json({
+                success: false,
+                error: connectData.error || 'Failed to get QR code'
+              });
             }
-          } catch (e) {
-            qrcodeError = e;
-          }
 
-          // If first path fails, continue without QR code for now
-          // The getQRCode action can be called separately to fetch it
-          if (!qrcodeData) {
-            console.warn('[whatsapp] QR code endpoint not found, returning instance name only');
+            return res.json({
+              success: true,
+              instanceName,
+              qrCode: connectData.base64, // base64 field contains the QR code image
+              code: connectData.code,
+              count: connectData.count,
+              message: 'Instance created. Scan QR code to authenticate.'
+            });
+          } catch (err: any) {
+            console.error('[whatsapp] createInstance QR code fetch error:', err);
+            return res.status(500).json({
+              success: false,
+              error: 'Failed to get QR code',
+              message: err.message
+            });
           }
-
-          return res.json({
-            success: true,
-            instanceName,
-            qrCode: qrcodeData?.qrcode || qrcodeData?.qr_code || qrcodeData?.base64 || null,
-            hash: createData.instance?.hash || createData.hash,
-            message: 'Instance created. Use getQRCode action to fetch QR code.'
-          });
         } catch (err: any) {
           console.error('[whatsapp] createInstance error:', err);
           return res.status(500).json({
@@ -806,28 +807,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          // Evolution API v2 QR code endpoint path being investigated
-          // Trying: /instance/{name}/qrcode
-          const qrcodeUrl = new URL(`/instance/${instanceName}/qrcode`, EVOLUTION_API_URL).toString();
-          const qrcodeRes = await fetch(qrcodeUrl, {
+          // Evolution API v2 correct QR code endpoint: /instance/connect/{name}
+          const connectUrl = new URL(`/instance/connect/${instanceName}`, EVOLUTION_API_URL).toString();
+          const connectRes = await fetch(connectUrl, {
             method: 'GET',
             headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
           });
 
-          const qrcodeData = await qrcodeRes.json();
+          const connectData = await connectRes.json();
 
-          if (!qrcodeRes.ok) {
-            console.error('[whatsapp] Evolution getQRCode failed:', qrcodeData);
+          if (!connectRes.ok) {
+            console.error('[whatsapp] Evolution getQRCode failed:', connectData);
             return res.status(400).json({
               success: false,
-              error: qrcodeData.error || 'Failed to get QR code',
-              statusCode: qrcodeRes.status
+              error: connectData.error || 'Failed to get QR code'
             });
           }
 
           return res.json({
             success: true,
-            qrCode: qrcodeData.qrcode || qrcodeData.qr_code || qrcodeData.base64
+            qrCode: connectData.base64,
+            code: connectData.code,
+            count: connectData.count
           });
         } catch (err: any) {
           console.error('[whatsapp] getQRCode error:', err);
@@ -855,31 +856,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          // Evolution API v2 status endpoint: /instance/{name}/status
-          const statusUrl = new URL(`/instance/${instanceName}/status`, EVOLUTION_API_URL).toString();
-          const statusRes = await fetch(statusUrl, {
-            method: 'GET',
-            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
-          });
+          // Try the /instance/{name}/connectionState endpoint first
+          let statusData: any = null;
+          let authenticated = false;
+          let phone = null;
 
-          const statusData = await statusRes.json();
-
-          if (!statusRes.ok) {
-            console.error('[whatsapp] Evolution getInstanceStatus failed:', statusData);
-            return res.status(400).json({
-              success: false,
-              error: statusData.error || 'Failed to get instance status'
+          // Attempt 1: /instance/{name}/connectionState
+          try {
+            const stateUrl = new URL(`/instance/${instanceName}/connectionState`, EVOLUTION_API_URL).toString();
+            const stateRes = await fetch(stateUrl, {
+              method: 'GET',
+              headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
             });
+            if (stateRes.ok) {
+              statusData = await stateRes.json();
+              authenticated = statusData.instance?.state === 'open' || statusData.instance?.authenticated === true;
+              phone = statusData.instance?.phone || statusData.phone;
+            }
+          } catch (e) {
+            console.warn('[whatsapp] connectionState endpoint failed, trying /instance/connect');
           }
 
-          // Check various response formats for authentication status
-          const authenticated =
-            statusData.authenticated === true ||
-            statusData.instance?.authenticated === true ||
-            statusData.state === 'authenticated' ||
-            statusData.instance?.state === 'authenticated';
+          // Fallback: Use /instance/connect to infer connection state
+          if (!statusData) {
+            const connectUrl = new URL(`/instance/connect/${instanceName}`, EVOLUTION_API_URL).toString();
+            const connectRes = await fetch(connectUrl, {
+              method: 'GET',
+              headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
+            });
 
-          const phone = statusData.phone || statusData.instance?.phone || statusData.instance?.number;
+            if (connectRes.ok) {
+              const connectData = await connectRes.json();
+              statusData = connectData;
+              // If /instance/connect returns data, instance exists but may not be authenticated
+              // (authenticated status comes from the manager or through webhooks)
+              authenticated = connectData.count > 0 && !connectData.code;
+            } else {
+              return res.status(400).json({
+                success: false,
+                error: 'Instance not found or not ready'
+              });
+            }
+          }
 
           // If authenticated, save instance name to Supabase settings
           if (authenticated && phone) {
