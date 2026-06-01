@@ -67,13 +67,10 @@ const Settings: React.FC = () => {
   useEffect(() => {
     const loadActiveProvider = async () => {
       try {
-        const r = await fetch('/api/settings?action=get&key=WHATSAPP_ACTIVE_PROVIDER');
-        const data = await r.json();
-        if (data.success && data.value) {
-          setActiveProvider(data.value === 'evolution' ? 'evolution' : 'greenapi');
-        } else {
-          setActiveProvider('greenapi'); // default
-        }
+        // Try to get from localStorage first (settings may be cached there)
+        const stored = loadFromStorage();
+        const provider = stored['WHATSAPP_ACTIVE_PROVIDER'] || 'greenapi';
+        setActiveProvider(provider === 'evolution' ? 'evolution' : 'greenapi');
       } catch (err) {
         console.error('Failed to load active provider:', err);
         setActiveProvider('greenapi'); // default on error
