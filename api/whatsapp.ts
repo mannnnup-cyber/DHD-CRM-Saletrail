@@ -946,9 +946,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           // If authenticated, save instance name to Supabase settings
-          if (authenticated && phone) {
+          // Note: phone may not be available immediately, but if state is 'open' it's authenticated
+          if (authenticated) {
             await setSetting('EVOLUTION_INSTANCE_NAME', instanceName);
-            await setSetting('EVOLUTION_PHONE', phone);
+            if (phone) {
+              await setSetting('EVOLUTION_PHONE', phone);
+            }
           }
 
           return res.json({

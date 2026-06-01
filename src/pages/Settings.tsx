@@ -246,7 +246,7 @@ const Settings: React.FC = () => {
   };
 
   const pollWhatsAppStatus = async (instanceName: string, attempt = 0) => {
-    if (attempt > 60) { // 60 second timeout
+    if (attempt > 120) { // 120 second timeout (2 minutes) - Evolution API/Baileys can be slow
       setMessage({ type: 'error', text: 'QR code expired. Please try again.' });
       setShowWhatsAppModal(false);
       setWhatsAppPolling(false);
