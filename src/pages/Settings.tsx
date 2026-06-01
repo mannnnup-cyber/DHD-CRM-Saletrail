@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  Save, Shield, Smartphone, Globe, Mail, Bot, Link2, CheckCircle, XCircle, Loader2, Eye, EyeOff
+  Save, Shield, Smartphone, Globe, Mail, Bot, Link2, CheckCircle, XCircle, Loader2, Eye, EyeOff, MessageCircle
 } from 'lucide-react';
 
 interface SettingItem {
