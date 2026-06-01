@@ -78,6 +78,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json(result);
   }
 
+  if (action === 'update' && id && req.method === 'POST') {
+    const body = req.body || {};
+    const allowed = ['contact_preference', 'notes', 'status', 'website_url'];
+    const updatePayload: Record<string, any> = {};
+    for (const key of allowed) {
+      if (key in body) updatePayload[key] = body[key];
+    }
+    if (Object.keys(updatePayload).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    const { data, error } = await supabase.from('contacts').update(updatePayload).eq('id', id).select('*').single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ contact: data });
+  }
+
   if (action === 'migrate') {
     const { data: leads, error: le } = await supabase.from('leads').select('id, name, email, phone, company, notes').is('contact_id', null);
     if (le) return res.status(500).json({ error: le.message });

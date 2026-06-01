@@ -722,14 +722,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const instanceName = `dhd-crm-${timestamp}-${random}`;
 
           // Call Evolution API to create instance
-          const createUrl = new URL('/api/instances/create', EVOLUTION_API_URL).toString();
+          // Evolution API v2 uses /instance/create (not /api/instances/create)
+          const createUrl = new URL('/instance/create', EVOLUTION_API_URL).toString();
           const createRes = await fetch(createUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              ...(EVOLUTION_API_KEY && { 'Authorization': `Bearer ${EVOLUTION_API_KEY}` })
+              ...(EVOLUTION_API_KEY && { 'apikey': EVOLUTION_API_KEY })
             },
-            body: JSON.stringify({ instanceName })
+            body: JSON.stringify({
+              instanceName,
+              integration: 'WHATSAPP-BAILEYS'
+            })
           });
 
           const createData = await createRes.json();
@@ -744,27 +748,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           // Get QR code for the new instance
-          const qrcodeUrl = new URL(`/api/instances/${instanceName}/qrcode`, EVOLUTION_API_URL).toString();
-          const qrcodeRes = await fetch(qrcodeUrl, {
-            method: 'GET',
-            headers: EVOLUTION_API_KEY ? { 'Authorization': `Bearer ${EVOLUTION_API_KEY}` } : {}
-          });
+          // Note: QR code endpoint path still being investigated
+          // Trying multiple paths: /instance/{name}/qrcode, /qrcode/{name}, etc.
+          let qrcodeData: any = null;
+          let qrcodeError: any = null;
 
-          const qrcodeData = await qrcodeRes.json();
-
-          if (!qrcodeRes.ok) {
-            console.error('[whatsapp] Evolution getQRCode failed:', qrcodeData);
-            return res.status(400).json({
-              success: false,
-              error: qrcodeData.error || 'Failed to get QR code'
+          // Try path 1: /instance/{name}/qrcode
+          try {
+            const qrcodeUrl1 = new URL(`/instance/${instanceName}/qrcode`, EVOLUTION_API_URL).toString();
+            const qrcodeRes1 = await fetch(qrcodeUrl1, {
+              method: 'GET',
+              headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
             });
+            if (qrcodeRes1.ok) {
+              qrcodeData = await qrcodeRes1.json();
+            }
+          } catch (e) {
+            qrcodeError = e;
+          }
+
+          // If first path fails, continue without QR code for now
+          // The getQRCode action can be called separately to fetch it
+          if (!qrcodeData) {
+            console.warn('[whatsapp] QR code endpoint not found, returning instance name only');
           }
 
           return res.json({
             success: true,
             instanceName,
-            qrCode: qrcodeData.qrcode || qrcodeData.qr_code || qrcodeData.base64,
-            message: 'Instance created. Scan QR code to authenticate.'
+            qrCode: qrcodeData?.qrcode || qrcodeData?.qr_code || qrcodeData?.base64 || null,
+            hash: createData.instance?.hash || createData.hash,
+            message: 'Instance created. Use getQRCode action to fetch QR code.'
           });
         } catch (err: any) {
           console.error('[whatsapp] createInstance error:', err);
@@ -792,10 +806,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const qrcodeUrl = new URL(`/api/instances/${instanceName}/qrcode`, EVOLUTION_API_URL).toString();
+          // Evolution API v2 QR code endpoint path being investigated
+          // Trying: /instance/{name}/qrcode
+          const qrcodeUrl = new URL(`/instance/${instanceName}/qrcode`, EVOLUTION_API_URL).toString();
           const qrcodeRes = await fetch(qrcodeUrl, {
             method: 'GET',
-            headers: EVOLUTION_API_KEY ? { 'Authorization': `Bearer ${EVOLUTION_API_KEY}` } : {}
+            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
           });
 
           const qrcodeData = await qrcodeRes.json();
@@ -804,7 +820,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             console.error('[whatsapp] Evolution getQRCode failed:', qrcodeData);
             return res.status(400).json({
               success: false,
-              error: qrcodeData.error || 'Failed to get QR code'
+              error: qrcodeData.error || 'Failed to get QR code',
+              statusCode: qrcodeRes.status
             });
           }
 
@@ -838,10 +855,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const statusUrl = new URL(`/api/instances/${instanceName}/status`, EVOLUTION_API_URL).toString();
+          // Evolution API v2 status endpoint: /instance/{name}/status
+          const statusUrl = new URL(`/instance/${instanceName}/status`, EVOLUTION_API_URL).toString();
           const statusRes = await fetch(statusUrl, {
             method: 'GET',
-            headers: EVOLUTION_API_KEY ? { 'Authorization': `Bearer ${EVOLUTION_API_KEY}` } : {}
+            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
           });
 
           const statusData = await statusRes.json();
@@ -940,10 +958,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           // Call Evolution API to delete instance
-          const deleteUrl = new URL(`/api/instances/${instanceName}`, EVOLUTION_API_URL).toString();
+          // Evolution API v2: DELETE /instance/{name}
+          const deleteUrl = new URL(`/instance/${instanceName}`, EVOLUTION_API_URL).toString();
           const deleteRes = await fetch(deleteUrl, {
             method: 'DELETE',
-            headers: EVOLUTION_API_KEY ? { 'Authorization': `Bearer ${EVOLUTION_API_KEY}` } : {}
+            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
           });
 
           const deleteData = await deleteRes.json();
