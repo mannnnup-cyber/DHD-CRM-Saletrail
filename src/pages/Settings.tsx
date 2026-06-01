@@ -606,89 +606,121 @@ const Settings: React.FC = () => {
           {/* Integrations Settings */}
           {activeTab === 'integrations' && (
             <div className="space-y-6">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
-                  <Smartphone className="w-5 h-5 text-green-500" />
-                  WhatsApp (Green API)
-                </h3>
-                <p className="text-gray-400 text-sm mb-6">
-                  Connect WhatsApp Business via Green API for message automation.
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* WhatsApp Provider Management */}
+              <div className="bg-gradient-to-r from-gray-900 to-gray-800 border border-gray-700 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-6">
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">Green API ID</label>
-                    <input
-                      type="text"
-                      value={localValues['GREEN_API_ID'] || ''}
-                      onChange={(e) => handleValueChange('GREEN_API_ID', e.target.value)}
-                      placeholder="12345"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-2">Green API Token</label>
-                    <div className="relative">
-                      <input
-                        type={showPasswords['GREEN_API_TOKEN'] ? 'text' : 'password'}
-                        value={localValues['GREEN_API_TOKEN'] || ''}
-                        onChange={(e) => handleValueChange('GREEN_API_TOKEN', e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => togglePasswordVisibility('GREEN_API_TOKEN')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                      >
-                        {showPasswords['GREEN_API_TOKEN'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
+                    <h3 className="font-bold text-white flex items-center gap-2 mb-2">
+                      <MessageCircle className="w-5 h-5 text-green-500" />
+                      WhatsApp Integration
+                    </h3>
+                    <p className="text-gray-400 text-sm">Choose and manage your WhatsApp provider below.</p>
                   </div>
                 </div>
               </div>
 
-              {/* Evolution API WhatsApp Section */}
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
-                  <Smartphone className="w-5 h-5 text-green-500" />
-                  WhatsApp (Evolution API)
-                </h3>
-                <p className="text-gray-400 text-sm mb-6">
-                  Link your WhatsApp Business account using QR code authentication for free messaging automation.
-                </p>
-
-                {whatsAppPhoneLinked ? (
-                  <div className="space-y-4">
-                    <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-400" />
-                        <div>
-                          <p className="text-green-400 font-medium">WhatsApp Linked</p>
-                          <p className="text-green-300 text-sm">{whatsAppPhoneLinked.replace(/^(\d{1,3})(?=\d{3})/, '$1•••')}</p>
-                        </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Green API (Legacy) */}
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <Smartphone className="w-5 h-5 text-amber-500" />
+                      <div>
+                        <h4 className="font-bold text-white">Green API</h4>
+                        <p className="text-xs text-gray-500">(Legacy)</p>
                       </div>
                     </div>
-                    <button
-                      onClick={handleDisconnectWhatsApp}
-                      disabled={testing === 'whatsapp'}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                    >
-                      {testing === 'whatsapp' ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                      Disconnect WhatsApp
-                    </button>
+                    <div className={`px-2 py-1 rounded text-xs font-medium ${localValues['GREEN_API_ID'] && localValues['GREEN_API_TOKEN'] ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-700/50 text-gray-400'}`}>
+                      {localValues['GREEN_API_ID'] && localValues['GREEN_API_TOKEN'] ? '✓ Configured' : '○ Not Set'}
+                    </div>
                   </div>
-                ) : (
-                  <button
-                    onClick={handleLinkWhatsApp}
-                    disabled={whatsAppScanning}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
-                  >
-                    {whatsAppScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-                    {whatsAppScanning ? 'Creating Instance...' : 'Link WhatsApp'}
-                  </button>
-                )}
+                  <p className="text-gray-400 text-sm mb-4">
+                    Legacy provider with API key authentication. Requires paid subscription.
+                  </p>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Green API ID</label>
+                      <input
+                        type="text"
+                        value={localValues['GREEN_API_ID'] || ''}
+                        onChange={(e) => handleValueChange('GREEN_API_ID', e.target.value)}
+                        placeholder="12345"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Green API Token</label>
+                      <div className="relative">
+                        <input
+                          type={showPasswords['GREEN_API_TOKEN'] ? 'text' : 'password'}
+                          value={localValues['GREEN_API_TOKEN'] || ''}
+                          onChange={(e) => handleValueChange('GREEN_API_TOKEN', e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-9"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => togglePasswordVisibility('GREEN_API_TOKEN')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs"
+                        >
+                          {showPasswords['GREEN_API_TOKEN'] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Evolution API (Active) */}
+                <div className="bg-gray-900 border border-green-600/50 rounded-2xl p-6 ring-1 ring-green-600/20">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <Smartphone className="w-5 h-5 text-green-500" />
+                      <div>
+                        <h4 className="font-bold text-white">Evolution API</h4>
+                        <p className="text-xs text-green-400">★ Recommended</p>
+                      </div>
+                    </div>
+                    <div className={`px-2 py-1 rounded text-xs font-medium ${whatsAppPhoneLinked ? 'bg-green-500/20 text-green-400' : 'bg-gray-700/50 text-gray-400'}`}>
+                      {whatsAppPhoneLinked ? '✓ Linked' : '○ Not Linked'}
+                    </div>
+                  </div>
+                  <p className="text-gray-400 text-sm mb-4">
+                    Modern QR code authentication. Free with Baileys engine. No subscription required.
+                  </p>
+
+                  {whatsAppPhoneLinked ? (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <div>
+                            <p className="text-green-400 text-xs font-medium">WhatsApp Linked</p>
+                            <p className="text-green-300 text-xs">{whatsAppPhoneLinked.replace(/^(\d{1,3})(?=\d{3})/, '$1•••')}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleDisconnectWhatsApp}
+                        disabled={testing === 'whatsapp'}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                      >
+                        {testing === 'whatsapp' ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                        Disconnect WhatsApp
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleLinkWhatsApp}
+                      disabled={whatsAppScanning}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    >
+                      {whatsAppScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                      {whatsAppScanning ? 'Creating Instance...' : 'Link WhatsApp'}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* QR Code Modal */}
