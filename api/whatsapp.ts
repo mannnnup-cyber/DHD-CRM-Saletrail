@@ -1060,6 +1060,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'debugSaveInstance': {
+        // Temporary debug endpoint - saves instance name directly (for emergencies)
+        const { instanceName } = req.body;
+        if (!instanceName) {
+          return res.status(400).json({ error: 'instanceName required' });
+        }
+        const saved = await setSetting('EVOLUTION_INSTANCE_NAME', instanceName);
+        if (saved) {
+          return res.json({ success: true, message: 'Instance name saved', instanceName });
+        } else {
+          return res.status(500).json({ success: false, error: 'Failed to save' });
+        }
+      }
+
       case 'selectProvider': {
         // POST /api/whatsapp?action=selectProvider
         // Switches between Green API and Evolution API for sending messages
