@@ -1066,11 +1066,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!instanceName) {
           return res.status(400).json({ error: 'instanceName required' });
         }
-        const saved = await setSetting('EVOLUTION_INSTANCE_NAME', instanceName);
-        if (saved) {
+
+        if (!supabase) {
+          return res.status(500).json({ success: false, error: 'Supabase not configured' });
+        }
+
+        try {
+          const { error } = await supabase
+            .from('app_settings')
+            .upsert({ setting_key: 'EVOLUTION_INSTANCE_NAME', setting_value: instanceName }, { onConflict: 'setting_key' });
+
+          if (error) {
+            console.error('[debugSaveInstance] Supabase error:', error);
+            return res.status(500).json({ success: false, error: error.message });
+          }
+
+          // Update cache
+          _settingCache['EVOLUTION_INSTANCE_NAME'] = { value: instanceName, ts: Date.now() };
+
           return res.json({ success: true, message: 'Instance name saved', instanceName });
-        } else {
-          return res.status(500).json({ success: false, error: 'Failed to save' });
+        } catch (err: any) {
+          console.error('[debugSaveInstance] Error:', err.message);
+          return res.status(500).json({ success: false, error: err.message });
         }
       }
 
