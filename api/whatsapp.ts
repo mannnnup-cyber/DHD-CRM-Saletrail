@@ -14,9 +14,16 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; sou
 
 // Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)
-const _supabaseUrl = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
-const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓' : '✗');
+console.log('[Supabase Env Debug] SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✓' : '✗');
+console.log('[Supabase Env Debug] VITE_SUPABASE_ANON_KEY:', process.env.VITE_SUPABASE_ANON_KEY ? '✓' : '✗');
+console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✓' : '✗');
+
+const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
+const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = _supabaseUrl && _supabaseKey ? createClient(_supabaseUrl, _supabaseKey) : null;
+
+console.log('[Supabase Init] URL:', _supabaseUrl ? '✓ set' : '✗ MISSING', 'Key:', _supabaseKey ? '✓ set' : '✗ MISSING', 'Client:', supabase ? '✓ created' : '✗ NULL');
 
 const supaDb = {
   createCall: async (call: any) => {
@@ -313,9 +320,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'chats': {
-        // Use getChats — returns actual open conversations with last messages
-        const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
-        const rawChats = await r.json();
+        // Return chats from database (provider-agnostic)
+        // The database stores all messages from both providers
+        if (supabase === null) {
+          return res.status(400).json({ success: false, error: 'Database not configured' });
+        }
+
+        try {
+          const { data: msgs } = await supabase.from('whatsapp_messages').select('*').order('created_at', { ascending: false }).limit(500);
+          const byChat: Record<string, any> = {};
+          (msgs || []).forEach((m: any) => {
+            const chat = m.chat_id || m.from || m.to || 'unknown';
+            if (!byChat[chat]) byChat[chat] = { id: chat, name: chat, lastMessage: m.body || '', timestamp: m.created_at, unread: 0, phone: chat, status: 'active' };
+            if (new Date(m.created_at) > new Date(byChat[chat].timestamp)) {
+              byChat[chat].lastMessage = m.body || '';
+              byChat[chat].timestamp = m.created_at;
+            }
+          });
+
+          const chats = Object.values(byChat).slice(0, 200);
+          return res.json({ success: true, chats, source: 'db' });
+        } catch (err) {
+          console.error('chats error', err);
+          return res.status(400).json({ success: false, error: String(err) });
+        }
+      }
+
+      case 'chatsLegacy': {
+        // Legacy: fetch from Green API directly
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+
+        let rawChats: any = [];
+
+        if (activeProvider === 'evolution') {
+          // Evolution API chats — not implemented yet
+          rawChats = [];
+        } else {
+          // Fetch from Green API (default)
+          const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
+          rawChats = await r.json();
+        }
 
         const chats = Array.isArray(rawChats)
           ? rawChats.slice(0, 50).map((c: any) => {
@@ -341,15 +385,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'chatsFromDb': {
-        // Read recent chats aggregated from whatsapp_messages table
+        // Read recent chats aggregated from whatsapp_messages table, filtered by active provider
         if (supabase === null) {
           return res.json({ success: false, error: 'Supabase not configured' });
         }
 
         try {
+          const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+          const activePhone = activeProvider === 'evolution'
+            ? await getSetting('EVOLUTION_PHONE', '')
+            : '';
+
+          // Fetch all messages and filter by provider (include NULL for backward compatibility)
           const { data: msgs } = await supabase.from('whatsapp_messages').select('*').order('created_at', { ascending: false }).limit(500);
+
+          // Filter by active provider, but include NULL provider as fallback for older messages
+          const filteredMsgs = (msgs || []).filter((m: any) => {
+            if (activeProvider === 'evolution') {
+              return m.provider === 'evolution' || (m.provider === null && activePhone && m.chat_id?.includes(activePhone));
+            } else {
+              return m.provider === 'greenapi' || m.provider === null;
+            }
+          });
           const byChat: Record<string, any> = {};
-          (msgs || []).forEach((m: any) => {
+          filteredMsgs.forEach((m: any) => {
             const chat = m.chat_id || m.from || m.to || 'unknown';
             if (!byChat[chat]) byChat[chat] = { id: chat, name: chat, lastMessage: m.body || '', timestamp: m.created_at, unread: 0, phone: chat, status: 'active' };
             if (new Date(m.created_at) > new Date(byChat[chat].timestamp)) {
@@ -570,7 +629,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({ success: false, error: 'Evolution API not linked (no instance name)' });
           }
 
-          const evolutionUrl = new URL(`/instance/${instanceName}/send`, EVOLUTION_API_URL).toString();
+          const evolutionUrl = new URL(`/send`, EVOLUTION_API_URL).toString();
           try {
             const r = await fetch(evolutionUrl, {
               method: 'POST',
@@ -578,13 +637,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 'apikey': EVOLUTION_API_KEY,
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify({ number: chatId, text: message })
+              body: JSON.stringify({ instance: instanceName, number: chatId, text: message })
             });
             rawData = await r.json();
+            console.log('[Evolution API send response]:', JSON.stringify(rawData));
 
             // Evolution API returns { status: 'success', data: { key: {...} } } or similar
-            succeeded = r.ok && (rawData.status === 'success' || !!rawData.key);
-            messageId = rawData.key?.id || rawData.data?.key?.id || 'unknown';
+            // Accept any successful response (status 200-299)
+            succeeded = r.ok;
+            messageId = rawData.key?.id || rawData.data?.key?.id || rawData.id || rawData.key || 'unknown';
+
+            console.log('[Evolution API send check] r.ok:', r.ok, 'succeeded:', succeeded, 'messageId:', messageId);
 
             if (!succeeded) {
               const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
@@ -607,9 +670,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             body: JSON.stringify({ chatId, message })
           });
           rawData = await r.json();
+          console.log('[Green API send response]:', JSON.stringify(rawData));
 
-          succeeded = !!rawData.idMessage;
-          messageId = rawData.idMessage;
+          // Accept any 2xx response OR if idMessage exists
+          succeeded = r.ok || !!rawData.idMessage;
+          messageId = rawData.idMessage || rawData.key || 'unknown';
+
+          console.log('[Green API send check] r.ok:', r.ok, 'idMessage:', rawData.idMessage, 'succeeded:', succeeded, 'messageId:', messageId);
 
           if (!succeeded) {
             const errMsg = rawData.message || rawData.error || rawData.description || JSON.stringify(rawData);
@@ -620,8 +687,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Persist outgoing message
         try {
+          console.log('[Persistence] Starting message insert. supabase:', supabase !== null, 'provider:', activeProvider, 'messageId:', messageId, 'chatId:', chatId);
+
           if (supabase !== null) {
-            await supabase.from('whatsapp_messages').insert({
+            const insertPayload = {
               provider: activeProvider,
               provider_message_id: messageId,
               chat_id: chatId,
@@ -629,8 +698,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               body: message,
               raw: rawData,
               created_at: new Date().toISOString()
-            });
+            };
+            console.log('[Persistence] Insert payload:', JSON.stringify(insertPayload));
+
+            const insertResult = await supabase.from('whatsapp_messages').insert(insertPayload);
+            console.log('[Persistence] Insert result:', insertResult);
+          } else {
+            console.warn('[Persistence] Supabase client is null, skipping database insert');
           }
+
           await supaDb.createCall({
             type: 'WhatsApp',
             contactPhone: String(chatId || ''),
@@ -639,8 +715,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             repId: null,
             timestamp: new Date().toISOString()
           } as any);
+
+          console.log('[Persistence] Message persistence completed successfully');
         } catch (err) {
-          console.error('Failed to persist outgoing whatsapp message:', err);
+          console.error('[Persistence] Failed to persist outgoing whatsapp message:', err);
         }
 
         return res.json({ success: true, messageId });
