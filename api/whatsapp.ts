@@ -21,9 +21,21 @@ console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.N
 
 const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = _supabaseUrl && _supabaseKey ? createClient(_supabaseUrl, _supabaseKey) : null;
 
-console.log('[Supabase Init] URL:', _supabaseUrl ? '✓ set to: ' + _supabaseUrl.substring(0, 30) : '✗ MISSING', 'Key:', _supabaseKey ? '✓ set (length: ' + _supabaseKey.length + ')' : '✗ MISSING', 'Client:', supabase ? '✓ CREATED' : '✗ NULL - PERSISTENCE DISABLED!');
+let supabase: any = null;
+try {
+  if (_supabaseUrl && _supabaseKey) {
+    supabase = createClient(_supabaseUrl, _supabaseKey);
+    console.log('[Supabase Init] ✓ CREATED successfully');
+  } else {
+    console.log('[Supabase Init] ✗ CANNOT CREATE - Missing credentials');
+  }
+} catch (err: any) {
+  console.error('[Supabase Init Error]:', err?.message || err);
+  supabase = null;
+}
+
+console.log('[Supabase Init] URL:', _supabaseUrl ? '✓ ' + _supabaseUrl.substring(0, 30) : '✗ MISSING', 'Key:', _supabaseKey ? '✓ set (length: ' + _supabaseKey.length + ')' : '✗ MISSING', 'Client:', supabase ? '✓ CREATED' : '✗ NULL');
 
 const supaDb = {
   createCall: async (call: any) => {
