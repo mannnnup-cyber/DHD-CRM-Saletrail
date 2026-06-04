@@ -14,16 +14,16 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; sou
 
 // Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)
-console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓' : '✗');
-console.log('[Supabase Env Debug] SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✓' : '✗');
-console.log('[Supabase Env Debug] VITE_SUPABASE_ANON_KEY:', process.env.VITE_SUPABASE_ANON_KEY ? '✓' : '✗');
-console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✓' : '✗');
+console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ set to: ' + process.env.NEXT_PUBLIC_SUPABASE_URL.substring(0, 20) : '✗ NOT SET');
+console.log('[Supabase Env Debug] SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✓ set (length: ' + process.env.SUPABASE_ANON_KEY.length + ')' : '✗ NOT SET');
+console.log('[Supabase Env Debug] VITE_SUPABASE_ANON_KEY:', process.env.VITE_SUPABASE_ANON_KEY ? '✓ set' : '✗ NOT SET');
+console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✓ set (length: ' + process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.length + ')' : '✗ NOT SET');
 
 const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = _supabaseUrl && _supabaseKey ? createClient(_supabaseUrl, _supabaseKey) : null;
 
-console.log('[Supabase Init] URL:', _supabaseUrl ? '✓ set' : '✗ MISSING', 'Key:', _supabaseKey ? '✓ set' : '✗ MISSING', 'Client:', supabase ? '✓ created' : '✗ NULL');
+console.log('[Supabase Init] URL:', _supabaseUrl ? '✓ set to: ' + _supabaseUrl.substring(0, 30) : '✗ MISSING', 'Key:', _supabaseKey ? '✓ set (length: ' + _supabaseKey.length + ')' : '✗ MISSING', 'Client:', supabase ? '✓ CREATED' : '✗ NULL - PERSISTENCE DISABLED!');
 
 const supaDb = {
   createCall: async (call: any) => {
