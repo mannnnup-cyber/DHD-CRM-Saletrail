@@ -14,6 +14,8 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; sou
 
 // Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)
+console.log('[Supabase Env ALL VARS]', Object.keys(process.env).filter(k => k.includes('SUPABASE') || k.includes('supabase')).map(k => `${k}: ${process.env[k]?.substring ? process.env[k].substring(0, 20) + '...' : process.env[k]}`).join(', '));
+
 console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ set to: ' + process.env.NEXT_PUBLIC_SUPABASE_URL.substring(0, 20) : '✗ NOT SET');
 console.log('[Supabase Env Debug] SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✓ set (length: ' + process.env.SUPABASE_ANON_KEY.length + ')' : '✗ NOT SET');
 console.log('[Supabase Env Debug] VITE_SUPABASE_ANON_KEY:', process.env.VITE_SUPABASE_ANON_KEY ? '✓ set' : '✗ NOT SET');
