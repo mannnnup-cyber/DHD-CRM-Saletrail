@@ -223,7 +223,7 @@ export default function WhatsApp() {
             chatMessagesCache.current = data.messages;
           }
 
-          const formatted: Chat[] = data.chats.slice(0, 50).map((chat: any) => ({
+          const formatted: Chat[] = data.chats.slice(0, 300).map((chat: any) => ({
             id: chat.id || '',
             name: chat.name || chat.phone || 'Unknown',
             lastMessage: chat.lastMessage || '',
