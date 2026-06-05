@@ -113,6 +113,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'POST' && !req.query.action) {
     const body = req.body;
 
+    console.log('[WEBHOOK RECEIVED] Method:', req.method, 'Has action:', !!req.query.action);
+    console.log('[WEBHOOK BODY] Keys:', Object.keys(body), 'Event:', body.event, 'typeWebhook:', body.typeWebhook);
+
     try {
       // Detect provider and extract message data
       let provider = 'unknown';
