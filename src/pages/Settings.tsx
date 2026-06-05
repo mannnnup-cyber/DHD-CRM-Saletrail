@@ -246,18 +246,20 @@ const Settings: React.FC = () => {
   };
 
   const pollWhatsAppStatus = async (instanceName: string, attempt = 0) => {
-    if (attempt > 120) { // 120 second timeout (2 minutes) - Evolution API/Baileys can be slow
-      setMessage({ type: 'error', text: 'QR code expired. Please try again.' });
-      setShowWhatsAppModal(false);
+    if (attempt > 30) { // 30 second timeout (reduced from 120) - Evolution API endpoints may timeout
+      // Polling timeout - show manual verify button instead
+      setMessage({ type: 'error', text: 'Could not auto-verify. Check your phone - if connected, click "Verify Connection" below.' });
       setWhatsAppPolling(false);
-      setWhatsAppScanning(false);
+      // Keep modal open so user can click verify button
       return;
     }
 
     setWhatsAppPolling(true);
 
     try {
-      const r = await fetch(`/api/whatsapp?action=getInstanceStatus&instanceName=${instanceName}`);
+      const r = await fetch(`/api/whatsapp?action=getInstanceStatus&instanceName=${instanceName}`, {
+        signal: AbortSignal.timeout(5000) // 5 second timeout per request
+      });
       const data = await r.json();
 
       if (data.success && data.authenticated) {
@@ -275,8 +277,42 @@ const Settings: React.FC = () => {
       setTimeout(() => pollWhatsAppStatus(instanceName, attempt + 1), 1000);
     } catch (error) {
       console.error('Polling error:', error);
+      // If timeout after a few attempts, stop polling and show manual verify button
+      if (attempt > 10) {
+        setMessage({ type: 'error', text: 'Could not auto-verify. Check your phone - if connected, click "Verify Connection" below.' });
+        setWhatsAppPolling(false);
+        return;
+      }
       // Continue polling on error
       setTimeout(() => pollWhatsAppStatus(instanceName, attempt + 1), 1000);
+    }
+  };
+
+  const handleManualVerifyWhatsApp = async (instanceName: string) => {
+    setTesting('whatsapp');
+    setMessage(null);
+
+    try {
+      // Manually save the instance name and phone - user confirmed connection on phone
+      const r = await fetch('/api/whatsapp?action=debugSaveInstance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instanceName })
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        setWhatsAppPhoneLinked('WhatsApp Linked');
+        setMessage({ type: 'success', text: 'Instance saved successfully! Ready to send messages.' });
+        setShowWhatsAppModal(false);
+        setTimeout(() => loadSettings(), 1000);
+      } else {
+        setMessage({ type: 'error', text: `Failed to save: ${data.error}` });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to verify: ${error}` });
+    } finally {
+      setTesting(null);
     }
   };
 
@@ -819,6 +855,31 @@ const Settings: React.FC = () => {
                       <div className="flex items-center justify-center gap-2 text-amber-400">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span className="text-sm">Waiting for scan...</span>
+                      </div>
+                    )}
+
+                    {!whatsAppPolling && whatsAppInstanceName && (
+                      <div className="space-y-3">
+                        <p className="text-gray-400 text-sm text-center">
+                          Did WhatsApp say "Connected" on your phone? Click the button below to save.
+                        </p>
+                        <button
+                          onClick={() => handleManualVerifyWhatsApp(whatsAppInstanceName)}
+                          disabled={testing === 'whatsapp'}
+                          className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                        >
+                          {testing === 'whatsapp' ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Verifying...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-4 h-4" />
+                              Verify Connection
+                            </>
+                          )}
+                        </button>
                       </div>
                     )}
 
