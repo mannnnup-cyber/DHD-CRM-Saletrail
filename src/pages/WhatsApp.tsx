@@ -379,30 +379,49 @@ export default function WhatsApp() {
 
   // Send new message to a new contact
   const sendNewMessage = async () => {
-    if (!newMessagePhone.trim() || !newMessageText.trim()) return;
+    console.log('[sendNewMessage] START - phone:', newMessagePhone, 'text:', newMessageText);
+
+    if (!newMessagePhone.trim() || !newMessageText.trim()) {
+      console.log('[sendNewMessage] VALIDATION FAILED - phone empty or text empty');
+      return;
+    }
+
+    console.log('[sendNewMessage] Validation passed, formatting phone...');
 
     // Format phone number — strip non-digits, add Jamaica country code if needed
     let phone = newMessagePhone.replace(/\D/g, '');
+    console.log('[sendNewMessage] After strip non-digits:', phone);
+
     // Jamaica numbers are 10 digits starting with 876 — prepend country code 1
     if (phone.length === 10 && phone.startsWith('876')) {
       phone = `1${phone}`;
+      console.log('[sendNewMessage] Applied 10-digit rule:', phone);
     }
     // 7-digit local number — prepend 1876
     if (phone.length === 7) {
       phone = `1876${phone}`;
+      console.log('[sendNewMessage] Applied 7-digit rule:', phone);
     }
     phone = `${phone}@c.us`;
+    console.log('[sendNewMessage] Final formatted phone:', phone);
 
     setSendingNew(true);
+    console.log('[sendNewMessage] Set sending state to true');
+
     try {
+      console.log('[sendNewMessage] About to fetch /api/whatsapp?action=send');
       const r = await fetch('/api/whatsapp?action=send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: phone, message: newMessageText })
       });
+      console.log('[sendNewMessage] Fetch completed, status:', r.status);
+
       const data = await r.json();
+      console.log('[sendNewMessage] Response data:', data);
 
       if (data.success) {
+        console.log('[sendNewMessage] SUCCESS - closing dialog and refreshing chats');
         setShowNewMessage(false);
         setNewMessagePhone('');
         setNewMessageText('');
@@ -422,12 +441,15 @@ export default function WhatsApp() {
           outcome: 'Message Sent'
         } as any);
       } else {
+        console.log('[sendNewMessage] FAILURE - data.error:', data.error);
         alert('Failed to send message: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
-      alert('Failed to send message');
+      console.error('[sendNewMessage] CATCH ERROR:', error);
+      alert('Failed to send message: ' + String(error));
     }
     setSendingNew(false);
+    console.log('[sendNewMessage] END - set sending state to false');
   };
 
   // Enable message history - syncs chat history from WhatsApp
