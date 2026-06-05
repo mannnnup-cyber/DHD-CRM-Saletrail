@@ -1134,12 +1134,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           const deleteData = await deleteRes.json();
 
-          if (!deleteRes.ok) {
+          // Handle 404 gracefully - instance already gone, clear settings anyway
+          if (!deleteRes.ok && deleteRes.status !== 404) {
             console.error('[whatsapp] Evolution disconnect failed:', deleteData);
             return res.status(400).json({
               success: false,
               error: deleteData.error || 'Failed to disconnect instance'
             });
+          }
+
+          // Log what happened
+          if (deleteRes.status === 404) {
+            console.warn('[whatsapp] Instance not found in Evolution API (already deleted), clearing settings');
+          } else {
+            console.log('[whatsapp] Instance deleted from Evolution API');
           }
 
           // Clear settings
