@@ -201,13 +201,20 @@ export default function WhatsApp() {
       }
 
       if (data.success && data.chats && Array.isArray(data.chats) && data.chats.length > 0) {
-        // STRICT check: Real data must have chats with actual names
+        // STRICT check: Real data must have chats with actual names or phone numbers
         const MOCK_NAMES = ['Production Office', 'Sun Island CUG', 'Cindy-lue Miller', 'Aakeem Jones', 'Mr. Charles Williams'];
         const hasRealStructure = data.chats.some((chat: any) => {
           const name = chat.name || '';
+          const id = chat.id || '';
           const isMockName = MOCK_NAMES.includes(name);
-          const hasProperName = name.length > 0 && !name.includes('@') && !isMockName;
-          return chat.id && hasProperName;
+          // Real data: either has a proper name OR is a phone number with @c.us/@s.whatsapp.net/@g.us format
+          const hasProperName = name.length > 0 && !isMockName && (
+            !name.includes('@') ||
+            name.includes('@c.us') ||
+            name.includes('@s.whatsapp.net') ||
+            name.includes('@g.us')
+          );
+          return id && hasProperName;
         });
 
         if (hasRealStructure || data.synced) {
