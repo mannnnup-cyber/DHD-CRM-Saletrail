@@ -158,39 +158,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       else if (body?.event) {
         // Evolution API uses 'event' field (Baileys-based)
         provider = 'evolution';
-        typeWebhook = body.event;
+        // Normalize event: MESSAGES_UPSERT → messages.upsert
+        const rawEvent = body.event as string;
+        typeWebhook = rawEvent.toLowerCase().replace(/_/g, '.').replace('messages.upsert', 'messages.upsert');
 
         if (typeWebhook === 'messages.upsert') {
-          // Handle both formats: body.data.messages and body.data as array
-          let message = body.data?.messages?.[0] || body.data?.[0];
+          // ---- Evolution API v2 format (most common) ----
+          // body.data is the message object directly, with nested 'key'
+          // body.data.key.remoteJid = chat ID
+          // body.data.key.id = message ID
+          // body.data.key.fromMe = direction
+          // body.data.message.conversation = text
+          if (body.data?.key?.remoteJid) {
+            chatId = body.data.key.remoteJid || '';
+            isInbound = !body.data.key.fromMe;
+            messageId = body.data.key.id || '';
+            senderName = body.data.pushName || '';
+            timestamp = body.data.messageTimestamp || Math.floor(Date.now() / 1000);
 
-          // If body.data is directly the message object
-          if (!message && Array.isArray(body.data)) {
-            message = body.data[0];
-          }
+            // Extract text from nested message object
+            const msgObj = body.data.message || {};
+            text = msgObj.conversation ||
+                   msgObj.extendedTextMessage?.text ||
+                   msgObj.imageMessage?.caption ||
+                   msgObj.videoMessage?.caption ||
+                   msgObj.documentMessage?.caption ||
+                   body.data.body || body.data.text || '';
+            if (!text && body.data.messageType) text = `[${body.data.messageType}]`;
+            msgType = body.data.messageType || 'conversation';
 
-          if (message) {
-            isInbound = !message.fromMe;
-            // Try multiple chat ID formats
-            chatId = message.chatId || message.from || message.remoteJid || '';
-            senderName = message.pushName || body.data?.contacts?.[0]?.pushName || '';
-            // Try multiple message ID formats
-            messageId = message.id || message.key?.id || message.key?.id;
-            timestamp = message.messageTimestamp || message.timestamp || Math.floor(Date.now() / 1000);
+            console.log('[Webhook] Evolution v2 format (key.remoteJid):', { chatId, messageId, isInbound, text: text?.substring(0, 50) });
+          } else {
+            // ---- Fallback: array / older format ----
+            const message = body.data?.messages?.[0] || (Array.isArray(body.data) ? body.data[0] : null);
 
-            text = message.body || message.text || message.conversation || '';
-            if (!text && message.caption) text = message.caption;
-            if (!text && message.messageType) text = `[${message.messageType}]`;
-            if (!text && message.type) text = `[${message.type}]`;
+            if (message) {
+              isInbound = !message.fromMe;
+              chatId = message.chatId || message.from || message.remoteJid || message.key?.remoteJid || '';
+              senderName = message.pushName || body.data?.contacts?.[0]?.pushName || '';
+              messageId = message.id || message.key?.id || '';
+              timestamp = message.messageTimestamp || message.timestamp || Math.floor(Date.now() / 1000);
 
-            msgType = message.messageType || message.type || 'text';
+              text = message.body || message.text || message.conversation || '';
+              if (!text && message.message?.conversation) text = message.message.conversation;
+              if (!text && message.caption) text = message.caption;
+              if (!text && message.messageType) text = `[${message.messageType}]`;
+              if (!text && message.type) text = `[${message.type}]`;
 
-            console.log('[Webhook] Evolution message detected:', {
-              messageId,
-              chatId,
-              isInbound,
-              text: text.substring(0, 50)
-            });
+              msgType = message.messageType || message.type || 'text';
+
+              console.log('[Webhook] Evolution array format:', { chatId, messageId, isInbound, text: text?.substring(0, 50) });
+            }
           }
         }
       }
@@ -231,7 +249,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               ? await resolveContact(supabase, { name: senderName || phone, phone, source: 'WHATSAPP' })
               : null;
 
-            const msgAt = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
+            // Evolution API sends timestamp in seconds; JS Date needs milliseconds
+            const msgAt = timestamp
+              ? new Date(timestamp > 1e10 ? timestamp : timestamp * 1000).toISOString()
+              : new Date().toISOString();
 
             const { data: inserted } = await supabase.from('whatsapp_messages').insert({
               provider,
