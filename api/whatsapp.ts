@@ -485,8 +485,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             if (r.ok) {
               const data = await r.json();
-              // Evolution API returns { chats: [ { ... } ] } or similar
-              rawChats = data.chats || data.data || [];
+              // Evolution API returns an array directly
+              rawChats = Array.isArray(data) ? data : (data.chats || data.data || []);
               console.log('[Evolution getChats] Found', rawChats.length, 'chats');
             } else {
               console.error('[Evolution getChats] Failed:', r.status);
@@ -503,19 +503,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const chats = Array.isArray(rawChats)
-          ? rawChats.slice(0, 50).map((c: any) => {
+          ? rawChats.slice(0, 100).map((c: any) => {
+              // Evolution API: uses remoteJid, lastMessage.key, lastMessage.message.conversation
+              // Green API: uses id, lastMessage.textMessage, lastMessage.timestamp
+              const chatId = c.remoteJid || c.id || '';
               const lastMsg = c.lastMessage || {};
-              const lastText = lastMsg.textMessage || lastMsg.caption || (lastMsg.typeMessage ? `[${lastMsg.typeMessage}]` : '');
-              const phone = (c.id || '').replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', '');
+              const lastMsgKey = lastMsg.key || {};
+
+              // Extract last message text for Evolution API format
+              const evoText = lastMsg.message?.conversation ||
+                              lastMsg.message?.extendedTextMessage?.text ||
+                              lastMsg.message?.imageMessage?.caption ||
+                              (lastMsg.messageType ? `[${lastMsg.messageType}]` : '');
+
+              const lastText = evoText ||
+                               lastMsg.textMessage ||
+                               lastMsg.caption ||
+                               (lastMsg.typeMessage ? `[${lastMsg.typeMessage}]` : '');
+
+              const phone = chatId.replace(/@[^@]+$/, '');
+              // Evolution: pushName on chat or last message's pushName
+              const contactName = c.pushName || lastMsg.pushName || '';
+
               return {
-                id: c.id || '',
-                name: c.name || c.pushname || phone || 'Unknown',
+                id: chatId,
+                name: contactName || phone || 'Unknown',
                 phone,
                 lastMessage: lastText.slice(0, 80),
-                timestamp: lastMsg.timestamp
-                  ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : '',
-                rawTimestamp: lastMsg.timestamp || 0,
+                timestamp: lastMsg.messageTimestamp
+                  ? new Date(lastMsg.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : (lastMsg.timestamp ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''),
+                rawTimestamp: lastMsg.messageTimestamp || lastMsg.timestamp || 0,
                 unread: c.unreadCount || 0,
                 status: 'active'
               };
@@ -537,8 +555,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ? await getSetting('EVOLUTION_PHONE', '')
             : '';
 
-          // Fetch all messages and filter by provider (include NULL for backward compatibility)
-          const { data: msgs } = await supabase.from('whatsapp_messages').select('*').order('created_at', { ascending: false }).limit(500);
+          // Fetch recent messages for chat aggregation (sorted newest first)
+          const { data: msgs } = await supabase
+            .from('whatsapp_messages')
+            .select('chat_id, body, created_at, direction, sender_name, provider')
+            .order('created_at', { ascending: false })
+            .limit(2000);
 
           // Filter by active provider, but include NULL provider as fallback for older messages
           const filteredMsgs = (msgs || []).filter((m: any) => {
@@ -548,17 +570,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return m.provider === 'greenapi' || m.provider === null;
             }
           });
-          const byChat: Record<string, any> = {};
+
+          // Collect best known name per chat from inbound messages (sender_name)
+          const chatNames: Record<string, string> = {};
           filteredMsgs.forEach((m: any) => {
-            const chat = m.chat_id || m.from || m.to || 'unknown';
-            if (!byChat[chat]) byChat[chat] = { id: chat, name: chat, lastMessage: m.body || '', timestamp: m.created_at, unread: 0, phone: chat, status: 'active' };
-            if (new Date(m.created_at) > new Date(byChat[chat].timestamp)) {
-              byChat[chat].lastMessage = m.body || '';
-              byChat[chat].timestamp = m.created_at;
+            const chatId = m.chat_id || 'unknown';
+            if (m.direction === 'inbound' && m.sender_name && !chatNames[chatId]) {
+              chatNames[chatId] = m.sender_name;
             }
           });
 
-          const chats = Object.values(byChat).slice(0, 200);
+          // Build chat list — one entry per unique chat_id, newest message wins
+          const byChat: Record<string, any> = {};
+          filteredMsgs.forEach((m: any) => {
+            const chatId = m.chat_id || 'unknown';
+            // Strip @suffix for display phone number, handle @lid format gracefully
+            const phone = chatId.includes('@') ? chatId.replace(/@[^@]+$/, '') : chatId;
+            const displayName = chatNames[chatId] || phone || chatId;
+
+            if (!byChat[chatId]) {
+              byChat[chatId] = {
+                id: chatId,
+                name: displayName,
+                lastMessage: m.body || '',
+                timestamp: m.created_at,
+                unread: 0,
+                phone,
+                status: 'active'
+              };
+            } else {
+              // Update name if we now have a better one
+              if (chatNames[chatId] && byChat[chatId].name === phone) {
+                byChat[chatId].name = chatNames[chatId];
+              }
+              // Keep newest message (list is DESC so first seen = newest)
+            }
+          });
+
+          const chats = Object.values(byChat)
+            .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, 300);
           return res.json({ success: true, chats, source: 'db' });
         } catch (err) {
           console.error('chatsFromDb error', err);
