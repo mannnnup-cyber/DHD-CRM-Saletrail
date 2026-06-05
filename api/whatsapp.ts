@@ -14,12 +14,6 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; sou
 
 // Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)
-console.log('[Supabase Env ALL VARS]', Object.keys(process.env).filter(k => k.includes('SUPABASE') || k.includes('supabase')).map(k => `${k}: ${process.env[k]?.substring ? process.env[k].substring(0, 20) + '...' : process.env[k]}`).join(', '));
-
-console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ set to: ' + process.env.NEXT_PUBLIC_SUPABASE_URL.substring(0, 20) : '✗ NOT SET');
-console.log('[Supabase Env Debug] SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✓ set (length: ' + process.env.SUPABASE_ANON_KEY.length + ')' : '✗ NOT SET');
-console.log('[Supabase Env Debug] VITE_SUPABASE_ANON_KEY:', process.env.VITE_SUPABASE_ANON_KEY ? '✓ set' : '✗ NOT SET');
-console.log('[Supabase Env Debug] NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✓ set (length: ' + process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.length + ')' : '✗ NOT SET');
 
 const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -743,17 +737,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           persistenceError = err?.message || String(err);
         }
 
-        // Debug: Include Supabase status in response
-        return res.json({
-          success: true,
-          messageId,
-          _debug: {
-            supabaseClient: supabase ? 'INITIALIZED' : 'NULL',
-            supabaseUrl: _supabaseUrl ? _supabaseUrl.substring(0, 30) : 'NOT SET',
-            persistenceError: persistenceError || 'NONE',
-            allSupabaseEnvVars: Object.keys(process.env).filter(k => k.includes('SUPABASE') || k.includes('supabase')).map(k => `${k}:${process.env[k] ? 'SET' : 'EMPTY'}`)
-          }
-        });
+        return res.json({ success: true, messageId });
       }
 
       case 'receive': {
