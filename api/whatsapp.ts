@@ -1449,8 +1449,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'debugSaveInstance': {
-        // Temporary debug endpoint - saves instance name directly (for emergencies)
-        const { instanceName } = req.body;
+        // Temporary debug endpoint - saves instance name and phone (for emergencies)
+        const { instanceName, phone } = req.body;
         if (!instanceName) {
           return res.status(400).json({ error: 'instanceName required' });
         }
@@ -1460,19 +1460,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const { error } = await supabase
+          // Save instance name
+          const { error: error1 } = await supabase
             .from('app_settings')
             .upsert({ setting_key: 'EVOLUTION_INSTANCE_NAME', setting_value: instanceName }, { onConflict: 'setting_key' });
 
-          if (error) {
-            console.error('[debugSaveInstance] Supabase error:', error);
-            return res.status(500).json({ success: false, error: error.message });
+          if (error1) {
+            console.error('[debugSaveInstance] Instance save error:', error1);
+            return res.status(500).json({ success: false, error: error1.message });
+          }
+
+          // Save phone if provided
+          if (phone) {
+            const { error: error2 } = await supabase
+              .from('app_settings')
+              .upsert({ setting_key: 'EVOLUTION_PHONE', setting_value: phone }, { onConflict: 'setting_key' });
+
+            if (error2) {
+              console.error('[debugSaveInstance] Phone save error:', error2);
+            }
           }
 
           // Update cache
           _settingCache['EVOLUTION_INSTANCE_NAME'] = { value: instanceName, ts: Date.now() };
+          if (phone) {
+            _settingCache['EVOLUTION_PHONE'] = { value: phone, ts: Date.now() };
+          }
 
-          return res.json({ success: true, message: 'Instance name saved', instanceName });
+          return res.json({ success: true, message: 'Instance and phone saved', instanceName, phone: phone || 'not provided' });
         } catch (err: any) {
           console.error('[debugSaveInstance] Error:', err.message);
           return res.status(500).json({ success: false, error: err.message });
