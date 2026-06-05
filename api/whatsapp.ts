@@ -158,19 +158,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         typeWebhook = body.event;
 
         if (typeWebhook === 'messages.upsert') {
-          const message = body.data?.messages?.[0];
+          // Handle both formats: body.data.messages and body.data as array
+          let message = body.data?.messages?.[0] || body.data?.[0];
+
+          // If body.data is directly the message object
+          if (!message && Array.isArray(body.data)) {
+            message = body.data[0];
+          }
+
           if (message) {
             isInbound = !message.fromMe;
-            chatId = message.chatId || message.from || '';
-            senderName = body.data?.contacts?.[0]?.pushName || '';
-            messageId = message.id || message.key?.id;
-            timestamp = (message.timestamp || 0) * 1000; // Convert to ms if needed
+            // Try multiple chat ID formats
+            chatId = message.chatId || message.from || message.remoteJid || '';
+            senderName = message.pushName || body.data?.contacts?.[0]?.pushName || '';
+            // Try multiple message ID formats
+            messageId = message.id || message.key?.id || message.key?.id;
+            timestamp = message.messageTimestamp || message.timestamp || Math.floor(Date.now() / 1000);
 
-            text = message.body || message.text || '';
+            text = message.body || message.text || message.conversation || '';
             if (!text && message.caption) text = message.caption;
+            if (!text && message.messageType) text = `[${message.messageType}]`;
             if (!text && message.type) text = `[${message.type}]`;
 
-            msgType = message.type || 'text';
+            msgType = message.messageType || message.type || 'text';
+
+            console.log('[Webhook] Evolution message detected:', {
+              messageId,
+              chatId,
+              isInbound,
+              text: text.substring(0, 50)
+            });
           }
         }
       }
