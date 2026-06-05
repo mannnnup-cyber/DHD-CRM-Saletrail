@@ -838,6 +838,121 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, messageId: data.idMessage });
       }
 
+      case 'sendMedia': {
+        // POST /api/whatsapp?action=sendMedia
+        // Send images, videos, or documents via Evolution API or Green API
+        const { chatId, mediaBase64, mediaType, fileName, caption, mimeType } = req.body;
+        if (!chatId || !mediaBase64 || !mediaType || !fileName) {
+          return res.status(400).json({ error: 'chatId, mediaBase64, mediaType, fileName required' });
+        }
+
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+        let succeeded = false;
+        let messageId = 'unknown';
+        let rawData: any = {};
+
+        if (activeProvider === 'evolution') {
+          // Route to Evolution API
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (!instanceName) {
+            return res.status(400).json({ success: false, error: 'Evolution API not linked (no instance name)' });
+          }
+
+          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+          }
+
+          console.log('[Evolution SendMedia] Using instance:', instanceName, 'mediaType:', mediaType);
+
+          // Determine Evolution mediatype (Image, video, document)
+          let evolutionMediaType = 'document';
+          if (mediaType.toLowerCase().includes('image')) evolutionMediaType = 'Image';
+          else if (mediaType.toLowerCase().includes('video')) evolutionMediaType = 'video';
+
+          const evolutionUrl = new URL(`/message/sendMedia/${instanceName}`, EVOLUTION_API_URL).toString();
+          try {
+            const r = await fetch(evolutionUrl, {
+              method: 'POST',
+              headers: {
+                'apikey': EVOLUTION_API_KEY,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                number: chatId,
+                mediatype: evolutionMediaType,
+                mimetype: mimeType || 'application/octet-stream',
+                caption: caption || '',
+                media: `data:${mimeType || 'application/octet-stream'};base64,${mediaBase64}`,
+                fileName
+              })
+            });
+
+            rawData = await r.json();
+            console.log('[Evolution SendMedia response]:', JSON.stringify(rawData));
+
+            succeeded = r.ok;
+            messageId = rawData.key?.id || rawData.id || 'unknown';
+
+            if (!succeeded) {
+              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
+              console.error('Evolution SendMedia failed:', errMsg);
+              return res.json({ success: false, error: errMsg, raw: rawData });
+            }
+          } catch (err: any) {
+            console.error('Evolution SendMedia error:', err.message);
+            return res.json({ success: false, error: err.message });
+          }
+        } else {
+          // Route to Green API (use existing sendFileByUpload endpoint)
+          const buffer = Buffer.from(mediaBase64, 'base64');
+          const { FormData: NodeFormData } = await import('node:buffer') as any;
+          const fd = new (globalThis.FormData || NodeFormData)();
+          fd.append('chatId', chatId);
+          fd.append('caption', caption || '');
+          fd.append('file', new Blob([buffer], { type: mimeType || 'application/octet-stream' }), fileName);
+
+          try {
+            const r = await fetch(`${BASE_URL}/sendFileByUpload/${API_TOKEN}`, { method: 'POST', body: fd as any });
+            rawData = await r.json();
+            console.log('[Green API SendMedia response]:', JSON.stringify(rawData));
+
+            succeeded = r.ok || !!rawData.idMessage;
+            messageId = rawData.idMessage || 'unknown';
+
+            if (!succeeded) {
+              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
+              console.error('Green API SendMedia failed:', errMsg);
+              return res.json({ success: false, error: errMsg, raw: rawData });
+            }
+          } catch (err: any) {
+            console.error('Green API SendMedia error:', err.message);
+            return res.json({ success: false, error: err.message });
+          }
+        }
+
+        // Persist media message to database
+        try {
+          if (supabase) {
+            const messageType = mediaType.includes('image') ? 'imageMessage' : mediaType.includes('video') ? 'videoMessage' : 'documentMessage';
+            await supabase.from('whatsapp_messages').insert({
+              provider: activeProvider,
+              provider_message_id: messageId,
+              chat_id: chatId,
+              direction: 'outbound',
+              body: caption || `[${mediaType}: ${fileName}]`,
+              type: messageType,
+              raw: rawData,
+              created_at: new Date().toISOString()
+            });
+            console.log('[SendMedia Persistence] Message saved successfully');
+          }
+        } catch (err: any) {
+          console.error('[SendMedia Persistence] Error:', err.message);
+        }
+
+        return res.json({ success: true, messageId, provider: activeProvider });
+      }
+
       case 'searchMessages': {
         const q = req.query.q as string;
         if (!q || q.length < 2) return res.json({ success: true, results: [] });
