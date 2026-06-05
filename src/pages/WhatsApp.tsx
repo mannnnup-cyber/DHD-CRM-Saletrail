@@ -109,6 +109,8 @@ export default function WhatsApp() {
   const [searchingMsgs, setSearchingMsgs] = useState(false);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachCaption, setAttachCaption] = useState('');
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
+  const [moreHistoryResult, setMoreHistoryResult] = useState<string | null>(null);
   const [sendingFile, setSendingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingWATarget = useRef<{ phone: string; name: string } | null>(null);
@@ -328,6 +330,34 @@ export default function WhatsApp() {
     setLoading(false);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, []);
+
+  // Pull more message history for the current chat from Evolution API
+  const loadMoreHistory = useCallback(async (chatId: string) => {
+    if (!chatId || loadingMoreHistory) return;
+    setLoadingMoreHistory(true);
+    setMoreHistoryResult(null);
+    try {
+      const r = await fetch('/api/whatsapp?action=syncEvolutionMessages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, limit: 500 })
+      });
+      const data = await r.json();
+      if (data.success) {
+        setMoreHistoryResult(`✅ Pulled ${data.count} messages`);
+        // Bust the cache and reload messages
+        delete chatMessagesCache.current[chatId];
+        await loadMessages(chatId);
+      } else {
+        setMoreHistoryResult(`❌ ${data.error || 'Failed to pull history'}`);
+      }
+    } catch (err) {
+      setMoreHistoryResult('❌ Network error');
+    }
+    setLoadingMoreHistory(false);
+    // Clear the result label after 4 seconds
+    setTimeout(() => setMoreHistoryResult(null), 4000);
+  }, [loadingMoreHistory, loadMessages]);
 
   // Send message via backend API
   const sendMessage = async () => {
@@ -1140,6 +1170,24 @@ export default function WhatsApp() {
                   className="flex-1 overflow-y-auto p-4 space-y-3"
                   style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)', backgroundSize: '20px 20px' }}
                 >
+                  {/* Load More History button — always at top of message thread */}
+                  {!loading && selectedChat && (
+                    <div className="flex flex-col items-center gap-1 pb-2">
+                      <button
+                        onClick={() => loadMoreHistory(selectedChat.id)}
+                        disabled={loadingMoreHistory}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-400 hover:text-white bg-gray-700/50 hover:bg-gray-600/70 rounded-full border border-gray-600/40 hover:border-gray-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loadingMoreHistory
+                          ? <><RefreshCw className="w-3 h-3 animate-spin" /> Pulling history…</>
+                          : <><RefreshCw className="w-3 h-3" /> Load more history</>
+                        }
+                      </button>
+                      {moreHistoryResult && (
+                        <span className="text-xs text-gray-400">{moreHistoryResult}</span>
+                      )}
+                    </div>
+                  )}
                   {loading ? (
                     <div className="flex items-center justify-center h-full">
                       <RefreshCw className="w-6 h-6 text-green-400 animate-spin" />
