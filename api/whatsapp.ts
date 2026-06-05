@@ -735,7 +735,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.error('[Persistence] Failed to persist outgoing whatsapp message:', err);
         }
 
-        return res.json({ success: true, messageId });
+        // Debug: Include Supabase status in response
+        return res.json({
+          success: true,
+          messageId,
+          _debug: {
+            supabaseClient: supabase ? 'INITIALIZED' : 'NULL',
+            supabaseUrl: _supabaseUrl ? _supabaseUrl.substring(0, 30) : 'NOT SET',
+            allSupabaseEnvVars: Object.keys(process.env).filter(k => k.includes('SUPABASE') || k.includes('supabase')).map(k => `${k}:${process.env[k] ? 'SET' : 'EMPTY'}`)
+          }
+        });
       }
 
       case 'receive': {
