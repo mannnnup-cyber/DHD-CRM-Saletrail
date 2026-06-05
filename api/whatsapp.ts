@@ -582,7 +582,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'messages': {
-        // Get chat history (DB-backed if possible)
+        // Get chat history (DB-backed, provider-agnostic)
+        // Supports both Green API and Evolution API messages
         const chatId = req.query.chatId as string;
         if (supabase !== null && chatId) {
           try {
