@@ -355,14 +355,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'chatsLegacy': {
-        // Legacy: fetch from Green API directly
+        // Legacy: fetch from Green API or Evolution API directly
         const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
 
         let rawChats: any = [];
 
         if (activeProvider === 'evolution') {
-          // Evolution API chats — not implemented yet
-          rawChats = [];
+          // Fetch from Evolution API
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (!instanceName) {
+            return res.status(400).json({ success: false, error: 'Evolution API not linked' });
+          }
+
+          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+          }
+
+          try {
+            const chatsUrl = new URL(`/chat/findChats/${instanceName}`, EVOLUTION_API_URL).toString();
+            const r = await fetch(chatsUrl, {
+              method: 'POST',
+              headers: {
+                'apikey': EVOLUTION_API_KEY,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({})
+            });
+
+            if (r.ok) {
+              const data = await r.json();
+              // Evolution API returns { chats: [ { ... } ] } or similar
+              rawChats = data.chats || data.data || [];
+              console.log('[Evolution getChats] Found', rawChats.length, 'chats');
+            } else {
+              console.error('[Evolution getChats] Failed:', r.status);
+              rawChats = [];
+            }
+          } catch (err: any) {
+            console.error('[Evolution getChats] Error:', err.message);
+            rawChats = [];
+          }
         } else {
           // Fetch from Green API (default)
           const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
