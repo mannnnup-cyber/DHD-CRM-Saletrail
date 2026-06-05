@@ -1701,6 +1701,90 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'fullDiagnostics': {
+        // Comprehensive diagnostic report
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+        const evolutionInstanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        const evolutionPhone = await getSetting('EVOLUTION_PHONE', '');
+
+        // Count messages in database
+        let totalMessages = 0;
+        let evolutionMessages = 0;
+        let inboundMessages = 0;
+        let outboundMessages = 0;
+
+        if (supabase) {
+          try {
+            const { count: total } = await supabase
+              .from('whatsapp_messages')
+              .select('*', { count: 'exact', head: true });
+
+            const { count: evo } = await supabase
+              .from('whatsapp_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('provider', 'evolution');
+
+            const { count: inbound } = await supabase
+              .from('whatsapp_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('direction', 'inbound');
+
+            const { count: outbound } = await supabase
+              .from('whatsapp_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('direction', 'outbound');
+
+            totalMessages = total || 0;
+            evolutionMessages = evo || 0;
+            inboundMessages = inbound || 0;
+            outboundMessages = outbound || 0;
+          } catch (err) {
+            console.error('[fullDiagnostics] DB query error:', err);
+          }
+        }
+
+        // Check webhook
+        let webhookConfigured = false;
+        try {
+          const webhookUrl = new URL(`/webhook/find/${evolutionInstanceName}`, EVOLUTION_API_URL).toString();
+          const r = await fetch(webhookUrl, {
+            headers: { 'apikey': EVOLUTION_API_KEY }
+          });
+          const data = await r.json();
+          webhookConfigured = data?.url ? true : false;
+        } catch (err) {
+          console.error('[fullDiagnostics] Webhook check error:', err);
+        }
+
+        return res.json({
+          success: true,
+          diagnostics: {
+            config: {
+              activeProvider,
+              evolutionInstanceName,
+              evolutionPhone,
+              evolutionConfigured: !!EVOLUTION_API_URL && !!EVOLUTION_API_KEY
+            },
+            database: {
+              totalMessages,
+              evolutionMessages,
+              inboundMessages,
+              outboundMessages,
+              supabaseConnected: supabase !== null
+            },
+            webhook: {
+              configured: webhookConfigured,
+              url: webhookConfigured ? 'Configured ✅' : 'Not configured ❌',
+              instanceName: evolutionInstanceName
+            },
+            api: {
+              evolutionUrl: EVOLUTION_API_URL ? 'SET ✅' : 'NOT SET ❌',
+              evolutionKey: EVOLUTION_API_KEY ? 'SET ✅' : 'NOT SET ❌'
+            }
+          }
+        });
+      }
+
       case 'diagnostics': {
         // Debug endpoint to check configuration
         const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
