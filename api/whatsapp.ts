@@ -643,7 +643,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({ success: false, error: 'Evolution API not configured (missing URL or key)' });
           }
 
-          const evolutionUrl = new URL(`/send`, EVOLUTION_API_URL).toString();
+          const evolutionUrl = new URL(`/message/send`, EVOLUTION_API_URL).toString();
           try {
             const r = await fetch(evolutionUrl, {
               method: 'POST',
