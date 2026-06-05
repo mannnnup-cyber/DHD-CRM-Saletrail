@@ -51,7 +51,7 @@ const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
 // Helper to get a setting from Supabase with caching
 const _settingCache: Record<string, { value: string; ts: number }> = {};
-const SETTING_CACHE_TTL = 60000; // 60 seconds
+const SETTING_CACHE_TTL = 5000; // 5 seconds (reduced for provider switching)
 
 async function getSetting(key: string, defaultValue: string = ''): Promise<string> {
   // Check cache
@@ -635,6 +635,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
           if (!instanceName) {
             return res.status(400).json({ success: false, error: 'Evolution API not linked (no instance name)' });
+          }
+
+          console.log('[Evolution Send] Using instance:', instanceName, 'URL:', EVOLUTION_API_URL, 'Has key:', !!EVOLUTION_API_KEY);
+
+          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(400).json({ success: false, error: 'Evolution API not configured (missing URL or key)' });
           }
 
           const evolutionUrl = new URL(`/send`, EVOLUTION_API_URL).toString();
