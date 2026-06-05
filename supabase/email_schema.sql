@@ -210,6 +210,27 @@ INSERT INTO app_settings (setting_key, setting_value, setting_type, description,
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- ============================================
+-- WhatsApp Messages Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider VARCHAR(50) NOT NULL, -- 'greenapi' or 'evolution'
+  provider_message_id VARCHAR(500), -- Message ID from the provider
+  chat_id VARCHAR(50) NOT NULL, -- WhatsApp phone number or chat ID
+  direction VARCHAR(20) NOT NULL, -- 'inbound' or 'outbound'
+  body TEXT NOT NULL, -- Message content
+  raw JSONB, -- Raw response from WhatsApp provider
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_chat_id ON whatsapp_messages(chat_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_provider ON whatsapp_messages(provider);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_direction ON whatsapp_messages(direction);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_created_at ON whatsapp_messages(created_at DESC);
+
+-- ============================================
 -- IMAP SETUP INSTRUCTIONS
 -- ============================================
 -- To sync emails from your IMAP mailbox, add these environment variables in Vercel:
