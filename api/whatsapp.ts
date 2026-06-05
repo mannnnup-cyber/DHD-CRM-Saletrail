@@ -700,6 +700,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Persist outgoing message
+        let persistenceError = null;
         try {
           console.log('[Persistence] Starting message insert. supabase:', supabase !== null, 'provider:', activeProvider, 'messageId:', messageId, 'chatId:', chatId);
 
@@ -715,10 +716,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             };
             console.log('[Persistence] Insert payload:', JSON.stringify(insertPayload));
 
-            const insertResult = await supabase.from('whatsapp_messages').insert(insertPayload);
-            console.log('[Persistence] Insert result:', insertResult);
+            const { data, error } = await supabase.from('whatsapp_messages').insert(insertPayload);
+            if (error) {
+              console.error('[Persistence] Insert error:', JSON.stringify(error));
+              persistenceError = error;
+            } else {
+              console.log('[Persistence] Insert successful:', JSON.stringify(data));
+            }
           } else {
             console.warn('[Persistence] Supabase client is null, skipping database insert');
+            persistenceError = 'Supabase client is null';
           }
 
           await supaDb.createCall({
@@ -731,8 +738,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           } as any);
 
           console.log('[Persistence] Message persistence completed successfully');
-        } catch (err) {
-          console.error('[Persistence] Failed to persist outgoing whatsapp message:', err);
+        } catch (err: any) {
+          console.error('[Persistence] Exception during persistence:', err?.message || err);
+          persistenceError = err?.message || String(err);
         }
 
         // Debug: Include Supabase status in response
@@ -742,6 +750,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           _debug: {
             supabaseClient: supabase ? 'INITIALIZED' : 'NULL',
             supabaseUrl: _supabaseUrl ? _supabaseUrl.substring(0, 30) : 'NOT SET',
+            persistenceError: persistenceError || 'NONE',
             allSupabaseEnvVars: Object.keys(process.env).filter(k => k.includes('SUPABASE') || k.includes('supabase')).map(k => `${k}:${process.env[k] ? 'SET' : 'EMPTY'}`)
           }
         });
