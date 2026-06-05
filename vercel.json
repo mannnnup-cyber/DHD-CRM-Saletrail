@@ -7,6 +7,9 @@
   "functions": {
     "api/email.ts": {
       "maxDuration": 60
+    },
+    "api/whatsapp.ts": {
+      "maxDuration": 60
     }
   }
 }

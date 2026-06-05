@@ -1594,7 +1594,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'syncEvolutionMessages': {
         // Sync historical messages from Evolution API chat (single or all)
-        const { chatId } = req.body;
+        // API response format: { messages: { total, pages, currentPage, records: [...] } }
+        // Each record: { key: { id, fromMe, remoteJid }, pushName, message: { conversation }, messageType, messageTimestamp }
+        const { chatId, limit: syncLimit, offset: syncOffset } = req.body;
+        const maxChats = Math.min(parseInt(syncLimit) || 50, 100); // max 100 chats per call
+        const chatOffset = parseInt(syncOffset) || 0;
 
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName) {
@@ -1605,18 +1609,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ success: false, error: 'Evolution API not configured' });
         }
 
+        // Helper: extract messages from Evolution API response (handles both old array and new nested format)
+        function extractRecords(data: any): any[] {
+          if (Array.isArray(data)) return data;
+          if (data?.messages?.records) return data.messages.records;
+          if (data?.records) return data.records;
+          return [];
+        }
+
+        // Helper: map a message record to DB row
+        function mapToDbRow(msg: any, jid: string, chatName: string): any {
+          const msgText = msg.message?.conversation ||
+                          msg.message?.extendedTextMessage?.text ||
+                          msg.message?.imageMessage?.caption ||
+                          msg.message?.videoMessage?.caption ||
+                          msg.message?.documentMessage?.caption ||
+                          '';
+          return {
+            provider: 'evolution',
+            provider_message_id: msg.key?.id,
+            chat_id: msg.key?.remoteJid || jid,
+            sender_name: msg.pushName || chatName || '',
+            direction: msg.key?.fromMe ? 'outbound' : 'inbound',
+            body: msgText || (msg.messageType ? `[${msg.messageType}]` : ''),
+            type: msg.messageType || 'conversation',
+            raw: msg,
+            created_at: msg.messageTimestamp
+              ? new Date(msg.messageTimestamp > 1e10 ? msg.messageTimestamp : msg.messageTimestamp * 1000).toISOString()
+              : new Date().toISOString()
+          };
+        }
+
         try {
-          // If chatId specified, sync single chat. Otherwise sync ALL chats.
+          // If chatId specified, sync single chat
           if (chatId) {
             console.log('[syncEvolutionMessages] Syncing single chat:', chatId);
             const messagesUrl = new URL(`/chat/findMessages/${instanceName}`, EVOLUTION_API_URL).toString();
             const r = await fetch(messagesUrl, {
               method: 'POST',
-              headers: {
-                'apikey': EVOLUTION_API_KEY,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ where: { key: { remoteJid: chatId } } })
+              headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ where: { key: { remoteJid: chatId } }, limit: 200 })
             });
 
             if (!r.ok) {
@@ -1624,128 +1656,102 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.json({ success: false, error: 'Failed to fetch messages' });
             }
 
-            const messages = await r.json();
-            console.log('[syncEvolutionMessages] Found', messages?.length || 0, 'messages');
+            const rawData = await r.json();
+            const records = extractRecords(rawData);
+            console.log('[syncEvolutionMessages] Found', records.length, 'messages for chat', chatId);
 
-            // Insert into database
-            if (supabase && Array.isArray(messages) && messages.length > 0) {
-              const toInsert = messages
-                .filter((msg: any) => msg.key?.id)
-                .map((msg: any) => ({
-                  provider: 'evolution',
-                  provider_message_id: msg.key?.id,
-                  chat_id: chatId,
-                  sender_name: msg.pushName || '',
-                  direction: msg.fromMe ? 'outbound' : 'inbound',
-                  body: msg.message?.conversation || msg.message?.extendedTextMessageData?.text || '',
-                  type: msg.messageType || 'textMessage',
-                  raw: msg,
-                  created_at: msg.messageTimestamp
-                    ? new Date(msg.messageTimestamp * 1000).toISOString()
-                    : new Date().toISOString()
-                }));
-
-              const { error } = await supabase
-                .from('whatsapp_messages')
+            if (supabase && records.length > 0) {
+              const toInsert = records.filter((m: any) => m.key?.id).map((m: any) => mapToDbRow(m, chatId, ''));
+              const { error } = await supabase.from('whatsapp_messages')
                 .upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
-
               if (error) {
                 console.error('[syncEvolutionMessages] DB error:', error);
                 return res.json({ success: false, error: 'Failed to save messages', dbError: error.message });
               }
-
-              return res.json({
-                success: true,
-                message: 'Single chat synced',
-                count: toInsert.length
-              });
+              return res.json({ success: true, message: 'Single chat synced', count: toInsert.length });
             }
-          } else {
-            // Sync ALL chats
-            console.log('[syncEvolutionMessages] Syncing ALL chats');
-            const chatsUrl = new URL(`/chat/findChats/${instanceName}`, EVOLUTION_API_URL).toString();
-            const chatsRes = await fetch(chatsUrl, {
-              method: 'POST',
-              headers: {
-                'apikey': EVOLUTION_API_KEY,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({})
-            });
-
-            if (!chatsRes.ok) {
-              console.error('[syncEvolutionMessages] Failed to get chats:', chatsRes.status);
-              return res.json({ success: false, error: 'Failed to fetch chats' });
-            }
-
-            const chats = await chatsRes.json();
-            console.log('[syncEvolutionMessages] Found', chats?.length || 0, 'chats to sync');
-
-            if (!Array.isArray(chats) || chats.length === 0) {
-              return res.json({ success: true, message: 'No chats to sync', count: 0 });
-            }
-
-            // Sync messages for each chat
-            let totalSynced = 0;
-            for (const chat of chats) {
-              const chatRemoteJid = chat.remoteJid || chat.id;
-              if (!chatRemoteJid) continue;
-
-              try {
-                const messagesUrl = new URL(`/chat/findMessages/${instanceName}`, EVOLUTION_API_URL).toString();
-                const r = await fetch(messagesUrl, {
-                  method: 'POST',
-                  headers: {
-                    'apikey': EVOLUTION_API_KEY,
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({ where: { key: { remoteJid: chatRemoteJid } } })
-                });
-
-                if (!r.ok) continue;
-
-                const messages = await r.json();
-                if (!Array.isArray(messages) || messages.length === 0) continue;
-
-                const toInsert = messages
-                  .filter((msg: any) => msg.key?.id)
-                  .map((msg: any) => ({
-                    provider: 'evolution',
-                    provider_message_id: msg.key?.id,
-                    chat_id: chatRemoteJid,
-                    sender_name: msg.pushName || chat.pushName || '',
-                    direction: msg.fromMe ? 'outbound' : 'inbound',
-                    body: msg.message?.conversation || msg.message?.extendedTextMessageData?.text || '',
-                    type: msg.messageType || 'textMessage',
-                    raw: msg,
-                    created_at: msg.messageTimestamp
-                      ? new Date(msg.messageTimestamp * 1000).toISOString()
-                      : new Date().toISOString()
-                  }));
-
-                if (supabase && toInsert.length > 0) {
-                  const { error } = await supabase
-                    .from('whatsapp_messages')
-                    .upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
-
-                  if (!error) {
-                    totalSynced += toInsert.length;
-                  }
-                }
-              } catch (err) {
-                console.error('[syncEvolutionMessages] Error syncing chat', chatRemoteJid, ':', err);
-              }
-            }
-
-            return res.json({
-              success: true,
-              message: `Synced all chats - ${totalSynced} messages loaded`,
-              count: totalSynced,
-              chatsProcessed: chats.length
-            });
+            return res.json({ success: true, message: 'No messages found', count: 0 });
           }
 
-          return res.json({ success: true, message: 'No messages to sync', count: 0 });
+          // Sync batch of recent chats (sorted by updatedAt descending)
+          console.log('[syncEvolutionMessages] Syncing recent chats, offset:', chatOffset, 'limit:', maxChats);
+          const chatsUrl = new URL(`/chat/findChats/${instanceName}`, EVOLUTION_API_URL).toString();
+          const chatsRes = await fetch(chatsUrl, {
+            method: 'POST',
+            headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+
+          if (!chatsRes.ok) {
+            console.error('[syncEvolutionMessages] Failed to get chats:', chatsRes.status);
+            return res.json({ success: false, error: 'Failed to fetch chats' });
+          }
+
+          const allChats = await chatsRes.json();
+          const chatList = Array.isArray(allChats) ? allChats : [];
+          console.log('[syncEvolutionMessages] Total chats available:', chatList.length);
+
+          // Sort by updatedAt descending (most recent first), then paginate
+          chatList.sort((a: any, b: any) =>
+            new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()
+          );
+
+          const chatBatch = chatList.slice(chatOffset, chatOffset + maxChats);
+          if (chatBatch.length === 0) {
+            return res.json({ success: true, message: 'No more chats to sync', count: 0, totalChats: chatList.length });
+          }
+
+          // Sync messages for each chat in batch
+          let totalSynced = 0;
+          let chatsWithMessages = 0;
+          for (const chat of chatBatch) {
+            const chatRemoteJid = chat.remoteJid || chat.id;
+            if (!chatRemoteJid) continue;
+
+            try {
+              const messagesUrl = new URL(`/chat/findMessages/${instanceName}`, EVOLUTION_API_URL).toString();
+              const r = await fetch(messagesUrl, {
+                method: 'POST',
+                headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ where: { key: { remoteJid: chatRemoteJid } }, limit: 50 })
+              });
+
+              if (!r.ok) continue;
+
+              const rawData = await r.json();
+              const records = extractRecords(rawData);
+              if (records.length === 0) continue;
+
+              const chatName = chat.pushName || chat.name || '';
+              const toInsert = records.filter((m: any) => m.key?.id).map((m: any) => mapToDbRow(m, chatRemoteJid, chatName));
+
+              if (supabase && toInsert.length > 0) {
+                const { error } = await supabase.from('whatsapp_messages')
+                  .upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
+                if (!error) {
+                  totalSynced += toInsert.length;
+                  chatsWithMessages++;
+                } else {
+                  console.error('[syncEvolutionMessages] DB error for', chatRemoteJid, ':', error.message);
+                }
+              }
+            } catch (err) {
+              console.error('[syncEvolutionMessages] Error syncing chat', chatRemoteJid, ':', err);
+            }
+          }
+
+          const hasMore = (chatOffset + maxChats) < chatList.length;
+          return res.json({
+            success: true,
+            message: `Synced ${totalSynced} messages from ${chatsWithMessages} chats`,
+            count: totalSynced,
+            chatsProcessed: chatBatch.length,
+            chatsWithMessages,
+            totalChats: chatList.length,
+            nextOffset: hasMore ? chatOffset + maxChats : null,
+            hasMore
+          });
+
         } catch (err: any) {
           console.error('[syncEvolutionMessages] Error:', err.message);
           return res.json({ success: false, error: err.message });
