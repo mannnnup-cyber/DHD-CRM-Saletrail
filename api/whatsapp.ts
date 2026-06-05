@@ -643,7 +643,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({ success: false, error: 'Evolution API not configured (missing URL or key)' });
           }
 
-          const evolutionUrl = new URL(`/message/send`, EVOLUTION_API_URL).toString();
+          // Evolution API v2 correct endpoint: POST /message/sendText/{instanceName}
+          const evolutionUrl = new URL(`/message/sendText/${instanceName}`, EVOLUTION_API_URL).toString();
           try {
             const r = await fetch(evolutionUrl, {
               method: 'POST',
@@ -651,7 +652,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 'apikey': EVOLUTION_API_KEY,
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify({ instance: instanceName, number: chatId, text: message })
+              body: JSON.stringify({ number: chatId, text: message })
             });
             rawData = await r.json();
             console.log('[Evolution API send response]:', JSON.stringify(rawData));
