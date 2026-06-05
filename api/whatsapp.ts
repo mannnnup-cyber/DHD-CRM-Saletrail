@@ -301,23 +301,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'setWebhook': {
-        // Set webhook using SetSettings (no separate setWebhookUrl exists)
+        // Set webhook for Green API or Evolution API
         const { webhookUrl, webhookUrlToken, incomingWebhook, outgoingWebhook, stateWebhook } = req.body;
-        const settings: any = {};
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
 
-        if (webhookUrl !== undefined) settings.webhookUrl = webhookUrl;
-        if (webhookUrlToken !== undefined) settings.webhookUrlToken = webhookUrlToken;
-        if (incomingWebhook !== undefined) settings.incomingWebhook = incomingWebhook ? 'yes' : 'no';
-        if (outgoingWebhook !== undefined) settings.outgoingWebhook = outgoingWebhook ? 'yes' : 'no';
-        if (stateWebhook !== undefined) settings.stateWebhook = stateWebhook ? 'yes' : 'no';
+        if (activeProvider === 'evolution') {
+          // Set webhook for Evolution API
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (!instanceName) {
+            return res.status(400).json({ success: false, error: 'Evolution API not linked' });
+          }
 
-        const r = await fetch(`${BASE_URL}/SetSettings/${API_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settings)
-        });
-        const data = await r.json();
-        return res.json({ success: data.saveSettings === true, data });
+          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+          }
+
+          try {
+            const webhookSetUrl = new URL(`/webhook/set/${instanceName}`, EVOLUTION_API_URL).toString();
+
+            // Default events for Evolution API webhook
+            const events = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'];
+
+            const r = await fetch(webhookSetUrl, {
+              method: 'POST',
+              headers: {
+                'apikey': EVOLUTION_API_KEY,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                url: webhookUrl || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`,
+                events,
+                enabled: true,
+                webhookByEvents: true,
+                webhookBase64: false
+              })
+            });
+
+            const data = await r.json();
+            console.log('[Evolution setWebhook] Response:', JSON.stringify(data));
+
+            return res.json({
+              success: r.ok,
+              provider: 'evolution',
+              data,
+              message: r.ok ? 'Webhook configured successfully' : 'Failed to configure webhook'
+            });
+          } catch (err: any) {
+            console.error('[Evolution setWebhook] Error:', err.message);
+            return res.json({ success: false, error: err.message });
+          }
+        } else {
+          // Set webhook for Green API (existing logic)
+          const settings: any = {};
+
+          if (webhookUrl !== undefined) settings.webhookUrl = webhookUrl;
+          if (webhookUrlToken !== undefined) settings.webhookUrlToken = webhookUrlToken;
+          if (incomingWebhook !== undefined) settings.incomingWebhook = incomingWebhook ? 'yes' : 'no';
+          if (outgoingWebhook !== undefined) settings.outgoingWebhook = outgoingWebhook ? 'yes' : 'no';
+          if (stateWebhook !== undefined) settings.stateWebhook = stateWebhook ? 'yes' : 'no';
+
+          const r = await fetch(`${BASE_URL}/SetSettings/${API_TOKEN}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+          });
+          const data = await r.json();
+          return res.json({ success: data.saveSettings === true, data });
+        }
       }
 
       case 'contacts': {
