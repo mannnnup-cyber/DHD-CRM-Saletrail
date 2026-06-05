@@ -55,13 +55,15 @@ const Settings: React.FC = () => {
 
   // Initialize WhatsApp linked state from settings
   useEffect(() => {
-    if (localValues['EVOLUTION_PHONE']) {
-      setWhatsAppPhoneLinked(localValues['EVOLUTION_PHONE']);
+    // Show as linked if either phone OR instance name exists
+    if (localValues['EVOLUTION_PHONE'] || localValues['EVOLUTION_INSTANCE_NAME']) {
+      setWhatsAppPhoneLinked(localValues['EVOLUTION_PHONE'] || 'WhatsApp Linked');
       setWhatsAppInstanceName(localValues['EVOLUTION_INSTANCE_NAME']);
     } else {
       setWhatsAppPhoneLinked(null);
+      setWhatsAppInstanceName(null);
     }
-  }, [localValues['EVOLUTION_PHONE']]);
+  }, [localValues['EVOLUTION_PHONE'], localValues['EVOLUTION_INSTANCE_NAME']]);
 
   // Load current active WhatsApp provider from app_settings
   useEffect(() => {
