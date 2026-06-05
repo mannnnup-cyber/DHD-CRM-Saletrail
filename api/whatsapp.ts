@@ -838,6 +838,87 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, messageId: data.idMessage });
       }
 
+      case 'sendAudio': {
+        // POST /api/whatsapp?action=sendAudio
+        // Send audio files (MP3, OGG, etc.) via Evolution API or Green API
+        const { chatId, audioBase64, mimeType } = req.body;
+        if (!chatId || !audioBase64) {
+          return res.status(400).json({ error: 'chatId, audioBase64 required' });
+        }
+
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+        let succeeded = false;
+        let messageId = 'unknown';
+        let rawData: any = {};
+
+        if (activeProvider === 'evolution') {
+          // Route to Evolution API
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (!instanceName) {
+            return res.status(400).json({ success: false, error: 'Evolution API not linked' });
+          }
+
+          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+          }
+
+          console.log('[Evolution SendAudio] Using instance:', instanceName);
+
+          const audioUrl = new URL(`/message/sendWhatsAppAudio/${instanceName}`, EVOLUTION_API_URL).toString();
+          try {
+            const r = await fetch(audioUrl, {
+              method: 'POST',
+              headers: {
+                'apikey': EVOLUTION_API_KEY,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                number: chatId,
+                audio: `data:${mimeType || 'audio/mpeg'};base64,${audioBase64}`
+              })
+            });
+
+            rawData = await r.json();
+            console.log('[Evolution SendAudio response]:', JSON.stringify(rawData));
+
+            succeeded = r.ok;
+            messageId = rawData.key?.id || rawData.id || 'unknown';
+
+            if (!succeeded) {
+              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
+              console.error('Evolution SendAudio failed:', errMsg);
+              return res.json({ success: false, error: errMsg, raw: rawData });
+            }
+          } catch (err: any) {
+            console.error('Evolution SendAudio error:', err.message);
+            return res.json({ success: false, error: err.message });
+          }
+        } else {
+          // Green API doesn't have native audio support, use media endpoint
+          return res.json({ success: false, error: 'Audio sending not supported for Green API. Use sendMedia instead.' });
+        }
+
+        // Persist audio message
+        try {
+          if (supabase) {
+            await supabase.from('whatsapp_messages').insert({
+              provider: activeProvider,
+              provider_message_id: messageId,
+              chat_id: chatId,
+              direction: 'outbound',
+              body: '[Audio Message]',
+              type: 'audioMessage',
+              raw: rawData,
+              created_at: new Date().toISOString()
+            });
+          }
+        } catch (err: any) {
+          console.error('[SendAudio Persistence] Error:', err.message);
+        }
+
+        return res.json({ success: true, messageId, provider: activeProvider });
+      }
+
       case 'sendMedia': {
         // POST /api/whatsapp?action=sendMedia
         // Send images, videos, or documents via Evolution API or Green API
