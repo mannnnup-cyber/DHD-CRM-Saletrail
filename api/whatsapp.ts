@@ -1526,6 +1526,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
+      case 'diagnostics': {
+        // Debug endpoint to check configuration
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+        const evolutionInstanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        const evolutionPhone = await getSetting('EVOLUTION_PHONE', '');
+
+        return res.json({
+          success: true,
+          diagnostics: {
+            activeProvider,
+            evolution: {
+              configured: !!EVOLUTION_API_URL && !!EVOLUTION_API_KEY,
+              url: EVOLUTION_API_URL ? EVOLUTION_API_URL.substring(0, 30) + '...' : 'NOT SET',
+              apiKey: EVOLUTION_API_KEY ? 'SET' : 'NOT SET',
+              instanceName: evolutionInstanceName || 'NOT SET',
+              phone: evolutionPhone || 'NOT SET'
+            },
+            greenapi: {
+              configured: !!INSTANCE_ID && !!API_TOKEN,
+              instanceId: INSTANCE_ID ? 'SET' : 'NOT SET',
+              token: API_TOKEN ? 'SET' : 'NOT SET'
+            },
+            supabase: {
+              configured: supabase !== null,
+              url: _supabaseUrl ? _supabaseUrl.substring(0, 30) + '...' : 'NOT SET'
+            }
+          }
+        });
+      }
+
       default:
         return res.status(400).json({
           success: false,
@@ -1534,7 +1564,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Green API actions
             'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'mediaProxy', 'messageCount',
             // Evolution API actions
-            'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'selectProvider'
+            'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'selectProvider', 'sendMedia', 'sendAudio',
+            // Utilities
+            'diagnostics'
           ]
         });
     }
