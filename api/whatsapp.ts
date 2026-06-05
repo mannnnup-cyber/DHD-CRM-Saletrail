@@ -1541,6 +1541,89 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
+      case 'syncEvolutionMessages': {
+        // Sync historical messages from Evolution API chat
+        const { chatId } = req.body;
+        if (!chatId) {
+          return res.status(400).json({ error: 'chatId required' });
+        }
+
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName) {
+          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
+        }
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+
+        try {
+          console.log('[syncEvolutionMessages] Syncing messages for chat:', chatId);
+
+          // Fetch messages from Evolution API
+          const messagesUrl = new URL(`/chat/findMessages/${instanceName}`, EVOLUTION_API_URL).toString();
+          const r = await fetch(messagesUrl, {
+            method: 'POST',
+            headers: {
+              'apikey': EVOLUTION_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              where: { key: { remoteJid: chatId } }
+            })
+          });
+
+          if (!r.ok) {
+            console.error('[syncEvolutionMessages] API error:', r.status);
+            return res.json({ success: false, error: 'Failed to fetch messages' });
+          }
+
+          const messages = await r.json();
+          console.log('[syncEvolutionMessages] Found', messages?.length || 0, 'messages');
+
+          // Insert into database
+          if (supabase && Array.isArray(messages) && messages.length > 0) {
+            const toInsert = messages
+              .filter((msg: any) => msg.key?.id)
+              .map((msg: any) => ({
+                provider: 'evolution',
+                provider_message_id: msg.key?.id,
+                chat_id: chatId,
+                sender_name: msg.pushName || '',
+                direction: msg.fromMe ? 'outbound' : 'inbound',
+                body: msg.message?.conversation || msg.message?.extendedTextMessageData?.text || '',
+                type: msg.messageType || 'textMessage',
+                raw: msg,
+                created_at: msg.messageTimestamp
+                  ? new Date(msg.messageTimestamp * 1000).toISOString()
+                  : new Date().toISOString()
+              }));
+
+            console.log('[syncEvolutionMessages] Inserting', toInsert.length, 'messages');
+
+            const { error } = await supabase
+              .from('whatsapp_messages')
+              .upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
+
+            if (error) {
+              console.error('[syncEvolutionMessages] DB error:', error);
+              return res.json({ success: false, error: 'Failed to save messages', dbError: error.message });
+            }
+
+            return res.json({
+              success: true,
+              message: 'Messages synced successfully',
+              count: toInsert.length
+            });
+          } else {
+            return res.json({ success: true, message: 'No new messages to sync', count: 0 });
+          }
+        } catch (err: any) {
+          console.error('[syncEvolutionMessages] Error:', err.message);
+          return res.json({ success: false, error: err.message });
+        }
+      }
+
       case 'diagnostics': {
         // Debug endpoint to check configuration
         const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
