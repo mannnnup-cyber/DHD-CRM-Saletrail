@@ -196,6 +196,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if ((provider === 'greenapi' && (typeWebhook === 'incomingMessageReceived' || typeWebhook === 'outgoingAPIMessageReceived' || typeWebhook === 'outgoingMessageReceived')) ||
           (provider === 'evolution' && typeWebhook === 'messages.upsert')) {
 
+        console.log('[Webhook] Pre-save check:', {
+          provider,
+          typeWebhook,
+          supabaseConnected: supabase !== null,
+          chatId,
+          messageId,
+          isInbound,
+          willSave: supabase !== null && chatId && messageId
+        });
+
         if (supabase !== null && chatId && messageId) {
           // Idempotency check: use provider_message_id to prevent duplicates
           const { data: existing } = await supabase
