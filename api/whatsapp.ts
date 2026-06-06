@@ -571,11 +571,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           });
 
-          // Collect best known name per chat from inbound messages (sender_name)
+          // Load persisted chat metadata (status, assignedTo, contact_name for @lid resolution)
+          const { data: chatMeta } = await supabase
+            .from('whatsapp_chats')
+            .select('chat_id, status, assigned_to, contact_name');
+          const metaMap: Record<string, any> = {};
+          (chatMeta || []).forEach((row: any) => { metaMap[row.chat_id] = row; });
+
+          // Collect best known name per chat:
+          // Priority: contact_name from whatsapp_chats > sender_name from inbound messages
           const chatNames: Record<string, string> = {};
+          // First apply contact_name from DB (covers @lid resolution)
+          (chatMeta || []).forEach((row: any) => {
+            if (row.contact_name) chatNames[row.chat_id] = row.contact_name;
+          });
+          // Then fill gaps from inbound message sender_name
           filteredMsgs.forEach((m: any) => {
             const chatId = m.chat_id || 'unknown';
-            if (m.direction === 'inbound' && m.sender_name && !chatNames[chatId]) {
+            if (!chatNames[chatId] && m.direction === 'inbound' && m.sender_name) {
               chatNames[chatId] = m.sender_name;
             }
           });
@@ -588,6 +601,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const phone = chatId.includes('@') ? chatId.replace(/@[^@]+$/, '') : chatId;
             const displayName = chatNames[chatId] || phone || chatId;
 
+            const meta = metaMap[chatId];
             if (!byChat[chatId]) {
               byChat[chatId] = {
                 id: chatId,
@@ -596,7 +610,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 timestamp: m.created_at,
                 unread: 0,
                 phone,
-                status: 'active'
+                status: meta?.status || 'active',
+                assignedTo: meta?.assigned_to || 'Unassigned'
               };
             } else {
               // Update name if we now have a better one
@@ -1805,6 +1820,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         } catch (err: any) {
           console.error('[syncEvolutionMessages] Error:', err.message);
+          return res.json({ success: false, error: err.message });
+        }
+      }
+
+      // ── Chat status persistence ──────────────────────────────────────────
+      case 'updateChatStatus': {
+        // Save/update a chat's status (active | resolved | pending) in DB
+        const { chatId, status, assignedTo } = req.body;
+        if (!supabase || !chatId || !status) {
+          return res.status(400).json({ success: false, error: 'Missing chatId or status' });
+        }
+        const { error } = await supabase.from('whatsapp_chats').upsert(
+          { chat_id: chatId, status, assigned_to: assignedTo || 'Unassigned', updated_at: new Date().toISOString() },
+          { onConflict: 'chat_id' }
+        );
+        if (error) return res.status(500).json({ success: false, error: error.message });
+        return res.json({ success: true, chatId, status });
+      }
+
+      case 'getChatStatuses': {
+        // Return all persisted chat statuses so the UI can restore state after refresh
+        if (!supabase) return res.json({ success: true, statuses: {} });
+        const { data, error } = await supabase
+          .from('whatsapp_chats')
+          .select('chat_id, status, assigned_to, contact_name');
+        if (error) return res.status(500).json({ success: false, error: error.message });
+        // Return as a map: { [chatId]: { status, assignedTo, contactName } }
+        const statuses: Record<string, any> = {};
+        (data || []).forEach((row: any) => {
+          statuses[row.chat_id] = { status: row.status, assignedTo: row.assigned_to, contactName: row.contact_name };
+        });
+        return res.json({ success: true, statuses });
+      }
+
+      // ── Contact name resolution for @lid JIDs ────────────────────────────
+      case 'syncContactNames': {
+        // Fetch contacts from Evolution API and store name+phone mappings
+        // so @lid JIDs can be resolved to real names in the chat list
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName || !EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+        try {
+          const r = await fetch(
+            new URL(`/contact/findContacts/${instanceName}`, EVOLUTION_API_URL).toString(),
+            { method: 'POST', headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ where: {} }) }
+          );
+          if (!r.ok) return res.json({ success: false, error: `Evolution API returned ${r.status}` });
+
+          const contacts = await r.json();
+          const list = Array.isArray(contacts) ? contacts : (contacts?.contacts || contacts?.data || []);
+
+          // Build a name map: remoteJid → pushName (or formatted phone)
+          const nameMap: Record<string, string> = {};
+          list.forEach((c: any) => {
+            const jid = c.remoteJid || c.id || '';
+            const name = c.pushName || c.fullName || c.name || '';
+            if (jid && name) nameMap[jid] = name;
+          });
+
+          // Persist to whatsapp_chats so chatsFromDb can look it up
+          if (supabase && Object.keys(nameMap).length > 0) {
+            const rows = Object.entries(nameMap).map(([chatId, contactName]) => ({
+              chat_id: chatId, contact_name: contactName, updated_at: new Date().toISOString()
+            }));
+            // Upsert in batches of 100
+            for (let i = 0; i < rows.length; i += 100) {
+              await supabase.from('whatsapp_chats').upsert(rows.slice(i, i + 100), { onConflict: 'chat_id' });
+            }
+          }
+          return res.json({ success: true, count: Object.keys(nameMap).length });
+        } catch (err: any) {
           return res.json({ success: false, error: err.message });
         }
       }

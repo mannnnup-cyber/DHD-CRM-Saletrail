@@ -83,19 +83,12 @@ export default function WhatsApp() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [assignDropdown, setAssignDropdown] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [dbTestResult, setDbTestResult] = useState<DBTestResult | null>(null);
-  const [testingDB, setTestingDB] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [newMessagePhone, setNewMessagePhone] = useState('');
   const [newMessageText, setNewMessageText] = useState('');
   const [sendingNew, setSendingNew] = useState(false);
-  const [messageHistoryEnabled, setMessageHistoryEnabled] = useState(false);
-  const [enablingHistory, setEnablingHistory] = useState(false);
-  const [syncingHistory, setSyncingHistory] = useState(false);
-  const [historyLastSynced, setHistoryLastSynced] = useState<Date | null>(null);
-  const [messageCount, setMessageCount] = useState<number | null>(null);
-  const [loadingCount, setLoadingCount] = useState(false);
+  const [messageHistoryEnabled] = useState(false); // kept for legacy loadChats branch, unused
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageCountRef = useRef<number>(0);
   const chatMessagesCache = useRef<Record<string, Message[]>>({});
@@ -489,89 +482,17 @@ export default function WhatsApp() {
     console.log('[sendNewMessage] END - set sending state to false');
   };
 
-  // Enable message history - syncs chat history from WhatsApp
-  const enableMessageHistory = async () => {
-    setEnablingHistory(true);
-    setSyncingHistory(true);
+  // Persist chat status change to DB so it survives refresh
+  const updateChatStatus = async (chatId: string, status: 'active' | 'resolved' | 'pending', assignedTo?: string) => {
     try {
-      // First, ensure webhooks are configured
-      const webhookR = await fetch('/api/whatsapp?action=setWebhook', {
+      await fetch('/api/whatsapp?action=updateChatStatus', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          webhookUrl: `${window.location.origin}/api/whatsapp`,
-          incomingWebhook: true,
-          outgoingWebhook: true,
-          stateWebhook: true
-        })
+        body: JSON.stringify({ chatId, status, assignedTo })
       });
-      const webhookData = await webhookR.json();
-
-      if (!webhookData.success) {
-        alert('Failed to configure webhooks. Please try again.');
-        setEnablingHistory(false);
-        setSyncingHistory(false);
-        return;
-      }
-
-      // Now sync the history
-      const syncR = await fetch('/api/whatsapp?action=syncHistory');
-      const syncData = await syncR.json();
-
-      if (syncData.success && syncData.chats) {
-        // Update chats with synced data
-        const formatted: Chat[] = syncData.chats.map((chat: any) => ({
-          id: chat.id || '',
-          name: chat.name || chat.phone || 'Unknown',
-          lastMessage: chat.lastMessage || '',
-          timestamp: chat.rawTimestamp ? formatChatTimestamp(chat.rawTimestamp) : (chat.timestamp || ''),
-          rawTimestamp: chat.rawTimestamp || 0,
-          unread: chat.unread || 0,
-          assignedTo: 'Unassigned',
-          phone: chat.phone || chat.id?.split('@')[0] || '',
-          status: 'active' as const
-        }));
-
-        setChats(formatted);
-        setHasRealData(true);
-
-        // Cache all messages
-        if (syncData.messages) {
-          chatMessagesCache.current = syncData.messages;
-        }
-
-        setMessageHistoryEnabled(true);
-        setHistoryLastSynced(new Date());
-        checkWebhookStatus();
-
-        alert(`Message history synced! Loaded ${syncData.count} conversations. Click any chat to view messages.`);
-      } else {
-        alert('Failed to sync message history. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error syncing history:', error);
-      alert('Failed to sync message history. Please try again.');
+    } catch (err) {
+      console.error('[updateChatStatus] failed:', err);
     }
-    setEnablingHistory(false);
-    setSyncingHistory(false);
-  };
-
-  // Test database connection
-  const testDatabaseConnection = async () => {
-    setTestingDB(true);
-    try {
-      const r = await fetch('/api/db-test');
-      const data = await r.json();
-      setDbTestResult(data);
-    } catch (error: any) {
-      setDbTestResult({
-        success: false,
-        connected: false,
-        error: error.message,
-        message: 'Failed to test database connection'
-      });
-    }
-    setTestingDB(false);
   };
 
   // Mock helpers removed to reduce unused-symbol noise
@@ -659,6 +580,11 @@ export default function WhatsApp() {
     checkStatus();
     checkWebhookStatus();
     loadChats();
+    // Silently sync contact names from Evolution API once on mount
+    // so @lid JIDs resolve to real names on next chat load
+    fetch('/api/whatsapp?action=syncContactNames', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .catch(() => {}); // fire-and-forget, non-blocking
   }, [checkStatus, checkWebhookStatus, loadChats]);
 
   // Poll for new messages every 30 seconds
@@ -1137,13 +1063,8 @@ export default function WhatsApp() {
                           c.id === selectedChat.id ? { ...c, status: nextStatus } : c
                         ));
                         setSelectedChat(prev => prev ? { ...prev, status: nextStatus } : null);
-                        if (nextStatus === 'resolved') {
-                          fetch('/api/whatsapp?action=archiveChat', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ chatId: selectedChat.id })
-                          }).catch(() => {});
-                        }
+                        // Persist status to DB so it survives page refresh
+                        updateChatStatus(selectedChat.id, nextStatus);
                       }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                         selectedChat.status === 'resolved'
@@ -1451,56 +1372,6 @@ export default function WhatsApp() {
             </div>
           )}
 
-          {/* Enable Message History */}
-          <div className={`rounded-xl border p-4 ${
-            messageHistoryEnabled
-              ? 'bg-green-500/10 border-green-500/30'
-              : 'bg-blue-500/10 border-blue-500/30'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-white font-medium flex items-center gap-2">
-                  {messageHistoryEnabled ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : null}
-                  {messageHistoryEnabled ? 'Message History Synced' : 'Enable Message History'}
-                </h4>
-                <p className="text-gray-400 text-xs mt-1">
-                  {messageHistoryEnabled
-                    ? historyLastSynced
-                      ? `Last synced: ${historyLastSynced.toLocaleTimeString()}`
-                      : 'Synced - click to re-sync'
-                    : 'Load your WhatsApp chat history from Green API'
-                  }
-                </p>
-              </div>
-              <button
-                onClick={enableMessageHistory}
-                disabled={enablingHistory}
-                className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors ${
-                  messageHistoryEnabled
-                    ? 'bg-green-600 hover:bg-green-700'
-                    : 'bg-blue-600 hover:bg-blue-700'
-                } ${enablingHistory ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {enablingHistory ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className={`w-4 h-4 ${syncingHistory ? 'animate-spin' : ''}`} />
-                    {messageHistoryEnabled ? 'Re-sync' : 'Sync Now'}
-                  </>
-                )}
-              </button>
-            </div>
-            {messageHistoryEnabled && chats.length > 0 && (
-              <p className="text-green-400 text-xs mt-2">
-                {chats.length} conversations loaded with last messages
-              </p>
-            )}
-          </div>
-
           {/* Browser Notifications */}
           <div className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
             notifPermission === 'granted' ? 'bg-green-500/10 border-green-500/30' :
@@ -1529,115 +1400,6 @@ export default function WhatsApp() {
               >
                 Enable
               </button>
-            )}
-          </div>
-
-          {/* Monthly Message Counter */}
-          <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-5">
-            <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
-              <MessageCircle className="w-4 h-4 text-green-400" />
-              Monthly Outbound Usage
-              <span className="text-xs text-gray-500 font-normal ml-1">(Free tier: 500/month)</span>
-            </h3>
-            {loadingCount ? (
-              <div className="flex items-center gap-2 text-gray-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> Checking...
-              </div>
-            ) : messageCount !== null ? (
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-400">Messages sent this month</span>
-                  <span className={`font-bold ${messageCount >= 450 ? 'text-red-400' : messageCount >= 350 ? 'text-amber-400' : 'text-green-400'}`}>
-                    {messageCount} / 500
-                  </span>
-                </div>
-                <div className="w-full bg-gray-700 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${messageCount >= 450 ? 'bg-red-500' : messageCount >= 350 ? 'bg-amber-500' : 'bg-green-500'}`}
-                    style={{ width: `${Math.min((messageCount / 500) * 100, 100)}%` }}
-                  />
-                </div>
-                {messageCount >= 450 && (
-                  <p className="text-red-400 text-xs mt-2">Approaching free tier limit — upgrade your Green API plan to avoid disruption.</p>
-                )}
-                {messageCount >= 350 && messageCount < 450 && (
-                  <p className="text-amber-400 text-xs mt-2">Past 70% usage. Monitor closely or upgrade before month end.</p>
-                )}
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm">Connect Supabase to track message usage.</p>
-            )}
-          </div>
-
-          {/* Database Connection Test */}
-          <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-semibold flex items-center gap-2">
-                <Database className="w-5 h-5 text-blue-400" />
-                Database Connection
-              </h3>
-              <button
-                onClick={testDatabaseConnection}
-                disabled={testingDB}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                {testingDB ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {testingDB ? 'Testing...' : 'Test Connection'}
-              </button>
-            </div>
-
-            {dbTestResult && (
-              <div className={`rounded-xl p-4 border ${
-                dbTestResult.success ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'
-              }`}>
-                <div className="flex items-center gap-2 mb-3">
-                  {dbTestResult.success ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-400" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-red-400" />
-                  )}
-                  <p className={`font-medium ${dbTestResult.success ? 'text-green-400' : 'text-red-400'}`}>
-                    {dbTestResult.message}
-                  </p>
-                </div>
-
-                {dbTestResult.error && (
-                  <p className="text-red-400 text-xs mb-3">Error: {dbTestResult.error}</p>
-                )}
-
-                {dbTestResult.tableCounts && (
-                  <div className="space-y-2">
-                    <p className="text-gray-400 text-xs font-medium">Table Record Counts:</p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {Object.entries(dbTestResult.tableCounts).map(([table, count]) => (
-                        <div key={table} className="bg-gray-800/50 rounded-lg p-2 text-center">
-                          <p className="text-white font-bold">{count as number}</p>
-                          <p className="text-gray-500 text-[10px]">{table}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {dbTestResult.tableErrors && (
-                  <div className="mt-3">
-                    <p className="text-amber-400 text-xs font-medium mb-2">Missing Tables (run SQL schema):</p>
-                    <div className="space-y-1">
-                      {Object.entries(dbTestResult.tableErrors).map(([table, error]) => (
-                        <p key={table} className="text-amber-300 text-xs">
-                          . {table}: {error}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!dbTestResult && (
-              <p className="text-gray-500 text-sm text-center py-4">
-                Click "Test Connection" to verify database connectivity
-              </p>
             )}
           </div>
 
