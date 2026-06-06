@@ -1864,7 +1864,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         try {
           const r = await fetch(
-            new URL(`/contact/findContacts/${instanceName}`, EVOLUTION_API_URL).toString(),
+            new URL(`/chat/findContacts/${instanceName}`, EVOLUTION_API_URL).toString(),
             { method: 'POST', headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ where: {} }) }
           );
           if (!r.ok) return res.json({ success: false, error: `Evolution API returned ${r.status}` });
