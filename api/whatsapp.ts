@@ -625,13 +625,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!mediaUrl) return res.status(400).json({ error: 'url required' });
         let parsed: URL;
         try { parsed = new URL(mediaUrl); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
-        if (parsed.protocol !== 'https:') return res.status(400).json({ error: 'HTTPS only' });
-        const mr = await fetch(mediaUrl);
-        const ct = mr.headers.get('content-type') || 'application/octet-stream';
-        res.setHeader('Content-Type', ct);
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        const buf = await mr.arrayBuffer();
-        return res.send(Buffer.from(buf));
+        // Allow both https and http (Evolution API on Railway uses http internally)
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+          return res.status(400).json({ error: 'HTTP/HTTPS only' });
+        }
+
+        // If the media URL is from the Evolution API server, add the API key header
+        const isEvolutionUrl = EVOLUTION_API_URL && mediaUrl.startsWith(EVOLUTION_API_URL);
+        const headers: Record<string, string> = {};
+        if (isEvolutionUrl && EVOLUTION_API_KEY) {
+          headers['apikey'] = EVOLUTION_API_KEY;
+        }
+
+        try {
+          const mr = await fetch(mediaUrl, { headers });
+          if (!mr.ok) {
+            console.error('[mediaProxy] Fetch failed:', mr.status, mediaUrl);
+            return res.status(mr.status).json({ error: `Media fetch failed: ${mr.status}` });
+          }
+          const ct = mr.headers.get('content-type') || 'application/octet-stream';
+          res.setHeader('Content-Type', ct);
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          const buf = await mr.arrayBuffer();
+          return res.send(Buffer.from(buf));
+        } catch (err: any) {
+          console.error('[mediaProxy] Error:', err.message, mediaUrl);
+          return res.status(500).json({ error: err.message });
+        }
       }
 
       case 'send': {

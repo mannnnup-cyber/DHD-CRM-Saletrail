@@ -296,47 +296,16 @@ export default function WhatsApp() {
       const data = await r.json();
 
       if (data.success && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
-        let formatted: Message[];
-
-        if (data.source === 'db') {
-          // API already normalized these — timestamps are Unix ints, mediaUrl extracted
-          formatted = data.messages.map((msg: any) => ({
-            id: msg.id,
-            text: msg.text || '',
-            timestamp: msg.timestamp
-              ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : '',
-            fromMe: msg.fromMe,
-            status: 'read' as const,
-            type: msg.type || 'text',
-            mediaUrl: msg.mediaUrl || undefined
-          }));
-        } else {
-          // Raw Green API getChatHistory format — newest first, needs reverse
-          formatted = data.messages.map((msg: any) => {
-            const mediaUrl =
-              msg.imageMessage?.downloadUrl ||
-              msg.videoMessage?.downloadUrl ||
-              msg.audioMessage?.downloadUrl ||
-              msg.documentMessage?.downloadUrl || undefined;
-            const text =
-              msg.textMessage || msg.text ||
-              msg.imageMessage?.caption ||
-              msg.videoMessage?.caption ||
-              msg.documentMessage?.fileName || '';
-            return {
-              id: msg.idMessage || msg.id || Math.random().toString(),
-              text,
-              timestamp: msg.timestamp
-                ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : '',
-              fromMe: msg.type === 'outgoing' || msg.fromMe === true,
-              status: 'read' as const,
-              type: msg.typeMessage || msg.type || 'text',
-              mediaUrl
-            };
-          }).reverse();
-        }
+        // API returns normalized DB records: { id, text, timestamp (unix secs), fromMe, type, mediaUrl }
+        const formatted: Message[] = data.messages.map((msg: any) => ({
+          id: msg.id,
+          text: msg.text || '',
+          timestamp: msg.timestamp || 0,
+          fromMe: msg.fromMe === true,
+          status: 'read' as const,
+          type: msg.type || 'text',
+          mediaUrl: msg.mediaUrl || undefined
+        }));
 
         setMessages(formatted);
         lastMessageCountRef.current = formatted.length;
@@ -417,7 +386,7 @@ export default function WhatsApp() {
     const newMsg: Message = {
       id: Date.now().toString(),
       text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Math.floor(Date.now() / 1000),
       fromMe: true,
       status: 'sent',
       type: 'text'
@@ -599,22 +568,34 @@ export default function WhatsApp() {
         if (!msg) return;
 
         const ts = msg.created_at ? new Date(msg.created_at) : new Date();
+        const rawTs = Math.floor(ts.getTime() / 1000);
         const formattedMsg: Message = {
           id: msg.provider_message_id || msg.id,
           text: msg.body || '',
-          timestamp: ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: rawTs,
           fromMe: msg.direction === 'outbound',
           status: 'read',
-          type: msg.type || 'text'
+          type: msg.message_type || msg.type || 'text',
+          mediaUrl: msg.media_url || undefined
         };
 
-        const rawTs = Math.floor(ts.getTime() / 1000);
         const isOpenChat = selectedChatRef.current?.id === msg.chat_id;
 
-        // Append to visible conversation (avoid duplicate from optimistic send)
+        // Append to visible conversation
+        // - Skip if same provider_message_id already exists (exact dup)
+        // - Replace optimistic message (Date.now() id) if body+direction match
         if (isOpenChat) {
           setMessages(prev => {
             if (prev.some(m => m.id === formattedMsg.id)) return prev;
+            // Replace matching optimistic message (sent from this session)
+            const optimisticIdx = formattedMsg.fromMe
+              ? prev.findIndex(m => m.text === formattedMsg.text && m.fromMe && m.status === 'sent')
+              : -1;
+            if (optimisticIdx !== -1) {
+              const next = [...prev];
+              next[optimisticIdx] = formattedMsg;
+              return next;
+            }
             return [...prev, formattedMsg];
           });
           setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -1473,23 +1454,29 @@ export default function WhatsApp() {
                             : 'bg-gray-700 text-gray-100 rounded-bl-sm'
                         }`}>
                           {/* Inline image */}
-                          {msg.mediaUrl && msg.type === 'imageMessage' && (
+                          {msg.mediaUrl && (msg.type === 'imageMessage' || msg.type?.includes('image')) && (
                             <img
                               src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`}
                               alt="Image"
                               className="max-w-full rounded-lg mb-1 cursor-pointer"
                               onClick={() => window.open(`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl!)}`, '_blank')}
+                              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                             />
                           )}
-                          {/* Audio player */}
-                          {msg.mediaUrl && msg.type === 'audioMessage' && (
+                          {/* Audio player (voice note) */}
+                          {msg.mediaUrl && (msg.type === 'audioMessage' || msg.type === 'pttMessage' || msg.type?.includes('audio')) && (
                             <div className="flex items-center gap-2 mb-1">
                               <Volume2 className="w-4 h-4 flex-shrink-0 opacity-70" />
                               <audio controls className="w-48 h-8" src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`} />
                             </div>
                           )}
-                          {/* Document / video download */}
-                          {msg.mediaUrl && (msg.type === 'documentMessage' || msg.type === 'videoMessage') && (
+                          {/* Video */}
+                          {msg.mediaUrl && (msg.type === 'videoMessage' || msg.type?.includes('video')) && (
+                            <video controls className="max-w-full rounded-lg mb-1 max-h-48"
+                              src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`} />
+                          )}
+                          {/* Document download */}
+                          {msg.mediaUrl && (msg.type === 'documentMessage' || msg.type?.includes('document')) && (
                             <a
                               href={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`}
                               download
@@ -1497,8 +1484,8 @@ export default function WhatsApp() {
                               rel="noopener noreferrer"
                               className="flex items-center gap-2 mb-1 underline opacity-80 hover:opacity-100 text-xs"
                             >
-                              {msg.type === 'videoMessage' ? <Download className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-                              {msg.type === 'videoMessage' ? 'Download video' : 'Download document'}
+                              <FileText className="w-4 h-4" />
+                              Download document
                             </a>
                           )}
                           {/* Text / caption */}
