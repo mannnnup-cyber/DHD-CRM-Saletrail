@@ -77,6 +77,7 @@ export default function WhatsApp() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [calls, setCalls] = useState<any[]>([]);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -326,6 +327,20 @@ export default function WhatsApp() {
     }
     setLoading(false);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+
+    // Also load calls for this chat
+    const loadCallsForChat = async () => {
+      try {
+        const callRes = await fetch(`/api/whatsapp?action=getCalls&chatId=${encodeURIComponent(chatId)}&limit=20`);
+        const callData = await callRes.json();
+        if (callData.success && callData.calls) {
+          setCalls(callData.calls);
+        }
+      } catch (err) {
+        console.error('Error loading calls:', err);
+      }
+    };
+    loadCallsForChat();
   }, []);
 
   // Pull more message history for the current chat from Evolution API
@@ -1214,8 +1229,22 @@ export default function WhatsApp() {
                       <RefreshCw className="w-6 h-6 text-green-400 animate-spin" />
                     </div>
                   ) : (
-                    messages.map(msg => (
-                      <div key={msg.id} className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
+                    (() => {
+                      // Merge messages and calls into unified timeline
+                      const timeline = [
+                        ...messages.map((msg: any) => ({ ...msg, _type: 'message' })),
+                        ...calls.map((call: any) => ({ ...call, _type: 'call' }))
+                      ].sort((a, b) => {
+                        const timeA = new Date(a.timestamp).getTime();
+                        const timeB = new Date(b.timestamp).getTime();
+                        return timeA - timeB;
+                      });
+
+                      return timeline.map(item => {
+                        if (item._type === 'message') {
+                          const msg = item as any;
+                          return (
+                            <div key={msg.id} className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl ${
                           msg.fromMe
                             ? 'bg-green-600 text-white rounded-br-sm'
@@ -1266,7 +1295,26 @@ export default function WhatsApp() {
                           </div>
                         </div>
                       </div>
-                    ))
+                            );
+                        } else if (item._type === 'call') {
+                          const call = item as any;
+                          const callStatusColor = call.status === 'answered' ? 'green' : call.status === 'missed' ? 'red' : 'gray';
+                          const callStatusEmoji = call.status === 'answered' ? '☎️' : call.status === 'missed' ? '📞' : '🚫';
+                          const callTypeText = call.callType === 'video' ? 'Video call' : 'Voice call';
+                          const durationText = call.duration ? `${call.duration}s` : 'no duration';
+
+                          return (
+                            <div key={call.id} className="flex justify-center my-2">
+                              <div className={`text-xs px-3 py-2 rounded-full bg-${callStatusColor}-500/20 text-${callStatusColor}-400 border border-${callStatusColor}-500/30 flex items-center gap-2`}>
+                                <span>{callStatusEmoji}</span>
+                                <span>{call.status === 'answered' ? 'Received' : 'Missed'} {callTypeText} - {durationText}</span>
+                                <span className="text-[10px] opacity-70">{new Date(call.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                            </div>
+                          );
+                        }
+                      });
+                    })()
                   )}
                   <div ref={messagesEndRef} />
                 </div>

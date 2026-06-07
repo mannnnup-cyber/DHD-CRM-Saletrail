@@ -251,6 +251,27 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_chats_status ON whatsapp_chats(status);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_chats_assigned_to ON whatsapp_chats(assigned_to);
 
 -- ============================================
+-- WhatsApp Calls Table (Call Logging)
+-- ============================================
+CREATE TABLE IF NOT EXISTS whatsapp_calls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider VARCHAR(50) DEFAULT 'evolution', -- 'greenapi' or 'evolution'
+  provider_call_id VARCHAR(255), -- Call ID from provider for idempotency
+  chat_id VARCHAR(255) NOT NULL, -- WhatsApp JID
+  call_type VARCHAR(20) NOT NULL, -- 'voice' or 'video'
+  status VARCHAR(20) NOT NULL, -- 'answered', 'missed', 'rejected'
+  duration_seconds INT DEFAULT 0,
+  started_at TIMESTAMPTZ NOT NULL,
+  ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Indexes for call queries
+CREATE INDEX IF NOT EXISTS idx_whatsapp_calls_chat_id ON whatsapp_calls(chat_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_calls_started_at ON whatsapp_calls(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_calls_provider_id ON whatsapp_calls(provider_call_id);
+
+-- ============================================
 -- IMAP SETUP INSTRUCTIONS
 -- ============================================
 -- To sync emails from your IMAP mailbox, add these environment variables in Vercel:

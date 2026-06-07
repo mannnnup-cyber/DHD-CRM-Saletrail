@@ -280,6 +280,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
       }
+
+      // Handle CALL events (Evolution API)
+      if (provider === 'evolution' && typeWebhook === 'call') {
+        console.log('[Webhook] CALL event received:', { chatId: body.data?.remoteJid, callType: body.data?.callType, status: body.data?.status });
+
+        if (supabase !== null && body.data?.remoteJid) {
+          const callChatId = body.data.remoteJid;
+          const callId = body.data.id || `${callChatId}_${Date.now()}`;
+          const callType = body.data.callType || 'voice'; // 'voice' or 'video'
+          const callStatus = body.data.status || 'missed'; // 'answered', 'missed', 'rejected'
+          const callStarted = body.data.timestamp ? new Date(body.data.timestamp * 1000).toISOString() : new Date().toISOString();
+          const callEnded = body.data.endedAt ? new Date(body.data.endedAt * 1000).toISOString() : null;
+          const callDuration = body.data.duration || 0; // seconds
+
+          // Idempotency check
+          const { data: existingCall } = await supabase
+            .from('whatsapp_calls')
+            .select('id')
+            .eq('provider_call_id', callId)
+            .eq('provider', provider)
+            .limit(1);
+
+          if (!existingCall || existingCall.length === 0) {
+            const { data: inserted, error: insertError } = await supabase
+              .from('whatsapp_calls')
+              .insert({
+                provider: 'evolution',
+                provider_call_id: callId,
+                chat_id: callChatId,
+                call_type: callType,
+                status: callStatus,
+                duration_seconds: callDuration,
+                started_at: callStarted,
+                ended_at: callEnded
+              })
+              .select('id');
+
+            if (insertError) {
+              console.error('[Webhook] Failed to insert call:', insertError);
+            } else {
+              console.log('[Webhook] Call logged:', { callId, chatId: callChatId, status: callStatus, duration: callDuration });
+
+              // Optional: Create interaction record for CRM
+              if (inserted && inserted.length > 0) {
+                const chatPhone = callChatId.replace(/@[a-z.]+$/, '');
+                const contactResult = await resolveContact(supabase, { phone: chatPhone, name: callChatId, source: 'WHATSAPP' });
+
+                if (contactResult) {
+                  const interactionType = callType === 'video' ? 'VIDEOCALL' : 'CALL';
+                  const interactionContent = `${callStatus === 'answered' ? 'Answered' : 'Missed'} ${callType} call - ${callDuration}s`;
+
+                  await supabase.from('interactions').insert({
+                    contact_id: contactResult,
+                    type: interactionType,
+                    direction: 'INBOUND',
+                    content: interactionContent,
+                    metadata: { call_id: callId, status: callStatus, duration: callDuration },
+                    timestamp: callStarted
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
     } catch (err) {
       console.error('Webhook processing error:', err);
     }
@@ -1245,6 +1310,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, results: msgs || [] });
       }
 
+      case 'getCalls': {
+        // GET /api/whatsapp?action=getCalls&chatId={id}&limit=20
+        const chatId = req.query.chatId as string;
+        const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+
+        if (!chatId) return res.json({ success: true, calls: [] });
+        if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
+
+        try {
+          const { data: calls, error } = await supabase
+            .from('whatsapp_calls')
+            .select('*')
+            .eq('chat_id', chatId)
+            .order('started_at', { ascending: false })
+            .limit(limit);
+
+          if (error) {
+            console.error('[getCalls] Database error:', error);
+            return res.json({ success: false, error: error.message });
+          }
+
+          return res.json({
+            success: true,
+            calls: (calls || []).map((call: any) => ({
+              id: call.id,
+              type: 'call',
+              callType: call.call_type,
+              status: call.status, // 'answered', 'missed', 'rejected'
+              duration: call.duration_seconds,
+              timestamp: call.started_at,
+              endedAt: call.ended_at
+            }))
+          });
+        } catch (err: any) {
+          console.error('[getCalls] Error:', err?.message || err);
+          return res.json({ success: false, error: err?.message || 'Failed to fetch calls' });
+        }
+      }
+
       case 'searchUnified': {
         // Unified search: finds contacts, chats, and messages in one query
         const q = req.query.q as string;
@@ -2117,7 +2221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           error: 'Unknown action',
           available: [
             // Green API actions
-            'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'searchUnified', 'mediaProxy', 'messageCount',
+            'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'searchUnified', 'getCalls', 'mediaProxy', 'messageCount',
             // Evolution API actions
             'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'selectProvider', 'sendMedia', 'sendAudio',
             // Utilities
