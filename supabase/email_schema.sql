@@ -195,8 +195,6 @@ INSERT INTO app_settings (setting_key, setting_value, setting_type, description,
 ('AI_SUGGESTIONS_ENABLED', 'true', 'boolean', 'Enable AI reply suggestions', 'api', false),
 
 -- Integration Settings
-('GREEN_API_ID', '', 'text', 'Green API ID for WhatsApp', 'integrations', false),
-('GREEN_API_TOKEN', '', 'password', 'Green API Token', 'integrations', true),
 ('WOOCOMMERCE_URL', '', 'text', 'WooCommerce store URL', 'integrations', false),
 ('WOOCOMMERCE_KEY', '', 'password', 'WooCommerce Consumer Key', 'integrations', true),
 ('WOOCOMMERCE_SECRET', '', 'password', 'WooCommerce Consumer Secret', 'integrations', true),
@@ -206,7 +204,7 @@ INSERT INTO app_settings (setting_key, setting_value, setting_type, description,
 ('EVOLUTION_API_URL', 'http://localhost:3001', 'text', 'Evolution API server URL', 'integrations', false),
 ('EVOLUTION_API_KEY', '', 'password', 'Evolution API authentication key (optional)', 'integrations', true),
 ('EVOLUTION_PHONE', '', 'text', 'Linked WhatsApp phone number', 'integrations', false),
-('WHATSAPP_ACTIVE_PROVIDER', 'greenapi', 'text', 'Active WhatsApp provider: greenapi or evolution', 'integrations', false)
+('WHATSAPP_ACTIVE_PROVIDER', 'evolution', 'text', 'Active WhatsApp provider (Evolution API only)', 'integrations', false)
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- ============================================
@@ -214,7 +212,7 @@ ON CONFLICT (setting_key) DO NOTHING;
 -- ============================================
 CREATE TABLE IF NOT EXISTS whatsapp_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider VARCHAR(50) NOT NULL, -- 'greenapi' or 'evolution'
+  provider VARCHAR(50) NOT NULL, -- 'evolution'
   provider_message_id VARCHAR(500), -- Message ID from the provider
   chat_id VARCHAR(50) NOT NULL, -- WhatsApp phone number or chat ID
   sender_name VARCHAR(255), -- Contact name or sender
@@ -258,7 +256,7 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_chats_assigned_to ON whatsapp_chats(assi
 -- ============================================
 CREATE TABLE IF NOT EXISTS whatsapp_calls (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider VARCHAR(50) DEFAULT 'evolution', -- 'greenapi' or 'evolution'
+  provider VARCHAR(50) DEFAULT 'evolution', -- 'evolution'
   provider_call_id VARCHAR(255), -- Call ID from provider for idempotency
   chat_id VARCHAR(255) NOT NULL, -- WhatsApp JID
   call_type VARCHAR(20) NOT NULL, -- 'voice' or 'video'

@@ -40,11 +40,6 @@ const supaDb = {
   }
 };
 
-// Use environment variables for security
-const INSTANCE_ID = process.env.GREENAPI_INSTANCE_ID || '';
-const API_TOKEN = process.env.GREENAPI_TOKEN || '';
-const BASE_URL = INSTANCE_ID ? `https://api.green-api.com/waInstance${INSTANCE_ID}` : '';
-
 // Evolution API configuration
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:3001';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
@@ -118,8 +113,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
       // Detect provider and extract message data
-      let provider = 'unknown';
-      let typeWebhook = body?.typeWebhook;
+      let provider = 'evolution';
+      let typeWebhook = '';
       let isInbound = false;
       let chatId = '';
       let senderName = '';
@@ -128,34 +123,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let text = '';
       let msgType = 'textMessage';
 
-      // ===== GREEN API WEBHOOK FORMAT =====
-      if (body?.typeWebhook) {
-        // Green API has typeWebhook field
-        provider = 'greenapi';
-        typeWebhook = body.typeWebhook;
-
-        if (typeWebhook === 'incomingMessageReceived' || typeWebhook === 'outgoingAPIMessageReceived' || typeWebhook === 'outgoingMessageReceived') {
-          isInbound = typeWebhook === 'incomingMessageReceived';
-          chatId = isInbound
-            ? (body.senderData?.chatId || body.senderData?.sender)
-            : (body.messageData?.chatId || body.senderData?.chatId);
-          senderName = body.senderData?.senderName || '';
-          messageId = body.idMessage;
-          timestamp = body.timestamp || 0;
-
-          const msgData = body.messageData || {};
-          text =
-            msgData.textMessageData?.textMessage ||
-            msgData.extendedTextMessageData?.text ||
-            msgData.imageMessageData?.caption ||
-            msgData.videoMessageData?.caption ||
-            msgData.documentMessageData?.caption ||
-            (msgData.typeMessage ? `[${msgData.typeMessage}]` : '');
-          msgType = msgData.typeMessage || 'textMessage';
-        }
-      }
       // ===== EVOLUTION API WEBHOOK FORMAT =====
-      else if (body?.event) {
+      if (body?.event) {
         // Evolution API uses 'event' field (Baileys-based)
         provider = 'evolution';
         // Normalize event: MESSAGES_UPSERT → messages.upsert
@@ -214,8 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Only store actual messages — ignore state/ack events
-      if ((provider === 'greenapi' && (typeWebhook === 'incomingMessageReceived' || typeWebhook === 'outgoingAPIMessageReceived' || typeWebhook === 'outgoingMessageReceived')) ||
-          (provider === 'evolution' && typeWebhook === 'messages.upsert')) {
+      if (typeWebhook === 'messages.upsert') {
 
         console.log('[Webhook] Pre-save check:', {
           provider,
@@ -256,7 +224,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             // Extract media URL from Evolution API message format
             let mediaUrl = null;
-            if (provider === 'evolution' && body.data?.message) {
+            if (body.data?.message) {
               const msg = body.data.message;
               mediaUrl =
                 msg.imageMessage?.downloadUrl ||
@@ -368,143 +336,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const action = req.query.action as string;
 
-  // Allow webhookInfo and settings without requiring credentials (for status display)
-  if ((action === 'webhookInfo' || action === 'settings' || action === 'status') && (!INSTANCE_ID || !API_TOKEN)) {
-    return res.json({
-      success: false,
-      configured: false,
-      url: '',
-      message: 'WhatsApp credentials not configured',
-      connected: false
-    });
-  }
-
-  // For other actions, require credentials
-  if (!INSTANCE_ID || !API_TOKEN) {
-    return res.status(400).json({
-      success: false,
-      error: 'WhatsApp credentials not configured',
-      message: 'Please set GREENAPI_INSTANCE_ID and GREENAPI_TOKEN environment variables in Vercel'
-    });
-  }
-
   try {
     switch (action) {
 
-      case 'status': {
-        // Get instance state - check if authorized
-        const r = await fetch(`${BASE_URL}/getStateInstance/${API_TOKEN}`);
-        const data = await r.json();
-        return res.json({
-          success: true,
-          connected: data.stateInstance === 'authorized',
-          state: data.stateInstance
-        });
-      }
-
-      case 'settings': {
-        // Get all instance settings (includes webhookUrl)
-        const r = await fetch(`${BASE_URL}/getSettings/${API_TOKEN}`);
-        const data = await r.json();
-        return res.json({
-          success: true,
-          settings: data,
-          // Check if webhook is configured (webhookUrl is not empty)
-          webhookConfigured: !!(data.webhookUrl && data.webhookUrl.length > 0),
-          webhookUrl: data.webhookUrl || ''
-        });
-      }
-
-      case 'webhookInfo': {
-        // Get webhook settings using getSettings (no separate getWebhookUrl exists)
-        const r = await fetch(`${BASE_URL}/getSettings/${API_TOKEN}`);
-        const data = await r.json();
-        return res.json({
-          success: true,
-          configured: !!(data.webhookUrl && data.webhookUrl.length > 0),
-          url: data.webhookUrl || '',
-          incomingWebhook: data.incomingWebhook === 'yes',
-          outgoingWebhook: data.outgoingWebhook === 'yes',
-          stateWebhook: data.stateWebhook === 'yes',
-          raw: data
-        });
-      }
-
       case 'setWebhook': {
-        // Set webhook for Green API or Evolution API
-        const { webhookUrl, webhookUrlToken, incomingWebhook, outgoingWebhook, stateWebhook } = req.body;
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
-
-        if (activeProvider === 'evolution') {
-          // Set webhook for Evolution API
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-          if (!instanceName) {
-            return res.status(400).json({ success: false, error: 'Evolution API not linked' });
-          }
-
-          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
-          }
-
-          try {
-            const webhookSetUrl = new URL(`/webhook/set/${instanceName}`, EVOLUTION_API_URL).toString();
-
-            // Default events for Evolution API webhook
-            const events = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'];
-
-            const r = await fetch(webhookSetUrl, {
-              method: 'POST',
-              headers: {
-                'apikey': EVOLUTION_API_KEY,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                url: webhookUrl || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`,
-                events,
-                enabled: true,
-                webhookByEvents: true,
-                webhookBase64: false
-              })
-            });
-
-            const data = await r.json();
-            console.log('[Evolution setWebhook] Response:', JSON.stringify(data));
-
-            return res.json({
-              success: r.ok,
-              provider: 'evolution',
-              data,
-              message: r.ok ? 'Webhook configured successfully' : 'Failed to configure webhook'
-            });
-          } catch (err: any) {
-            console.error('[Evolution setWebhook] Error:', err.message);
-            return res.json({ success: false, error: err.message });
-          }
-        } else {
-          // Set webhook for Green API (existing logic)
-          const settings: any = {};
-
-          if (webhookUrl !== undefined) settings.webhookUrl = webhookUrl;
-          if (webhookUrlToken !== undefined) settings.webhookUrlToken = webhookUrlToken;
-          if (incomingWebhook !== undefined) settings.incomingWebhook = incomingWebhook ? 'yes' : 'no';
-          if (outgoingWebhook !== undefined) settings.outgoingWebhook = outgoingWebhook ? 'yes' : 'no';
-          if (stateWebhook !== undefined) settings.stateWebhook = stateWebhook ? 'yes' : 'no';
-
-          const r = await fetch(`${BASE_URL}/SetSettings/${API_TOKEN}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(settings)
-          });
-          const data = await r.json();
-          return res.json({ success: data.saveSettings === true, data });
+        // Set webhook for Evolution API
+        const { webhookUrl } = req.body;
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName) {
+          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
         }
-      }
 
-      case 'contacts': {
-        // Get all contacts
-        const r = await fetch(`${BASE_URL}/getContacts/${API_TOKEN}`);
-        const data = await r.json();
-        return res.json({ success: true, contacts: data });
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+
+        try {
+          const webhookSetUrl = new URL(`/webhook/set/${instanceName}`, EVOLUTION_API_URL).toString();
+          const events = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'];
+
+          const r = await fetch(webhookSetUrl, {
+            method: 'POST',
+            headers: {
+              'apikey': EVOLUTION_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              url: webhookUrl || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`,
+              events,
+              enabled: true,
+              webhookByEvents: true,
+              webhookBase64: false
+            })
+          });
+
+          const data = await r.json();
+          return res.json({
+            success: r.ok,
+            data,
+            message: r.ok ? 'Webhook configured successfully' : 'Failed to configure webhook'
+          });
+        } catch (err: any) {
+          console.error('[Evolution setWebhook] Error:', err.message);
+          return res.json({ success: false, error: err.message });
+        }
       }
 
       case 'chats': {
@@ -534,94 +409,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      case 'chatsLegacy': {
-        // Legacy: fetch from Green API or Evolution API directly
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
-
-        let rawChats: any = [];
-
-        if (activeProvider === 'evolution') {
-          // Fetch from Evolution API
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-          if (!instanceName) {
-            return res.status(400).json({ success: false, error: 'Evolution API not linked' });
-          }
-
-          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
-          }
-
-          try {
-            const chatsUrl = new URL(`/chat/findChats/${instanceName}`, EVOLUTION_API_URL).toString();
-            const r = await fetch(chatsUrl, {
-              method: 'POST',
-              headers: {
-                'apikey': EVOLUTION_API_KEY,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({})
-            });
-
-            if (r.ok) {
-              const data = await r.json();
-              // Evolution API returns an array directly
-              rawChats = Array.isArray(data) ? data : (data.chats || data.data || []);
-              console.log('[Evolution getChats] Found', rawChats.length, 'chats');
-            } else {
-              console.error('[Evolution getChats] Failed:', r.status);
-              rawChats = [];
-            }
-          } catch (err: any) {
-            console.error('[Evolution getChats] Error:', err.message);
-            rawChats = [];
-          }
-        } else {
-          // Fetch from Green API (default)
-          const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
-          rawChats = await r.json();
-        }
-
-        const chats = Array.isArray(rawChats)
-          ? rawChats.slice(0, 100).map((c: any) => {
-              // Evolution API: uses remoteJid, lastMessage.key, lastMessage.message.conversation
-              // Green API: uses id, lastMessage.textMessage, lastMessage.timestamp
-              const chatId = c.remoteJid || c.id || '';
-              const lastMsg = c.lastMessage || {};
-              const lastMsgKey = lastMsg.key || {};
-
-              // Extract last message text for Evolution API format
-              const evoText = lastMsg.message?.conversation ||
-                              lastMsg.message?.extendedTextMessage?.text ||
-                              lastMsg.message?.imageMessage?.caption ||
-                              (lastMsg.messageType ? `[${lastMsg.messageType}]` : '');
-
-              const lastText = evoText ||
-                               lastMsg.textMessage ||
-                               lastMsg.caption ||
-                               (lastMsg.typeMessage ? `[${lastMsg.typeMessage}]` : '');
-
-              const phone = chatId.replace(/@[^@]+$/, '');
-              // Evolution: pushName on chat or last message's pushName
-              const contactName = c.pushName || lastMsg.pushName || '';
-
-              return {
-                id: chatId,
-                name: contactName || phone || 'Unknown',
-                phone,
-                lastMessage: lastText.slice(0, 80),
-                timestamp: lastMsg.messageTimestamp
-                  ? new Date(lastMsg.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : (lastMsg.timestamp ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''),
-                rawTimestamp: lastMsg.messageTimestamp || lastMsg.timestamp || 0,
-                unread: c.unreadCount || 0,
-                status: 'active'
-              };
-            }).sort((a: any, b: any) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0))
-          : [];
-
-        return res.json({ success: true, chats });
-      }
-
       case 'chatsFromDb': {
         // Read recent chats aggregated from whatsapp_messages table, filtered by active provider
         if (supabase === null) {
@@ -629,7 +416,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+          const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
           const activePhone = activeProvider === 'evolution'
             ? await getSetting('EVOLUTION_PHONE', '')
             : '';
@@ -641,14 +428,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .order('created_at', { ascending: false })
             .limit(2000);
 
-          // Filter by active provider, but include NULL provider as fallback for older messages
-          const filteredMsgs = (msgs || []).filter((m: any) => {
-            if (activeProvider === 'evolution') {
-              return m.provider === 'evolution' || (m.provider === null && activePhone && m.chat_id?.includes(activePhone));
-            } else {
-              return m.provider === 'greenapi' || m.provider === null;
-            }
-          });
+          // Filter to Evolution API messages only
+          const filteredMsgs = (msgs || []).filter((m: any) =>
+            m.provider === 'evolution' || (m.provider === null && activePhone && m.chat_id?.includes(activePhone))
+          );
 
           // Load persisted chat metadata (status, assignedTo, contact_name for @lid resolution)
           const { data: chatMeta } = await supabase
@@ -711,156 +494,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      case 'syncHistory': {
-        // Use getChats for the chat list (real conversations, not address book)
-        const r = await fetch(`${BASE_URL}/getChats/${API_TOKEN}`);
-        const rawChats = await r.json();
-
-        if (!Array.isArray(rawChats)) {
-          return res.json({ success: true, chats: [], messages: {} });
-        }
-
-        const chatsWithHistory: any[] = [];
-        const chatMessages: Record<string, any[]> = {};
-        const recentChats = rawChats.slice(0, 50); // top 50 chats
-
-        for (const chat of recentChats) {
-          const chatId = chat.id;
-          if (!chatId) continue;
-
-          const phone = chatId.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', '');
-          const lastMsg = chat.lastMessage || {};
-          const lastMsgText = lastMsg.textMessage || lastMsg.caption || (lastMsg.typeMessage ? `[${lastMsg.typeMessage}]` : '');
-
-          try {
-            const historyRes = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chatId, count: 100 })
-            });
-            const history = await historyRes.json();
-
-            if (Array.isArray(history) && history.length > 0) {
-              const newest = history[0];
-              chatsWithHistory.push({
-                id: chatId,
-                name: chat.name || chat.pushname || phone || 'Unknown',
-                phone,
-                lastMessage: (newest.textMessage || newest.caption || lastMsgText || '').slice(0, 80),
-                timestamp: newest.timestamp
-                  ? new Date(newest.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : '',
-                rawTimestamp: newest.timestamp || lastMsg.timestamp || 0,
-                unread: chat.unreadCount || 0,
-                status: 'active'
-              });
-
-              chatMessages[chatId] = history.map((msg: any) => ({
-                id: msg.idMessage || msg.id || Math.random().toString(),
-                text: msg.textMessage || msg.text || msg.caption || '',
-                timestamp: msg.timestamp
-                  ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : '',
-                fromMe: msg.fromMe === true || msg.type === 'outgoing',
-                status: 'read',
-                type: msg.typeMessage || msg.type || 'text',
-                mediaUrl: msg.imageMessage?.downloadUrl || msg.videoMessage?.downloadUrl ||
-                          msg.audioMessage?.downloadUrl || msg.documentMessage?.downloadUrl || undefined
-              })).reverse();
-
-              // Persist to DB so future loads skip Green API entirely
-              if (supabase) {
-                const toInsert = history
-                  .filter((msg: any) => msg.idMessage)
-                  .map((msg: any) => ({
-                    provider: 'greenapi',
-                    provider_message_id: msg.idMessage,
-                    chat_id: chatId,
-                    sender_name: msg.fromMe ? '' : (chat.name || chat.pushname || ''),
-                    direction: (msg.fromMe === true || msg.type === 'outgoing') ? 'outbound' : 'inbound',
-                    body: msg.textMessage || msg.caption || '',
-                    type: msg.typeMessage || 'textMessage',
-                    raw: msg,
-                    created_at: msg.timestamp ? new Date(msg.timestamp * 1000).toISOString() : new Date().toISOString()
-                  }));
-                if (toInsert.length > 0) {
-                  await supabase.from('whatsapp_messages').upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
-                }
-              }
-            } else {
-              chatsWithHistory.push({
-                id: chatId,
-                name: chat.name || chat.pushname || phone || 'Unknown',
-                phone,
-                lastMessage: lastMsgText.slice(0, 80),
-                timestamp: lastMsg.timestamp
-                  ? new Date(lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : '',
-                rawTimestamp: lastMsg.timestamp || 0,
-                unread: chat.unreadCount || 0,
-                status: 'active'
-              });
-            }
-          } catch (err) {
-            console.error(`Error fetching history for ${chatId}:`, err);
-            chatsWithHistory.push({
-              id: chatId,
-              name: chat.name || chat.pushname || phone || 'Unknown',
-              phone,
-              lastMessage: lastMsgText.slice(0, 80),
-              timestamp: '',
-              rawTimestamp: lastMsg.timestamp || 0,
-              unread: chat.unreadCount || 0,
-              status: 'active'
-            });
-          }
-        }
-
-        chatsWithHistory.sort((a, b) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0));
-
-        return res.json({
-          success: true,
-          chats: chatsWithHistory,
-          messages: chatMessages,
-          synced: true,
-          count: chatsWithHistory.length
-        });
-      }
-
       case 'messages': {
-        // Get chat history (DB-backed, provider-agnostic)
-        // Supports both Green API and Evolution API messages
+        // Get chat messages from database
         const chatId = req.query.chatId as string;
-        if (supabase !== null && chatId) {
-          try {
-            const { data: msgs } = await supabase.from('whatsapp_messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true }).limit(1000);
-            if (msgs && msgs.length > 0) {
-              const formatted = msgs.map((m: any) => {
-                return {
-                  id: m.provider_message_id || m.id,
-                  text: m.body || '',
-                  timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
-                  fromMe: m.direction === 'outbound',
-                  status: 'read',
-                  type: m.message_type || 'text',
-                  mediaUrl: m.media_url || null
-                };
-              });
-              return res.json({ success: true, messages: formatted, source: 'db' });
-            }
-          } catch (err) {
-            console.error('messagesFromDb error', err);
-          }
+        if (!supabase || !chatId) {
+          return res.status(400).json({ success: false, error: 'chatId required' });
         }
 
-        // Fallback to provider chat history
-        const r = await fetch(`${BASE_URL}/getChatHistory/${API_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId, count: 100 })
-        });
-        const data = await r.json();
-        return res.json({ success: true, messages: data, source: 'provider' });
+        try {
+          const { data: msgs } = await supabase
+            .from('whatsapp_messages')
+            .select('*')
+            .eq('chat_id', chatId)
+            .order('created_at', { ascending: true })
+            .limit(1000);
+
+          const formatted = (msgs || []).map((m: any) => ({
+            id: m.provider_message_id || m.id,
+            text: m.body || '',
+            timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
+            fromMe: m.direction === 'outbound',
+            status: 'read',
+            type: m.message_type || 'text',
+            mediaUrl: m.media_url || null
+          }));
+
+          return res.json({ success: true, messages: formatted });
+        } catch (err: any) {
+          console.error('messages error:', err.message);
+          return res.status(500).json({ success: false, error: err.message });
+        }
       }
 
       case 'messageCount': {
@@ -896,392 +559,173 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ success: false, error: 'chatId and message are required' });
         }
 
-        // Get active provider from settings (default to greenapi for backward compatibility)
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName) {
+          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
+        }
 
-        let succeeded = false;
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+
         let messageId: string | undefined;
         let rawData: any = {};
 
-        if (activeProvider === 'evolution') {
-          // Route to Evolution API
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-          if (!instanceName) {
-            return res.status(400).json({ success: false, error: 'Evolution API not linked (no instance name)' });
-          }
-
-          console.log('[Evolution Send] Using instance:', instanceName, 'URL:', EVOLUTION_API_URL, 'Has key:', !!EVOLUTION_API_KEY);
-
-          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-            return res.status(400).json({ success: false, error: 'Evolution API not configured (missing URL or key)' });
-          }
-
-          // Evolution API v2 correct endpoint: POST /message/sendText/{instanceName}
-          const evolutionUrl = new URL(`/message/sendText/${instanceName}`, EVOLUTION_API_URL).toString();
-          try {
-            const r = await fetch(evolutionUrl, {
-              method: 'POST',
-              headers: {
-                'apikey': EVOLUTION_API_KEY,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ number: chatId, text: message })
-            });
-            rawData = await r.json();
-            console.log('[Evolution API send response]:', JSON.stringify(rawData));
-
-            // Evolution API returns { status: 'success', data: { key: {...} } } or similar
-            // Accept any successful response (status 200-299)
-            succeeded = r.ok;
-            messageId = rawData.key?.id || rawData.data?.key?.id || rawData.id || rawData.key || 'unknown';
-
-            console.log('[Evolution API send check] r.ok:', r.ok, 'succeeded:', succeeded, 'messageId:', messageId);
-
-            if (!succeeded) {
-              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-              console.error('Evolution API send failed:', errMsg, 'chatId:', chatId);
-              return res.json({ success: false, error: errMsg, raw: rawData });
-            }
-          } catch (err: any) {
-            console.error('Evolution API send error:', err.message);
-            return res.json({ success: false, error: err.message });
-          }
-        } else {
-          // Route to Green API (default)
-          if (!INSTANCE_ID || !API_TOKEN) {
-            return res.status(400).json({ success: false, error: 'Green API not configured' });
-          }
-
-          const r = await fetch(`${BASE_URL}/sendMessage/${API_TOKEN}`, {
+        const evolutionUrl = new URL(`/message/sendText/${instanceName}`, EVOLUTION_API_URL).toString();
+        try {
+          const r = await fetch(evolutionUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chatId, message })
+            headers: {
+              'apikey': EVOLUTION_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ number: chatId, text: message })
           });
           rawData = await r.json();
-          console.log('[Green API send response]:', JSON.stringify(rawData));
 
-          // Accept any 2xx response OR if idMessage exists
-          succeeded = r.ok || !!rawData.idMessage;
-          messageId = rawData.idMessage || rawData.key || 'unknown';
-
-          console.log('[Green API send check] r.ok:', r.ok, 'idMessage:', rawData.idMessage, 'succeeded:', succeeded, 'messageId:', messageId);
-
-          if (!succeeded) {
-            const errMsg = rawData.message || rawData.error || rawData.description || JSON.stringify(rawData);
-            console.error('Green API sendMessage failed:', errMsg, 'chatId:', chatId);
-            return res.json({ success: false, error: errMsg, raw: rawData });
+          if (!r.ok) {
+            const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
+            console.error('Send failed:', errMsg);
+            return res.json({ success: false, error: errMsg });
           }
+
+          messageId = rawData.key?.id || rawData.data?.key?.id || rawData.id || 'unknown';
+        } catch (err: any) {
+          console.error('Send error:', err.message);
+          return res.json({ success: false, error: err.message });
         }
 
         // Persist outgoing message
-        let persistenceError = null;
-        try {
-          console.log('[Persistence] Starting message insert. supabase:', supabase !== null, 'provider:', activeProvider, 'messageId:', messageId, 'chatId:', chatId);
-
-          if (supabase !== null) {
-            const insertPayload = {
-              provider: activeProvider,
+        if (supabase) {
+          try {
+            await supabase.from('whatsapp_messages').insert({
+              provider: 'evolution',
               provider_message_id: messageId,
               chat_id: chatId,
               direction: 'outbound',
               body: message,
               raw: rawData,
               created_at: new Date().toISOString()
-            };
-            console.log('[Persistence] Insert payload:', JSON.stringify(insertPayload));
-
-            const { data, error } = await supabase.from('whatsapp_messages').insert(insertPayload);
-            if (error) {
-              console.error('[Persistence] Insert error:', JSON.stringify(error));
-              persistenceError = error;
-            } else {
-              console.log('[Persistence] Insert successful:', JSON.stringify(data));
-            }
-          } else {
-            console.warn('[Persistence] Supabase client is null, skipping database insert');
-            persistenceError = 'Supabase client is null';
+            });
+          } catch (err: any) {
+            console.error('Message persistence error:', err.message);
           }
-
-          await supaDb.createCall({
-            type: 'WhatsApp',
-            contactPhone: String(chatId || ''),
-            duration: 0,
-            notes: `Outbound WhatsApp: ${String(message || '').slice(0, 200)}`,
-            repId: null,
-            timestamp: new Date().toISOString()
-          } as any);
-
-          console.log('[Persistence] Message persistence completed successfully');
-        } catch (err: any) {
-          console.error('[Persistence] Exception during persistence:', err?.message || err);
-          persistenceError = err?.message || String(err);
         }
 
         return res.json({ success: true, messageId });
       }
 
-      case 'receive': {
-        // Receive incoming notifications (long polling) - HTTP API method
-        const r = await fetch(`${BASE_URL}/receiveNotification/${API_TOKEN}`);
-        const data = await r.json();
-        return res.json({ success: true, notification: data });
-      }
-
-      case 'deleteNotification': {
-        // Delete notification after processing
-        const receiptId = req.query.receiptId as string;
-        const r = await fetch(`${BASE_URL}/deleteNotification/${API_TOKEN}/${receiptId}`, {
-          method: 'DELETE'
-        });
-        const data = await r.json();
-        return res.json({ success: true, data });
-      }
-
-      case 'checkWhatsapp': {
-        // Check if phone number has WhatsApp
-        const phone = req.query.phone as string;
-        const r = await fetch(`${BASE_URL}/CheckWhatsapp/${API_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone })
-        });
-        const data = await r.json();
-        return res.json({ success: true, data });
-      }
-
-      case 'avatar': {
-        const chatId = req.query.chatId as string;
-        if (!chatId) return res.status(400).json({ error: 'chatId required' });
-        const r = await fetch(`${BASE_URL}/getAvatar/${API_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId })
-        });
-        const data = await r.json();
-        return res.json({ success: true, url: data.urlAvatar || null, available: !!data.urlAvatar });
-      }
-
-      case 'readChat': {
-        const { chatId } = req.body;
-        if (!chatId) return res.status(400).json({ error: 'chatId required' });
-        const r = await fetch(`${BASE_URL}/readChat/${API_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId })
-        });
-        const data = await r.json();
-        return res.json({ success: true, data });
-      }
-
-      case 'archiveChat': {
-        const { chatId } = req.body;
-        if (!chatId) return res.status(400).json({ error: 'chatId required' });
-        const r = await fetch(`${BASE_URL}/archiveChat/${API_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId })
-        });
-        const data = await r.json();
-        return res.json({ success: true, data });
-      }
-
-      case 'sendFile': {
-        const { chatId, fileBase64, fileName, caption, mimeType } = req.body;
-        if (!chatId || !fileBase64 || !fileName) {
-          return res.status(400).json({ error: 'chatId, fileBase64, fileName required' });
-        }
-        const buffer = Buffer.from(fileBase64, 'base64');
-        const { FormData: NodeFormData, Blob: NodeBlob } = await import('node:buffer') as any;
-        const fd = new (globalThis.FormData || NodeFormData)();
-        fd.append('chatId', chatId);
-        fd.append('caption', caption || '');
-        fd.append('file', new Blob([buffer], { type: mimeType || 'application/octet-stream' }), fileName);
-        const r = await fetch(`${BASE_URL}/sendFileByUpload/${API_TOKEN}`, { method: 'POST', body: fd as any });
-        const data = await r.json();
-        if (!data.idMessage) {
-          return res.json({ success: false, error: data.message || data.error || JSON.stringify(data) });
-        }
-        if (supabase) {
-          await supabase.from('whatsapp_messages').insert({
-            provider: 'greenapi', provider_message_id: data.idMessage, chat_id: chatId,
-            direction: 'outbound', body: caption || `[File: ${fileName}]`,
-            type: 'documentMessage', raw: data, created_at: new Date().toISOString()
-          });
-        }
-        return res.json({ success: true, messageId: data.idMessage });
-      }
-
       case 'sendAudio': {
-        // POST /api/whatsapp?action=sendAudio
-        // Send audio files (MP3, OGG, etc.) via Evolution API or Green API
+        // Send audio files via Evolution API
         const { chatId, audioBase64, mimeType } = req.body;
         if (!chatId || !audioBase64) {
           return res.status(400).json({ error: 'chatId, audioBase64 required' });
         }
 
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
-        let succeeded = false;
-        let messageId = 'unknown';
-        let rawData: any = {};
-
-        if (activeProvider === 'evolution') {
-          // Route to Evolution API
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-          if (!instanceName) {
-            return res.status(400).json({ success: false, error: 'Evolution API not linked' });
-          }
-
-          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
-          }
-
-          console.log('[Evolution SendAudio] Using instance:', instanceName);
-
-          const audioUrl = new URL(`/message/sendWhatsAppAudio/${instanceName}`, EVOLUTION_API_URL).toString();
-          try {
-            const r = await fetch(audioUrl, {
-              method: 'POST',
-              headers: {
-                'apikey': EVOLUTION_API_KEY,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                number: chatId,
-                audio: `data:${mimeType || 'audio/mpeg'};base64,${audioBase64}`
-              })
-            });
-
-            rawData = await r.json();
-            console.log('[Evolution SendAudio response]:', JSON.stringify(rawData));
-
-            succeeded = r.ok;
-            messageId = rawData.key?.id || rawData.id || 'unknown';
-
-            if (!succeeded) {
-              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-              console.error('Evolution SendAudio failed:', errMsg);
-              return res.json({ success: false, error: errMsg, raw: rawData });
-            }
-          } catch (err: any) {
-            console.error('Evolution SendAudio error:', err.message);
-            return res.json({ success: false, error: err.message });
-          }
-        } else {
-          // Green API doesn't have native audio support, use media endpoint
-          return res.json({ success: false, error: 'Audio sending not supported for Green API. Use sendMedia instead.' });
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName) {
+          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
         }
 
-        // Persist audio message
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+
+        const audioUrl = new URL(`/message/sendWhatsAppAudio/${instanceName}`, EVOLUTION_API_URL).toString();
         try {
+          const r = await fetch(audioUrl, {
+            method: 'POST',
+            headers: {
+              'apikey': EVOLUTION_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              number: chatId,
+              audio: `data:${mimeType || 'audio/mpeg'};base64,${audioBase64}`
+            })
+          });
+
+          const rawData = await r.json();
+          const messageId = rawData.key?.id || rawData.id || 'unknown';
+
+          if (!r.ok) {
+            const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
+            return res.json({ success: false, error: errMsg });
+          }
+
+          // Persist audio message
           if (supabase) {
             await supabase.from('whatsapp_messages').insert({
-              provider: activeProvider,
+              provider: 'evolution',
               provider_message_id: messageId,
               chat_id: chatId,
               direction: 'outbound',
               body: '[Audio Message]',
-              type: 'audioMessage',
+              message_type: 'audioMessage',
               raw: rawData,
               created_at: new Date().toISOString()
             });
           }
-        } catch (err: any) {
-          console.error('[SendAudio Persistence] Error:', err.message);
-        }
 
-        return res.json({ success: true, messageId, provider: activeProvider });
+          return res.json({ success: true, messageId });
+        } catch (err: any) {
+          return res.json({ success: false, error: err.message });
+        }
       }
 
       case 'sendMedia': {
-        // POST /api/whatsapp?action=sendMedia
-        // Send images, videos, or documents via Evolution API or Green API
+        // Send images, videos, or documents via Evolution API
         const { chatId, mediaBase64, mediaType, fileName, caption, mimeType } = req.body;
         if (!chatId || !mediaBase64 || !mediaType || !fileName) {
           return res.status(400).json({ error: 'chatId, mediaBase64, mediaType, fileName required' });
         }
 
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
-        let succeeded = false;
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName) {
+          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
+        }
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+
         let messageId = 'unknown';
         let rawData: any = {};
 
-        if (activeProvider === 'evolution') {
-          // Route to Evolution API
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-          if (!instanceName) {
-            return res.status(400).json({ success: false, error: 'Evolution API not linked (no instance name)' });
+        // Determine Evolution mediatype
+        let evolutionMediaType = 'document';
+        if (mediaType.toLowerCase().includes('image')) evolutionMediaType = 'Image';
+        else if (mediaType.toLowerCase().includes('video')) evolutionMediaType = 'video';
+
+        const evolutionUrl = new URL(`/message/sendMedia/${instanceName}`, EVOLUTION_API_URL).toString();
+        try {
+          const r = await fetch(evolutionUrl, {
+            method: 'POST',
+            headers: {
+              'apikey': EVOLUTION_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              number: chatId,
+              mediatype: evolutionMediaType,
+              mimetype: mimeType || 'application/octet-stream',
+              caption: caption || '',
+              media: `data:${mimeType || 'application/octet-stream'};base64,${mediaBase64}`,
+              fileName
+            })
+          });
+
+          rawData = await r.json();
+
+          if (!r.ok) {
+            const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
+            return res.json({ success: false, error: errMsg });
           }
 
-          if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-            return res.status(400).json({ success: false, error: 'Evolution API not configured' });
-          }
-
-          console.log('[Evolution SendMedia] Using instance:', instanceName, 'mediaType:', mediaType);
-
-          // Determine Evolution mediatype (Image, video, document)
-          let evolutionMediaType = 'document';
-          if (mediaType.toLowerCase().includes('image')) evolutionMediaType = 'Image';
-          else if (mediaType.toLowerCase().includes('video')) evolutionMediaType = 'video';
-
-          const evolutionUrl = new URL(`/message/sendMedia/${instanceName}`, EVOLUTION_API_URL).toString();
-          try {
-            const r = await fetch(evolutionUrl, {
-              method: 'POST',
-              headers: {
-                'apikey': EVOLUTION_API_KEY,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                number: chatId,
-                mediatype: evolutionMediaType,
-                mimetype: mimeType || 'application/octet-stream',
-                caption: caption || '',
-                media: `data:${mimeType || 'application/octet-stream'};base64,${mediaBase64}`,
-                fileName
-              })
-            });
-
-            rawData = await r.json();
-            console.log('[Evolution SendMedia response]:', JSON.stringify(rawData));
-
-            succeeded = r.ok;
-            messageId = rawData.key?.id || rawData.id || 'unknown';
-
-            if (!succeeded) {
-              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-              console.error('Evolution SendMedia failed:', errMsg);
-              return res.json({ success: false, error: errMsg, raw: rawData });
-            }
-          } catch (err: any) {
-            console.error('Evolution SendMedia error:', err.message);
-            return res.json({ success: false, error: err.message });
-          }
-        } else {
-          // Route to Green API (use existing sendFileByUpload endpoint)
-          const buffer = Buffer.from(mediaBase64, 'base64');
-          const { FormData: NodeFormData } = await import('node:buffer') as any;
-          const fd = new (globalThis.FormData || NodeFormData)();
-          fd.append('chatId', chatId);
-          fd.append('caption', caption || '');
-          fd.append('file', new Blob([buffer], { type: mimeType || 'application/octet-stream' }), fileName);
-
-          try {
-            const r = await fetch(`${BASE_URL}/sendFileByUpload/${API_TOKEN}`, { method: 'POST', body: fd as any });
-            rawData = await r.json();
-            console.log('[Green API SendMedia response]:', JSON.stringify(rawData));
-
-            succeeded = r.ok || !!rawData.idMessage;
-            messageId = rawData.idMessage || 'unknown';
-
-            if (!succeeded) {
-              const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-              console.error('Green API SendMedia failed:', errMsg);
-              return res.json({ success: false, error: errMsg, raw: rawData });
-            }
-          } catch (err: any) {
-            console.error('Green API SendMedia error:', err.message);
-            return res.json({ success: false, error: err.message });
-          }
+          messageId = rawData.key?.id || rawData.id || 'unknown';
+        } catch (err: any) {
+          console.error('SendMedia error:', err.message);
+          return res.json({ success: false, error: err.message });
         }
 
         // Persist media message to database
@@ -1734,34 +1178,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'webhookConfig': {
-        // GET /api/whatsapp?action=webhookConfig
-        // Returns webhook configuration info for setting up Evolution API
+        // Returns webhook configuration info for Evolution API
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-        const isAuthenticatedEvo = !!instanceName;
-
-        // For Green API, read from current settings
-        const r = await fetch(`${BASE_URL}/getSettings/${API_TOKEN}`);
-        const greenApiData = await r.json();
-        const greenApiWebhookUrl = greenApiData?.webhookUrl || '';
-        const greenApiConfigured = !!greenApiWebhookUrl;
+        const isConfigured = !!instanceName;
 
         return res.json({
           success: true,
-          greenApi: {
-            configured: greenApiConfigured,
-            webhookUrl: greenApiWebhookUrl,
-            webhookConfigured: greenApiConfigured
-          },
-          evolution: {
-            configured: isAuthenticatedEvo,
-            instanceName,
-            webhookInstructions: {
-              note: 'Configure webhook in Evolution API dashboard',
-              webhookUrl: `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`,
-              events: ['messages.upsert', 'message.update'],
-              messageFormat: 'Baileys (from Evolution API)'
-            }
-          }
+          configured: isConfigured,
+          instanceName,
+          webhookUrl: `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`,
+          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
+          messageFormat: 'Baileys (Evolution API)'
         });
       }
 
@@ -1874,53 +1301,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.error('[debugSaveInstance] Error:', err.message);
           return res.status(500).json({ success: false, error: err.message });
         }
-      }
-
-      case 'selectProvider': {
-        // POST /api/whatsapp?action=selectProvider
-        // Switches between Green API and Evolution API for sending messages
-        const { provider } = req.body;
-
-        if (provider !== 'greenapi' && provider !== 'evolution') {
-          return res.status(400).json({
-            success: false,
-            error: 'Provider must be "greenapi" or "evolution"'
-          });
-        }
-
-        // Validate provider is available
-        if (provider === 'greenapi' && (!INSTANCE_ID || !API_TOKEN)) {
-          return res.status(400).json({
-            success: false,
-            error: 'Green API not configured (missing GREENAPI_INSTANCE_ID or GREENAPI_TOKEN env vars)'
-          });
-        }
-
-        if (provider === 'evolution') {
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-          if (!instanceName) {
-            return res.status(400).json({
-              success: false,
-              error: 'Evolution API not linked (run "Link WhatsApp" first in Settings)'
-            });
-          }
-        }
-
-        // Save to app_settings
-        const saved = await setSetting('WHATSAPP_ACTIVE_PROVIDER', provider);
-
-        if (!saved) {
-          return res.status(500).json({
-            success: false,
-            error: 'Failed to save provider preference'
-          });
-        }
-
-        return res.json({
-          success: true,
-          activeProvider: provider,
-          message: `Switched to ${provider === 'evolution' ? 'Evolution API' : 'Green API'}`
-        });
       }
 
       case 'syncEvolutionMessages': {
@@ -2163,7 +1543,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'fullDiagnostics': {
         // Comprehensive diagnostic report
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const evolutionInstanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         const evolutionPhone = await getSetting('EVOLUTION_PHONE', '');
 
@@ -2247,7 +1627,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'diagnostics': {
         // Debug endpoint to check configuration
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'greenapi');
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const evolutionInstanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         const evolutionPhone = await getSetting('EVOLUTION_PHONE', '');
 
@@ -2262,11 +1642,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               instanceName: evolutionInstanceName || 'NOT SET',
               phone: evolutionPhone || 'NOT SET'
             },
-            greenapi: {
-              configured: !!INSTANCE_ID && !!API_TOKEN,
-              instanceId: INSTANCE_ID ? 'SET' : 'NOT SET',
-              token: API_TOKEN ? 'SET' : 'NOT SET'
-            },
             supabase: {
               configured: supabase !== null,
               url: _supabaseUrl ? _supabaseUrl.substring(0, 30) + '...' : 'NOT SET'
@@ -2280,10 +1655,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           success: false,
           error: 'Unknown action',
           available: [
-            // Green API actions
-            'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'searchUnified', 'getCalls', 'bulkUpdateChats', 'mediaProxy', 'messageCount',
-            // Evolution API actions
-            'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'selectProvider', 'sendMedia', 'sendAudio',
+            // Chat & Message actions
+            'messages', 'chats', 'chatsFromDb', 'send', 'sendMedia', 'sendAudio', 'messageCount', 'mediaProxy',
+            // Search & Filtering
+            'searchMessages', 'searchUnified',
+            // Call management
+            'getCalls', 'bulkUpdateChats',
+            // Instance management
+            'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'setWebhook', 'syncEvolutionMessages',
             // Utilities
             'diagnostics'
           ]
