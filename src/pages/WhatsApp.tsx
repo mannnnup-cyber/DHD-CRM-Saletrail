@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
@@ -1070,16 +1070,24 @@ export default function WhatsApp() {
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full font-semibold ${
                             chat.status === 'active' ? 'bg-green-500/20 text-green-400' :
                             chat.status === 'resolved' ? 'bg-gray-500/20 text-gray-400' :
-                            'bg-amber-500/20 text-amber-400'
+                            'bg-yellow-500/20 text-yellow-400'
                           }`}>
-                            {chat.status}
+                            <span>{chat.status === 'active' ? '🟢' : chat.status === 'resolved' ? '⏸' : '⚠️'}</span>
+                            <span>{chat.status}</span>
                           </span>
-                          {chat.assignedTo !== 'Unassigned' && (
-                            <span className="text-[9px] text-blue-400">{chat.assignedTo}</span>
+                          {chat.assignedTo && chat.assignedTo !== 'Unassigned' && (
+                            <span className="inline-flex items-center text-[9px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-medium">
+                              👤 {chat.assignedTo}
+                            </span>
+                          )}
+                          {(!chat.assignedTo || chat.assignedTo === 'Unassigned') && (
+                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-gray-600/20 text-gray-500">
+                              Unassigned
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1137,6 +1145,17 @@ export default function WhatsApp() {
                         </div>
                       )}
                     </div>
+                    <button
+                      onClick={() => {
+                        // Navigate to contacts page with search for this phone
+                        window.location.href = `/crm?tab=contacts&search=${encodeURIComponent(selectedChat.phone)}`;
+                      }}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 rounded-lg text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      title="Open contact in CRM"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Contact
+                    </button>
                     <button
                       onClick={() => {
                         const nextStatus = selectedChat.status === 'resolved' ? 'active' : 'resolved';
