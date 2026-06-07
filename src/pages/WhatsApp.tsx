@@ -233,7 +233,7 @@ export default function WhatsApp() {
           setHasRealData(true);
 
           if (data.synced) {
-            setHistoryLastSynced(new Date());
+            // history synced marker
           }
         } else {
           console.log('No real chat structure, showing empty');
@@ -720,15 +720,7 @@ export default function WhatsApp() {
     }
   };
 
-  useEffect(() => {
-    if (activeTab !== 'setup') return;
-    setLoadingCount(true);
-    fetch('/api/whatsapp?action=messageCount')
-      .then(r => r.json())
-      .then(d => { if (d.success) setMessageCount(d.count); })
-      .catch(() => {})
-      .finally(() => setLoadingCount(false));
-  }, [activeTab]);
+  // (messageCount/loadingCount removed — Green API quota tracking no longer needed)
 
   const filteredChats = chats.filter(c => {
     if (!searchQuery) return true;
