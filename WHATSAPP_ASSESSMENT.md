@@ -247,6 +247,202 @@ curl -X POST "http://cst-evolution-api-..../message/send" \
 
 ---
 
+## 🎨 Phase 5: WhatsApp UI Improvements (Unified Search + Sales Features)
+
+**Status:** PLANNED  
+**Timeline:** ~3 hours implementation  
+**Priority:** HIGH (Core sales UX)
+
+### Overview
+
+Transform WhatsApp from basic messaging into a professional sales inbox with:
+1. **Unified search** — Find contacts, chats, AND messages in one bar (like native WhatsApp)
+2. **Status tracking** — Visual indicators showing: Active / Resolved / Pending
+3. **Assignment tracking** — See who owns each chat (avoid duplicate work)
+4. **Team read indicators** — Know if your rep saw a message
+5. **Contact link** — Jump directly to CRM contact record
+6. **WhatsApp-like UI** — Minimal, familiar design
+
+### Key Features
+
+| Feature | Why It Matters | Implementation |
+|---------|----------------|-----------------|
+| **Unified Search Bar** | One place to find everything (not two separate searches) | New `searchUnified` API action combining message text + chat names + contact names |
+| **Status Pills** | Reps see at a glance: is this chat active or resolved? | Status badge (🟢 Active, ⏸ Resolved, ⚠ Pending) in chat list |
+| **Assignee Badges** | Prevents double work; shows team member ownership | "Assigned to: Sarah" or "Unassigned" in chat list |
+| **Team Read Status** | Know if your team member opened/read a message | Blue unread dot on chat; auto-mark read when chat opens |
+| **[View Contact] Button** | Jump to full customer record without context switching | Button in chat header opens CRM contact page |
+| **Profile Images** | Familiar visual context | Show contact's WhatsApp profile pic in header |
+
+### Files to Modify
+
+1. **api/whatsapp.ts** (HIGH PRIORITY)
+   - Add `searchUnified` action: Combines message search + chat search + contact search
+   - Supports pagination (limit, offset)
+   - Returns grouped results: chats → messages → contacts
+   - Database indexes for performance: FTS on body, indexes on contact_name
+
+2. **src/pages/WhatsApp.tsx** (HIGH PRIORITY)
+   - Replace dual search bars with single unified search
+   - Add status pills (green/gray/yellow) to chat list
+   - Add assignee badges to chat list
+   - Add unread count badges
+   - Add team read status indicators on messages
+   - Add jump-to-message functionality with scroll + highlight
+   - Add profile image display in header
+
+3. **supabase/email_schema.sql** (MEDIUM PRIORITY)
+   - Explicit definition of `whatsapp_chats` table (currently implicit)
+   - Add FTS index on `whatsapp_messages.body` for search performance
+   - Add indexes on `contact_name`, `status` for faster lookups
+
+### Implementation Sequence
+
+**Step 1: Database (5 min)**
+- [ ] Add explicit schema for `whatsapp_chats` table
+- [ ] Create FTS index on `whatsapp_messages.body`
+- [ ] Verify indexes are performant with test queries
+
+**Step 2: Backend Search Endpoint (30 min)**
+- [ ] Implement `searchUnified` action in api/whatsapp.ts
+- [ ] Search messages (body ILIKE pattern)
+- [ ] Search chats (contact_name, phone number)
+- [ ] Search contacts (name, company, linked via phone)
+- [ ] Combine + deduplicate results
+- [ ] Add pagination support
+
+**Step 3: Frontend Search UI (45 min)**
+- [ ] Remove dual search bars (chat search + message search)
+- [ ] Add unified search input at top of chat list
+- [ ] Display results grouped by type: Contacts → Chats → Messages
+- [ ] Implement click handlers: select chat, jump to message
+
+**Step 4: Chat List Enhancements (30 min)**
+- [ ] Add status pills next to chat name (colors: green/gray/yellow)
+- [ ] Add assignee badge (show team member)
+- [ ] Add unread count badge (blue circle)
+- [ ] Update styling with Tailwind
+
+**Step 5: Message & Header Updates (30 min)**
+- [ ] Add team read indicators (checkmarks/eye icon)
+- [ ] Fetch and display profile images
+- [ ] Add [View Contact in CRM] button
+- [ ] Wire up status/assignee dropdowns
+
+**Step 6: Testing & Polish (30 min)**
+- [ ] E2E test: search → select → view workflow
+- [ ] Test unread → read transitions
+- [ ] Test status/assignee persistence
+- [ ] Test mobile responsiveness
+- [ ] Performance check: search with 50K messages
+
+### Database Changes
+
+```sql
+-- Ensure whatsapp_chats table exists
+CREATE TABLE IF NOT EXISTS whatsapp_chats (
+  chat_id VARCHAR(255) PRIMARY KEY,
+  status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'resolved', 'pending')),
+  assigned_to VARCHAR(255) DEFAULT 'Unassigned',
+  contact_name VARCHAR(255),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_wa_chats_contact_name ON whatsapp_chats(contact_name);
+CREATE INDEX IF NOT EXISTS idx_wa_chats_status ON whatsapp_chats(status);
+CREATE INDEX IF NOT EXISTS idx_wa_messages_body_fts ON whatsapp_messages 
+  USING GIN (to_tsvector('english', body));
+```
+
+### API Endpoint: searchUnified
+
+**Request:**
+```
+POST /api/whatsapp?action=searchUnified
+{
+  "q": "design",
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "type": "chat",
+      "id": "551199999999@s.whatsapp.net",
+      "name": "Sarah Chen",
+      "lastMessage": "Thanks for the design!",
+      "timestamp": "2:34 PM",
+      "status": "active",
+      "assignedTo": "Sarah"
+    },
+    {
+      "type": "message",
+      "chatId": "551199999999@s.whatsapp.net",
+      "chatName": "Sarah Chen",
+      "text": "I love the design you sent!",
+      "timestamp": "Jun 6, 2:34 PM",
+      "messageId": "3EB0XXXXXX"
+    },
+    {
+      "type": "contact",
+      "id": "uuid",
+      "name": "Sarah Chen",
+      "company": "Design Studio",
+      "phone": "55119999999",
+      "status": "CONTACTED"
+    }
+  ],
+  "total": 47
+}
+```
+
+### Testing Checklist
+
+- [ ] Unified search finds contacts by name
+- [ ] Unified search finds chats by name or phone
+- [ ] Unified search finds messages by text
+- [ ] Search results display in correct groups (Contacts → Chats → Messages)
+- [ ] Click contact → opens chat
+- [ ] Click message → jumps to that message with highlight
+- [ ] Chat list shows status pills (correct colors)
+- [ ] Chat list shows assignee badges
+- [ ] Chat list shows unread count
+- [ ] Unread badge disappears when chat is opened
+- [ ] Profile images load in chat header
+- [ ] [View Contact] button works
+- [ ] Status dropdown allows Active/Resolved/Pending changes
+- [ ] Assignee dropdown allows reassignment
+- [ ] All changes persist and reload correctly
+- [ ] Performance acceptable (search <500ms for 50K messages)
+- [ ] Mobile responsive (chat list + search visible)
+
+### Success Criteria
+
+| Metric | Target | Status |
+|--------|--------|--------|
+| Unified search working | 1 input finds all types | TODO |
+| Chat list shows status | 3 color-coded pills | TODO |
+| Assignee visible | "Assigned to: X" badge | TODO |
+| Team read status visible | Blue unread dot | TODO |
+| Contact link works | Opens CRM record | TODO |
+| Profile images shown | Loaded from Evolution API | TODO |
+| UI is WhatsApp-like | Minimal, familiar design | TODO |
+| Performance baseline | <500ms search, 60fps scroll | TODO |
+
+### Related Documentation
+
+- Plan file: `C:\Users\Administrator\.claude\plans\whatsapp-ui-improvements.md`
+- Exploration notes: See "Phase 1: Initial Understanding" in plan file
+- API patterns: Based on existing searchMessages + chatsFromDb endpoints
+
+---
+
 ## 🔧 QUICK START (Do This First)
 
 **Estimated Time: 30 minutes**

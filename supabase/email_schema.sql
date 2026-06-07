@@ -230,6 +230,26 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_provider ON whatsapp_messages(p
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_direction ON whatsapp_messages(direction);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_created_at ON whatsapp_messages(created_at DESC);
 
+-- Full-text search index for message content
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_body_fts ON whatsapp_messages
+  USING GIN (to_tsvector('english', body));
+
+-- ============================================
+-- WhatsApp Chats Table (Chat Metadata)
+-- ============================================
+CREATE TABLE IF NOT EXISTS whatsapp_chats (
+  chat_id VARCHAR(255) PRIMARY KEY,
+  status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'resolved', 'pending')),
+  assigned_to VARCHAR(255) DEFAULT 'Unassigned',
+  contact_name VARCHAR(255),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Indexes for chat metadata queries
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chats_contact_name ON whatsapp_chats(contact_name);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chats_status ON whatsapp_chats(status);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chats_assigned_to ON whatsapp_chats(assigned_to);
+
 -- ============================================
 -- IMAP SETUP INSTRUCTIONS
 -- ============================================

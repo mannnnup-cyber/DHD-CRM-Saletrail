@@ -1245,6 +1245,107 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, results: msgs || [] });
       }
 
+      case 'searchUnified': {
+        // Unified search: finds contacts, chats, and messages in one query
+        const q = req.query.q as string;
+        const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+        const offset = parseInt(req.query.offset as string) || 0;
+
+        if (!q || q.length < 2) return res.json({ success: true, results: [], total: 0 });
+        if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
+
+        try {
+          const searchPattern = `%${q}%`;
+
+          // 1. Search messages by text content
+          const { data: messages } = await supabase
+            .from('whatsapp_messages')
+            .select('*')
+            .ilike('body', searchPattern)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+          // 2. Search chats by contact name or phone
+          const { data: chats } = await supabase
+            .from('whatsapp_chats')
+            .select('*')
+            .or(`contact_name.ilike.${searchPattern},chat_id.ilike.${searchPattern}`)
+            .limit(10);
+
+          // 3. Search contacts by name, company, or phone (linked to WhatsApp)
+          const { data: contacts } = await supabase
+            .from('contacts')
+            .select('*')
+            .eq('source', 'WHATSAPP')
+            .or(`name.ilike.${searchPattern},company.ilike.${searchPattern},phone_normalized.ilike.${q.replace(/[^\d]/g, '')}`)
+            .limit(10);
+
+          // Combine and deduplicate by type
+          const results = [];
+          const seenChatIds = new Set<string>();
+
+          // Add chat results first (highest priority)
+          if (chats) {
+            for (const chat of chats) {
+              results.push({
+                type: 'chat',
+                id: chat.chat_id,
+                name: chat.contact_name || chat.chat_id,
+                status: chat.status || 'active',
+                assignedTo: chat.assigned_to || 'Unassigned',
+                phone: chat.chat_id.replace(/@[a-z.]+$/, '') // Extract phone from JID
+              });
+              seenChatIds.add(chat.chat_id);
+            }
+          }
+
+          // Add message results (with chat context)
+          if (messages) {
+            const addedMessages = new Set<string>();
+            for (const msg of messages) {
+              if (!addedMessages.has(msg.id)) {
+                // Find chat metadata if available
+                const chatMeta = chats?.find((c: any) => c.chat_id === msg.chat_id);
+                results.push({
+                  type: 'message',
+                  id: msg.id,
+                  chatId: msg.chat_id,
+                  chatName: chatMeta?.contact_name || msg.chat_id.replace(/@[a-z.]+$/, ''),
+                  text: msg.body?.substring(0, 100) + (msg.body?.length > 100 ? '...' : ''),
+                  timestamp: msg.created_at,
+                  direction: msg.direction,
+                  messageId: msg.provider_message_id
+                });
+                addedMessages.add(msg.id);
+              }
+            }
+          }
+
+          // Add contact results
+          if (contacts) {
+            for (const contact of contacts) {
+              results.push({
+                type: 'contact',
+                id: contact.id,
+                name: contact.name,
+                company: contact.company,
+                phone: contact.phone,
+                status: contact.status
+              });
+            }
+          }
+
+          return res.json({
+            success: true,
+            results: results.slice(offset, offset + limit),
+            total: results.length
+          });
+        } catch (err: any) {
+          console.error('[searchUnified] Error:', err?.message || err);
+          return res.json({ success: false, error: err?.message || 'Search failed' });
+        }
+      }
+
       // ========== EVOLUTION API ACTIONS ==========
 
       case 'createInstance': {
@@ -2016,7 +2117,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           error: 'Unknown action',
           available: [
             // Green API actions
-            'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'mediaProxy', 'messageCount',
+            'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'searchUnified', 'mediaProxy', 'messageCount',
             // Evolution API actions
             'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'selectProvider', 'sendMedia', 'sendAudio',
             // Utilities

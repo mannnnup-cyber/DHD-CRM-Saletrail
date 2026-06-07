@@ -100,6 +100,10 @@ export default function WhatsApp() {
   const [msgSearchQuery, setMsgSearchQuery] = useState('');
   const [msgSearchResults, setMsgSearchResults] = useState<any[]>([]);
   const [searchingMsgs, setSearchingMsgs] = useState(false);
+  const [unifiedSearchActive, setUnifiedSearchActive] = useState(false);
+  const [unifiedSearchQuery, setUnifiedSearchQuery] = useState('');
+  const [unifiedSearchResults, setUnifiedSearchResults] = useState<any[]>([]);
+  const [unifiedSearching, setUnifiedSearching] = useState(false);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachCaption, setAttachCaption] = useState('');
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
@@ -671,6 +675,51 @@ export default function WhatsApp() {
     return () => clearTimeout(t);
   }, [msgSearchQuery, searchMessages]);
 
+  // Unified search (contacts + chats + messages)
+  const searchUnified = useCallback(async (q: string) => {
+    if (q.length < 2) { setUnifiedSearchResults([]); return; }
+    setUnifiedSearching(true);
+    try {
+      const r = await fetch(`/api/whatsapp?action=searchUnified&q=${encodeURIComponent(q)}&limit=30`);
+      const data = await r.json();
+      if (data.success) {
+        setUnifiedSearchResults(data.results || []);
+      }
+    } catch (err) {
+      console.error('Unified search error:', err);
+      setUnifiedSearchResults([]);
+    }
+    setUnifiedSearching(false);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => searchUnified(unifiedSearchQuery), 300);
+    return () => clearTimeout(t);
+  }, [unifiedSearchQuery, searchUnified]);
+
+  // Handle unified search result selection
+  const selectUnifiedResult = (result: any) => {
+    if (result.type === 'chat') {
+      const chat = chats.find(c => c.id === result.id);
+      if (chat) {
+        setSelectedChat(chat);
+        setUnifiedSearchActive(false);
+        setUnifiedSearchQuery('');
+      }
+    } else if (result.type === 'message') {
+      const chat = chats.find(c => c.id === result.chatId);
+      if (chat) {
+        setSelectedChat(chat);
+        setUnifiedSearchActive(false);
+        setUnifiedSearchQuery('');
+        // Optional: jump to message (future enhancement)
+      }
+    } else if (result.type === 'contact') {
+      // Optional: open contact in CRM (future enhancement)
+      console.log('Contact selected:', result);
+    }
+  };
+
   // Send file attachment
   const sendAttachment = async () => {
     if (!attachFile || !selectedChat) return;
@@ -890,52 +939,92 @@ export default function WhatsApp() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
                   type="text"
-                  placeholder="Search chats..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search chats, messages, contacts..."
+                  value={unifiedSearchActive ? unifiedSearchQuery : searchQuery}
+                  onChange={e => {
+                    if (unifiedSearchActive) {
+                      setUnifiedSearchQuery(e.target.value);
+                    } else {
+                      setSearchQuery(e.target.value);
+                    }
+                  }}
+                  onFocus={() => setUnifiedSearchActive(true)}
                   className="w-full pl-9 pr-3 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 />
               </div>
-              {/* Message content search toggle */}
-              <button
-                onClick={() => { setShowSearchPanel(p => !p); setMsgSearchQuery(''); setMsgSearchResults([]); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 bg-gray-700/40 hover:bg-gray-700 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
-              >
-                <Search className="w-3.5 h-3.5" />
-                {showSearchPanel ? 'Close message search' : 'Search message content...'}
-              </button>
-              {showSearchPanel && (
-                <div>
-                  <input
-                    type="text"
-                    value={msgSearchQuery}
-                    onChange={e => setMsgSearchQuery(e.target.value)}
-                    placeholder="Search across all messages..."
-                    autoFocus
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
-                  />
-                  {searchingMsgs && <p className="text-gray-500 text-xs mt-1 px-1">Searching...</p>}
-                  {msgSearchResults.length > 0 && (
-                    <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-                      {msgSearchResults.map((m: any) => (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            const chat = chats.find(c => c.id === m.chat_id);
-                            if (chat) { setSelectedChat(chat); setShowSearchPanel(false); }
-                          }}
-                          className="w-full text-left px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
-                        >
-                          <p className="text-gray-300 text-xs font-medium truncate">{m.chat_id?.replace('@c.us','')}</p>
-                          <p className="text-gray-500 text-[11px] truncate">{m.body}</p>
-                        </button>
-                      ))}
+              {/* Unified search results dropdown */}
+              {unifiedSearchActive && unifiedSearchQuery.length >= 2 && (
+                <div className="absolute left-3 right-3 top-14 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                  {unifiedSearching && (
+                    <div className="p-3 text-gray-400 text-xs text-center">Searching...</div>
+                  )}
+                  {!unifiedSearching && unifiedSearchResults.length === 0 && (
+                    <div className="p-3 text-gray-500 text-xs text-center">No results found</div>
+                  )}
+                  {!unifiedSearching && unifiedSearchResults.length > 0 && (
+                    <div className="space-y-0">
+                      {/* Group by type */}
+                      {unifiedSearchResults.filter((r: any) => r.type === 'chat').length > 0 && (
+                        <>
+                          <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase bg-gray-800/50 sticky top-0">Chats</div>
+                          {unifiedSearchResults.filter((r: any) => r.type === 'chat').map((r: any) => (
+                            <button
+                              key={r.id}
+                              onClick={() => selectUnifiedResult(r)}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/30 transition-colors text-sm"
+                            >
+                              <p className="text-gray-200 font-medium">{r.name}</p>
+                              <p className="text-gray-500 text-[11px]">{r.status} • {r.assignedTo}</p>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {unifiedSearchResults.filter((r: any) => r.type === 'message').length > 0 && (
+                        <>
+                          <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase bg-gray-800/50 sticky top-0">Messages</div>
+                          {unifiedSearchResults.filter((r: any) => r.type === 'message').slice(0, 5).map((r: any) => (
+                            <button
+                              key={r.id}
+                              onClick={() => selectUnifiedResult(r)}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/30 transition-colors text-sm"
+                            >
+                              <p className="text-gray-300 text-xs font-medium">{r.chatName}</p>
+                              <p className="text-gray-500 text-[11px] truncate">{r.text}</p>
+                              <p className="text-gray-600 text-[10px]">{r.timestamp}</p>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {unifiedSearchResults.filter((r: any) => r.type === 'contact').length > 0 && (
+                        <>
+                          <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase bg-gray-800/50 sticky top-0">Contacts</div>
+                          {unifiedSearchResults.filter((r: any) => r.type === 'contact').slice(0, 3).map((r: any) => (
+                            <button
+                              key={r.id}
+                              onClick={() => selectUnifiedResult(r)}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/30 transition-colors text-sm"
+                            >
+                              <p className="text-gray-200 font-medium">{r.name}</p>
+                              <p className="text-gray-500 text-[11px]">{r.company || r.phone}</p>
+                            </button>
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
-                  {msgSearchQuery.length >= 2 && !searchingMsgs && msgSearchResults.length === 0 && (
-                    <p className="text-gray-600 text-xs mt-1 px-1">No messages found</p>
-                  )}
                 </div>
+              )}
+              {/* Click outside to close search */}
+              {unifiedSearchActive && (
+                <button
+                  onClick={() => {
+                    setUnifiedSearchActive(false);
+                    setUnifiedSearchQuery('');
+                  }}
+                  className="w-full text-xs text-gray-500 hover:text-gray-300 py-1 transition-colors"
+                >
+                  Close search
+                </button>
               )}
             </div>
             <div className="flex-1 overflow-y-auto">
