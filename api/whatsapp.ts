@@ -340,37 +340,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (action) {
 
       case 'status': {
-        // Check Evolution API connection status using stored instance name
+        // Check Evolution API connection status.
+        // Strategy: try Evolution API connectionState first, then fall back to
+        // checking for recent DB messages (if webhook is delivering, we're connected).
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
 
+        // Helper: check recent DB activity as proof of connection
+        const hasRecentMessages = async (): Promise<boolean> => {
+          if (!supabase) return false;
+          try {
+            const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); // last 7 days
+            const { count } = await supabase
+              .from('whatsapp_messages')
+              .select('*', { count: 'exact', head: true })
+              .gte('created_at', since);
+            return (count || 0) > 0;
+          } catch { return false; }
+        };
+
+        // If no instance name configured, check DB as last resort
         if (!instanceName) {
-          return res.json({ success: true, connected: false, state: 'not_linked', message: 'No Evolution API instance linked' });
+          const active = await hasRecentMessages();
+          return res.json({ success: true, connected: active, state: active ? 'db_active' : 'not_linked' });
         }
 
-        if (!EVOLUTION_API_URL) {
-          return res.json({ success: true, connected: false, state: 'not_configured', message: 'Evolution API URL not set' });
-        }
+        // Try Evolution API status check
+        if (EVOLUTION_API_URL) {
+          try {
+            const stateUrl = new URL(`/instance/${instanceName}/connectionState`, EVOLUTION_API_URL).toString();
+            const stateRes = await fetch(stateUrl, {
+              method: 'GET',
+              headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {},
+              signal: AbortSignal.timeout(5000) // 5s timeout
+            });
 
-        try {
-          const stateUrl = new URL(`/instance/${instanceName}/connectionState`, EVOLUTION_API_URL).toString();
-          const stateRes = await fetch(stateUrl, {
-            method: 'GET',
-            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
-          });
-
-          if (!stateRes.ok) {
-            return res.json({ success: true, connected: false, state: 'error', message: `Instance status check failed (${stateRes.status})` });
+            if (stateRes.ok) {
+              const data = await stateRes.json();
+              const state = data?.instance?.state || data?.state || 'unknown';
+              // Evolution API states: 'open' = connected, 'close'/'connecting' = not
+              const connected = state === 'open' || state === 'connected';
+              return res.json({ success: true, connected, state, instanceName });
+            }
+          } catch (err: any) {
+            console.warn('[status] Evolution API check failed:', err.message, '— falling back to DB check');
           }
-
-          const data = await stateRes.json();
-          const state = data?.instance?.state || data?.state || 'unknown';
-          const connected = state === 'open';
-
-          return res.json({ success: true, connected, state, instanceName });
-        } catch (err: any) {
-          console.error('[status] Error:', err.message);
-          return res.json({ success: true, connected: false, state: 'error', message: err.message });
         }
+
+        // Fallback: if we have recent messages, webhook is working → consider connected
+        const active = await hasRecentMessages();
+        return res.json({ success: true, connected: active, state: active ? 'webhook_active' : 'unknown', instanceName });
       }
 
       case 'webhookInfo': {
