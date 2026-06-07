@@ -3,8 +3,7 @@ import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
-// WhatsApp API is handled by backend /api/whatsapp
-// Frontend calls /api/whatsapp which proxies to Green API
+// WhatsApp API is handled by backend /api/whatsapp (Evolution API / Baileys)
 // This avoids CORS issues and keeps credentials secure
 
 const formatChatTimestamp = (rawTimestamp: number): string => {
@@ -18,6 +17,24 @@ const formatChatTimestamp = (rawTimestamp: number): string => {
   if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   if (isYesterday) return 'Yesterday';
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
+// Format a message timestamp (unix seconds or ISO string) → "2:34 PM", "Yesterday 2:34 PM", "Jun 5, 2:34 PM"
+const formatMessageTime = (ts: number | string): string => {
+  if (!ts) return '';
+  const date = typeof ts === 'number'
+    ? new Date(ts > 1e10 ? ts : ts * 1000)
+    : new Date(ts);
+  if (isNaN(date.getTime())) return '';
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return timeStr;
+  if (isYesterday) return `Yesterday ${timeStr}`;
+  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${timeStr}`;
 };
 
 const TEAM_MEMBERS = [
@@ -190,7 +207,7 @@ export default function WhatsApp() {
     }
   }, []);
 
-  // Load chats from backend API (proxies to Green API)
+  // Load chats from backend API (database-backed, Evolution API)
   const loadChats = useCallback(async () => {
     setSyncing(true);
     try {
@@ -533,36 +550,24 @@ export default function WhatsApp() {
     }
   };
 
-  // Initiate a WhatsApp call
+  // Initiate a call — opens native phone dialer since WhatsApp API doesn't support outbound calls
   const initiateCall = async (chatId: string, isVideo?: boolean) => {
-    try {
-      setCallingChatId(chatId);
-      setCallTimer(0);
+    // Extract phone number from chatId (e.g. "18765551234@s.whatsapp.net" → "18765551234")
+    const phone = chatId.replace(/@[a-z.]+$/, '');
 
-      const res = await fetch('/api/whatsapp?action=initiateCall', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, isVideo: isVideo || false })
-      });
+    // Show calling overlay for UX, then open phone dialer
+    setCallingChatId(chatId);
+    setCallTimer(0);
 
-      const data = await res.json();
+    // Start timer
+    if (callTimerRef.current) clearInterval(callTimerRef.current);
+    callTimerRef.current = setInterval(() => {
+      setCallTimer(prev => prev + 1);
+    }, 1000);
 
-      if (!data.success) {
-        console.error('Failed to initiate call:', data.error);
-        setCallingChatId(null);
-        alert(`Failed to initiate call: ${data.error}`);
-        return;
-      }
-
-      // Start call timer
-      if (callTimerRef.current) clearInterval(callTimerRef.current);
-      callTimerRef.current = setInterval(() => {
-        setCallTimer(prev => prev + 1);
-      }, 1000);
-    } catch (err: any) {
-      console.error('Call error:', err);
-      setCallingChatId(null);
-      alert('Failed to initiate call');
+    // Open phone dialer — works on mobile and some desktop setups
+    if (phone) {
+      window.open(`tel:+${phone}`, '_self');
     }
   };
 
@@ -1080,7 +1085,7 @@ export default function WhatsApp() {
           {connected === false && (
             <div className="flex items-center gap-3 px-4 py-3 bg-red-500/20 border border-red-500/40 rounded-xl text-red-300 text-sm">
               <WifiOff className="w-4 h-4 flex-shrink-0" />
-              <span><strong>Green API disconnected</strong> — check the business phone is on and connected to WiFi. Messages sent to your number are not being received.</span>
+              <span><strong>WhatsApp disconnected</strong> — check that your Evolution API instance is running and the business phone is linked. Messages sent to your number are not being received.</span>
             </div>
           )}
           <div className="flex-1 flex gap-4 min-h-0" style={{ height: 'calc(100vh - 340px)' }}>
@@ -1503,7 +1508,7 @@ export default function WhatsApp() {
                             <p className="text-sm leading-relaxed italic opacity-60">Media message</p>
                           ) : null}
                           <div className={`flex items-center gap-1 mt-1 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
-                            <span className="text-[10px] opacity-70">{msg.timestamp}</span>
+                            <span className="text-[10px] opacity-70">{formatMessageTime(msg.timestamp)}</span>
                             {msg.fromMe && (
                               msg.status === 'read' ? <CheckCheck className="w-3 h-3 text-blue-300" /> :
                               msg.status === 'delivered' ? <CheckCheck className="w-3 h-3 opacity-70" /> :
@@ -1525,7 +1530,7 @@ export default function WhatsApp() {
                               <div className={`text-xs px-3 py-2 rounded-full bg-${callStatusColor}-500/20 text-${callStatusColor}-400 border border-${callStatusColor}-500/30 flex items-center gap-2`}>
                                 <span>{callStatusEmoji}</span>
                                 <span>{call.status === 'answered' ? 'Received' : 'Missed'} {callTypeText} - {durationText}</span>
-                                <span className="text-[10px] opacity-70">{new Date(call.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                <span className="text-[10px] opacity-70">{formatMessageTime(call.timestamp)}</span>
                               </div>
                             </div>
                           );
@@ -1765,8 +1770,8 @@ export default function WhatsApp() {
                   connected === true ? 'text-green-400' :
                   connected === false ? 'text-red-400' : 'text-gray-400'
                 }`}>
-                  {connected === true ? 'Green API Connected' :
-                   connected === false ? 'Green API Not Connected' : 'Checking Connection...'}
+                  {connected === true ? 'WhatsApp Connected' :
+                   connected === false ? 'WhatsApp Not Connected' : 'Checking Connection...'}
                 </p>
                 <p className="text-gray-400 text-sm">
                   {connected === null ? 'Checking...' : 'Instance is authorized and ready'}
@@ -1793,11 +1798,11 @@ export default function WhatsApp() {
                 <div className="mt-3">
                   <p className="text-gray-400 text-sm mb-2">To receive real-time messages:</p>
                   <ol className="text-gray-500 text-xs list-decimal list-inside space-y-1">
-                    <li>Go to Green API Dashboard</li>
-                    <li>Select your instance</li>
-                    <li>Go to Settings</li>
+                    <li>Go to your Evolution API dashboard</li>
+                    <li>Select your instance → Webhook settings</li>
                     <li>Set Webhook URL to: <code className="bg-gray-800 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/whatsapp</code></li>
-                    <li>Save settings</li>
+                    <li>Enable MESSAGES_UPSERT and CONNECTION_UPDATE events</li>
+                    <li>Save and test</li>
                   </ol>
                 </div>
               )}
@@ -1837,14 +1842,13 @@ export default function WhatsApp() {
 
           {/* Setup Guide */}
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
-            <h3 className="text-white font-semibold mb-4">Setup Guide</h3>
+            <h3 className="text-white font-semibold mb-4">Evolution API Setup Guide</h3>
             <div className="space-y-4">
               {[
-                { step: '1', title: 'Green API Account Created', desc: 'Account created at green-api.com', done: connected !== null },
-                { step: '2', title: 'Link WhatsApp Business', desc: 'Open WhatsApp Business . Settings . Linked Devices . Link Device . Scan QR in Green API dashboard', done: connected === true },
-                { step: '3', title: 'Configure Webhook', desc: 'In Green API dashboard . Settings . Webhook URL: ' + (typeof window !== 'undefined' ? window.location.origin : '') + '/api/whatsapp', done: webhookStatus?.configured || false },
-                { step: '4', title: 'Environment Variables Set', desc: 'GREENAPI_INSTANCE_ID and GREENAPI_TOKEN added to Vercel (check Vercel project settings)', done: connected !== null },
-                { step: '5', title: 'Add MacroDroid WhatsApp Trigger', desc: 'Add notification trigger for WhatsApp calls in MacroDroid to log WhatsApp calls to Google Sheets', done: false },
+                { step: '1', title: 'Evolution API Server Running', desc: 'Your Evolution API instance should be running (Railway, Docker, or VPS). Check EVOLUTION_API_URL in Vercel env vars.', done: connected !== null },
+                { step: '2', title: 'Link WhatsApp Business', desc: 'In Settings → Integrations → Link WhatsApp. Scan the QR code with your WhatsApp Business phone.', done: connected === true },
+                { step: '3', title: 'Configure Webhook', desc: 'Webhook URL: ' + (typeof window !== 'undefined' ? window.location.origin : '') + '/api/whatsapp — Set this in your Evolution API dashboard under Webhook settings.', done: webhookStatus?.configured || false },
+                { step: '4', title: 'Environment Variables Set', desc: 'EVOLUTION_API_URL and EVOLUTION_API_KEY added to Vercel project settings.', done: connected !== null },
               ].map(item => (
                 <div key={item.step} className={`flex items-start gap-4 p-4 rounded-xl ${
                   item.done ? 'bg-green-500/10 border border-green-500/20' : 'bg-gray-700/30'
@@ -1867,15 +1871,15 @@ export default function WhatsApp() {
           <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-6">
             <h3 className="text-white font-semibold mb-4">Environment Variables</h3>
             <p className="text-gray-400 text-sm mb-4">
-              Add these environment variables in Vercel Dashboard . Your Project . Settings . Environment Variables:
+              Add these in Vercel Dashboard → Your Project → Settings → Environment Variables:
             </p>
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
-                <span className="text-gray-400 text-sm">GREENAPI_INSTANCE_ID</span>
+                <span className="text-gray-400 text-sm">EVOLUTION_API_URL</span>
                 <span className="text-blue-400 text-xs">Required</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-700/40 rounded-lg">
-                <span className="text-gray-400 text-sm">GREENAPI_TOKEN</span>
+                <span className="text-gray-400 text-sm">EVOLUTION_API_KEY</span>
                 <span className="text-blue-400 text-xs">Required</span>
               </div>
             </div>
@@ -1885,10 +1889,10 @@ export default function WhatsApp() {
           <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4">
             <p className="text-amber-400 font-medium flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
-              Keep DHD Business Phone Online
+              Keep Evolution API Server Running
             </p>
             <p className="text-gray-400 text-sm mt-1">
-              Green API works like WhatsApp Web. Your DHD Business phone must stay connected to WiFi at the office 24/7. Keep it plugged in and charging.
+              Your Evolution API server must stay online 24/7 to receive messages. If hosted on Railway, ensure it has sufficient credits and the service isn't sleeping.
             </p>
           </div>
         </div>
