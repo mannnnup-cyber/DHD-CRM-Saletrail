@@ -339,6 +339,69 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     switch (action) {
 
+      case 'status': {
+        // Check Evolution API connection status using stored instance name
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+
+        if (!instanceName) {
+          return res.json({ success: true, connected: false, state: 'not_linked', message: 'No Evolution API instance linked' });
+        }
+
+        if (!EVOLUTION_API_URL) {
+          return res.json({ success: true, connected: false, state: 'not_configured', message: 'Evolution API URL not set' });
+        }
+
+        try {
+          const stateUrl = new URL(`/instance/${instanceName}/connectionState`, EVOLUTION_API_URL).toString();
+          const stateRes = await fetch(stateUrl, {
+            method: 'GET',
+            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
+          });
+
+          if (!stateRes.ok) {
+            return res.json({ success: true, connected: false, state: 'error', message: `Instance status check failed (${stateRes.status})` });
+          }
+
+          const data = await stateRes.json();
+          const state = data?.instance?.state || data?.state || 'unknown';
+          const connected = state === 'open';
+
+          return res.json({ success: true, connected, state, instanceName });
+        } catch (err: any) {
+          console.error('[status] Error:', err.message);
+          return res.json({ success: true, connected: false, state: 'error', message: err.message });
+        }
+      }
+
+      case 'webhookInfo': {
+        // Return webhook configuration info for Evolution API
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        const webhookUrl = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`;
+
+        if (!instanceName || !EVOLUTION_API_URL) {
+          return res.json({ success: true, configured: false, url: '', message: 'Not configured' });
+        }
+
+        try {
+          const webhookCheckUrl = new URL(`/webhook/find/${instanceName}`, EVOLUTION_API_URL).toString();
+          const r = await fetch(webhookCheckUrl, {
+            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
+          });
+          if (r.ok) {
+            const data = await r.json();
+            const currentUrl = data?.url || data?.webhook?.url || '';
+            return res.json({
+              success: true,
+              configured: !!currentUrl,
+              url: currentUrl,
+              webhookUrl
+            });
+          }
+        } catch (e) { /* ignore */ }
+
+        return res.json({ success: true, configured: false, url: '', webhookUrl });
+      }
+
       case 'setWebhook': {
         // Set webhook for Evolution API
         const { webhookUrl } = req.body;
