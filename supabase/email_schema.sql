@@ -217,8 +217,11 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   provider VARCHAR(50) NOT NULL, -- 'greenapi' or 'evolution'
   provider_message_id VARCHAR(500), -- Message ID from the provider
   chat_id VARCHAR(50) NOT NULL, -- WhatsApp phone number or chat ID
+  sender_name VARCHAR(255), -- Contact name or sender
   direction VARCHAR(20) NOT NULL, -- 'inbound' or 'outbound'
   body TEXT NOT NULL, -- Message content
+  message_type VARCHAR(50) DEFAULT 'text', -- text, image, audio, video, document
+  media_url TEXT, -- URL for media (image, audio, video, document)
   raw JSONB, -- Raw response from WhatsApp provider
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()

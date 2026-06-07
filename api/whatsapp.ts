@@ -254,6 +254,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               ? new Date(timestamp > 1e10 ? timestamp : timestamp * 1000).toISOString()
               : new Date().toISOString();
 
+            // Extract media URL from Evolution API message format
+            let mediaUrl = null;
+            if (provider === 'evolution' && body.data?.message) {
+              const msg = body.data.message;
+              mediaUrl =
+                msg.imageMessage?.downloadUrl ||
+                msg.videoMessage?.downloadUrl ||
+                msg.audioMessage?.downloadUrl ||
+                msg.documentMessage?.downloadUrl ||
+                msg.stickerMessage?.downloadUrl ||
+                null;
+            }
+
             const { data: inserted } = await supabase.from('whatsapp_messages').insert({
               provider,
               provider_message_id: messageId,
@@ -261,7 +274,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               sender_name: senderName,
               direction: isInbound ? 'inbound' : 'outbound',
               body: text,
-              type: msgType,
+              message_type: msgType,
+              media_url: mediaUrl,
               raw: body,
               contact_id: contactId ?? null,
               created_at: msgAt
@@ -822,20 +836,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const { data: msgs } = await supabase.from('whatsapp_messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true }).limit(1000);
             if (msgs && msgs.length > 0) {
               const formatted = msgs.map((m: any) => {
-                const msgData = (m.raw || {}).messageData || {};
-                const mediaUrl =
-                  msgData.imageMessageData?.downloadUrl ||
-                  msgData.videoMessageData?.downloadUrl ||
-                  msgData.audioMessageData?.downloadUrl ||
-                  msgData.documentMessageData?.downloadUrl || null;
                 return {
                   id: m.provider_message_id || m.id,
                   text: m.body || '',
                   timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
                   fromMe: m.direction === 'outbound',
                   status: 'read',
-                  type: m.type || 'text',
-                  mediaUrl
+                  type: m.message_type || 'text',
+                  mediaUrl: m.media_url || null
                 };
               });
               return res.json({ success: true, messages: formatted, source: 'db' });

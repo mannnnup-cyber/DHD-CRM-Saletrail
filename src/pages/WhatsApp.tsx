@@ -1293,8 +1293,12 @@ export default function WhatsApp() {
                     </div>
                     <button
                       onClick={() => {
-                        // Navigate to contacts page with search for this phone
-                        window.location.href = `/crm?tab=contacts&search=${encodeURIComponent(selectedChat.phone)}`;
+                        // Search for contact by phone in the contacts list
+                        // This filters the contacts table to find matching phone
+                        const phone = selectedChat.phone.replace(/\D/g, '');
+                        // Open contacts in new tab with search
+                        const contactsUrl = `/contacts?search=${encodeURIComponent(phone)}`;
+                        window.open(contactsUrl, '_blank');
                       }}
                       className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 rounded-lg text-xs text-blue-400 hover:text-blue-300 transition-colors"
                       title="Open contact in CRM"
