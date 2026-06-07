@@ -1310,6 +1310,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, results: msgs || [] });
       }
 
+      case 'bulkUpdateChats': {
+        // POST /api/whatsapp?action=bulkUpdateChats
+        // Bulk update multiple chats (status, assignedTo)
+        const { chatIds, status, assignedTo } = req.body;
+
+        if (!chatIds || !Array.isArray(chatIds) || chatIds.length === 0) {
+          return res.status(400).json({ success: false, error: 'chatIds array required' });
+        }
+
+        if (supabase === null) {
+          return res.json({ success: false, error: 'Supabase not configured' });
+        }
+
+        try {
+          const updates: any = {};
+          if (status) updates.status = status;
+          if (assignedTo) updates.assigned_to = assignedTo;
+          updates.updated_at = new Date().toISOString();
+
+          if (Object.keys(updates).length === 0) {
+            return res.json({ success: false, error: 'No updates specified' });
+          }
+
+          // Batch update in groups of 50
+          let updated = 0;
+          for (let i = 0; i < chatIds.length; i += 50) {
+            const batch = chatIds.slice(i, i + 50);
+            const { error } = await supabase
+              .from('whatsapp_chats')
+              .upsert(
+                batch.map((id: string) => ({ chat_id: id, ...updates })),
+                { onConflict: 'chat_id' }
+              );
+
+            if (error) {
+              console.error('[bulkUpdateChats] Batch update error:', error);
+            } else {
+              updated += batch.length;
+            }
+          }
+
+          return res.json({
+            success: true,
+            message: `Updated ${updated} chats`,
+            updated
+          });
+        } catch (err: any) {
+          console.error('[bulkUpdateChats] Error:', err?.message || err);
+          return res.json({ success: false, error: err?.message || 'Bulk update failed' });
+        }
+      }
+
       case 'getCalls': {
         // GET /api/whatsapp?action=getCalls&chatId={id}&limit=20
         const chatId = req.query.chatId as string;
@@ -2221,7 +2273,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           error: 'Unknown action',
           available: [
             // Green API actions
-            'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'searchUnified', 'getCalls', 'mediaProxy', 'messageCount',
+            'status', 'settings', 'webhookInfo', 'setWebhook', 'contacts', 'chats', 'messages', 'send', 'receive', 'deleteNotification', 'checkWhatsapp', 'avatar', 'readChat', 'archiveChat', 'sendFile', 'searchMessages', 'searchUnified', 'getCalls', 'bulkUpdateChats', 'mediaProxy', 'messageCount',
             // Evolution API actions
             'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'selectProvider', 'sendMedia', 'sendAudio',
             // Utilities

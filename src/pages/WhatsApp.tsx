@@ -105,6 +105,8 @@ export default function WhatsApp() {
   const [unifiedSearchQuery, setUnifiedSearchQuery] = useState('');
   const [unifiedSearchResults, setUnifiedSearchResults] = useState<any[]>([]);
   const [unifiedSearching, setUnifiedSearching] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  const [bulkActionInProgress, setBulkActionInProgress] = useState(false);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachCaption, setAttachCaption] = useState('');
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
@@ -712,6 +714,68 @@ export default function WhatsApp() {
     return () => clearTimeout(t);
   }, [unifiedSearchQuery, searchUnified]);
 
+  // Toggle chat selection for bulk actions
+  const toggleChatSelection = (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSelection = new Set(selectedChatIds);
+    if (newSelection.has(chatId)) {
+      newSelection.delete(chatId);
+    } else {
+      newSelection.add(chatId);
+    }
+    setSelectedChatIds(newSelection);
+  };
+
+  // Select all visible chats
+  const selectAllChats = () => {
+    if (selectedChatIds.size === filteredChats.length) {
+      setSelectedChatIds(new Set());
+    } else {
+      setSelectedChatIds(new Set(filteredChats.map(c => c.id)));
+    }
+  };
+
+  // Bulk update chats (resolve, assign, etc.)
+  const bulkUpdateChats = async (updates: { status?: string; assignedTo?: string }) => {
+    if (selectedChatIds.size === 0) return;
+    setBulkActionInProgress(true);
+
+    try {
+      const res = await fetch('/api/whatsapp?action=bulkUpdateChats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatIds: Array.from(selectedChatIds),
+          ...updates
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Update local state
+        setChats(prev => prev.map(chat => {
+          if (selectedChatIds.has(chat.id)) {
+            return {
+              ...chat,
+              ...(updates.status && { status: updates.status }),
+              ...(updates.assignedTo && { assignedTo: updates.assignedTo })
+            };
+          }
+          return chat;
+        }));
+        setSelectedChatIds(new Set());
+        alert(`✅ Updated ${selectedChatIds.size} chats`);
+      } else {
+        alert(`❌ Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error('Bulk update error:', err);
+      alert('❌ Network error');
+    }
+
+    setBulkActionInProgress(false);
+  };
+
   // Handle unified search result selection
   const selectUnifiedResult = (result: any) => {
     if (result.type === 'chat') {
@@ -1042,7 +1106,66 @@ export default function WhatsApp() {
                 </button>
               )}
             </div>
+
+            {/* Bulk Actions Toolbar */}
+            {selectedChatIds.size > 0 && (
+              <div className="p-2 bg-blue-900/30 border-t border-blue-700/50 space-y-2">
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-xs text-blue-400 font-semibold">
+                    {selectedChatIds.size} selected
+                  </span>
+                  <button
+                    onClick={() => setSelectedChatIds(new Set())}
+                    className="text-xs px-2 py-1 text-gray-400 hover:text-white transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  <button
+                    onClick={() => bulkUpdateChats({ status: 'resolved' })}
+                    disabled={bulkActionInProgress}
+                    className="flex-1 text-xs px-2 py-1.5 bg-green-600/50 hover:bg-green-600 text-green-100 rounded transition-colors disabled:opacity-50"
+                  >
+                    Mark Resolved
+                  </button>
+                  <button
+                    onClick={() => bulkUpdateChats({ status: 'pending' })}
+                    disabled={bulkActionInProgress}
+                    className="flex-1 text-xs px-2 py-1.5 bg-yellow-600/50 hover:bg-yellow-600 text-yellow-100 rounded transition-colors disabled:opacity-50"
+                  >
+                    Mark Pending
+                  </button>
+                  <button
+                    onClick={() => {
+                      const assignTo = prompt('Assign to (team member name):', 'Sarah');
+                      if (assignTo) bulkUpdateChats({ assignedTo: assignTo });
+                    }}
+                    disabled={bulkActionInProgress}
+                    className="flex-1 text-xs px-2 py-1.5 bg-blue-600/50 hover:bg-blue-600 text-blue-100 rounded transition-colors disabled:opacity-50"
+                  >
+                    Assign to...
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto">
+              {/* Select All / Bulk Selection Header */}
+              {filteredChats.length > 1 && (
+                <div className="p-2 border-b border-gray-700/30 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedChatIds.size === filteredChats.length && filteredChats.length > 0}
+                    onChange={selectAllChats}
+                    className="w-4 h-4 rounded cursor-pointer"
+                  />
+                  <span className="text-xs text-gray-500">
+                    {selectedChatIds.size > 0 ? `${selectedChatIds.size} selected` : 'Select all'}
+                  </span>
+                </div>
+              )}
+
               {filteredChats.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">
                   {syncing ? 'Loading chats...' : 'No chats found'}
@@ -1067,6 +1190,14 @@ export default function WhatsApp() {
                     }`}
                   >
                     <div className="flex items-start gap-3">
+                      {/* Checkbox for bulk selection */}
+                      <input
+                        type="checkbox"
+                        checked={selectedChatIds.has(chat.id)}
+                        onChange={(e) => toggleChatSelection(chat.id, e as any)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 rounded cursor-pointer mt-1 flex-shrink-0"
+                      />
                       <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm">
                         {avatars[chat.id]
                           ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[chat.id])}`} alt="" className="w-full h-full object-cover" />
