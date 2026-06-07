@@ -878,6 +878,15 @@ export default function WhatsApp() {
   const activeChats = chats.filter(c => c.status === 'active').length;
   const resolvedChats = chats.filter(c => c.status === 'resolved').length;
 
+  // Calculate call metrics
+  const totalCalls = allCalls.length;
+  const missedCalls = allCalls.filter(c => c.status === 'missed').length;
+  const missedCallRate = totalCalls > 0 ? Math.round((missedCalls / totalCalls) * 100) : 0;
+  const totalDuration = allCalls.reduce((sum, c) => sum + (c.duration || 0), 0);
+  const avgCallDuration = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0;
+  const todaysCalls = allCalls.filter(c => new Date(c.timestamp).toDateString() === new Date().toDateString());
+  const todaysMissedCalls = todaysCalls.filter(c => c.status === 'missed').length;
+
   // Determine if using real or mock data
   const isUsingRealData = hasRealData && connected === true;
 
@@ -1004,7 +1013,7 @@ export default function WhatsApp() {
             key={tab}
             onClick={() => {
               setActiveTab(tab);
-              if (tab === 'calls') loadAllCalls();
+              if (tab === 'calls' || tab === 'stats') loadAllCalls();
             }}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all capitalize ${
               activeTab === tab ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
@@ -1655,6 +1664,12 @@ export default function WhatsApp() {
             { label: 'Avg Response Time', value: '4 min', icon: Clock, color: 'amber' },
             { label: 'Conversations Resolved', value: resolvedChats.toString(), icon: CheckCheck, color: 'green' },
             { label: 'Unassigned Chats', value: chats.filter(c => c.assignedTo === 'Unassigned').length.toString(), icon: User, color: 'red' },
+            // Call metrics
+            { label: 'Total Calls', value: totalCalls.toString(), icon: Phone, color: 'blue' },
+            { label: 'Calls Today', value: todaysCalls.length.toString(), icon: Phone, color: 'green' },
+            { label: 'Missed Call Rate', value: `${missedCallRate}%`, icon: Phone, color: missedCallRate > 30 ? 'red' : 'amber' },
+            { label: 'Avg Call Duration', value: avgCallDuration > 0 ? `${avgCallDuration}s` : '0s', icon: Clock, color: 'purple' },
+            { label: 'Missed Calls Today', value: todaysMissedCalls.toString(), icon: Phone, color: todaysMissedCalls > 0 ? 'red' : 'green' },
           ].map((stat, i) => (
             <div key={i} className="bg-gray-800/60 rounded-xl p-6 border border-gray-700/50">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
