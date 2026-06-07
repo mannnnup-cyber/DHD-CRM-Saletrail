@@ -70,7 +70,8 @@ interface DBTestResult {
 
 export default function WhatsApp() {
   const { state, addCall } = useApp();
-  const [activeTab, setActiveTab] = useState<'inbox' | 'stats' | 'setup'>('inbox');
+  const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
+  const [allCalls, setAllCalls] = useState<any[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -343,6 +344,19 @@ export default function WhatsApp() {
       }
     };
     loadCallsForChat();
+  }, []);
+
+  // Load all calls from all chats
+  const loadAllCalls = useCallback(async () => {
+    try {
+      const res = await fetch('/api/whatsapp?action=getAllCalls&limit=500');
+      const data = await res.json();
+      if (data.success && data.calls) {
+        setAllCalls(data.calls);
+      }
+    } catch (err) {
+      console.error('Error loading all calls:', err);
+    }
   }, []);
 
   // Pull more message history for the current chat from Evolution API
@@ -985,15 +999,19 @@ export default function WhatsApp() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-800/40 rounded-xl p-1">
-        {(['inbox', 'stats', 'setup'] as const).map(tab => (
+        {(['inbox', 'calls', 'stats', 'setup'] as const).map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab);
+              if (tab === 'calls') loadAllCalls();
+            }}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all capitalize ${
               activeTab === tab ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
             }`}
           >
             {tab === 'inbox' && `Inbox${totalUnread > 0 ? ` (${totalUnread})` : ''}`}
+            {tab === 'calls' && 'Calls'}
             {tab === 'stats' && 'Stats'}
             {tab === 'setup' && 'Setup'}
           </button>
@@ -1563,6 +1581,67 @@ export default function WhatsApp() {
             )}
           </div>
           </div> {/* end inner flex row */}
+        </div>
+      )}
+
+      {/* CALLS TAB */}
+      {activeTab === 'calls' && (
+        <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto">
+          <div className="space-y-2">
+            {allCalls.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                <Phone className="w-12 h-12 mb-3 opacity-50" />
+                <p className="text-sm">No calls yet</p>
+              </div>
+            ) : (
+              allCalls.map((call, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    // Find and open the chat for this call
+                    const chat = chats.find(c => c.id === call.chatId);
+                    if (chat) {
+                      setSelectedChat(chat);
+                      selectedChatRef.current = chat;
+                      setActiveTab('inbox');
+                    }
+                  }}
+                  className="p-4 bg-gray-900 border border-gray-800 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 flex-1">
+                      {/* Status icon */}
+                      <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
+                        {call.status === 'missed' ? (
+                          <Phone className="w-5 h-5 text-red-500 rotate-45" />
+                        ) : (
+                          <Phone className="w-5 h-5 text-green-500" />
+                        )}
+                      </div>
+
+                      {/* Contact info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-white truncate">{call.contactName}</p>
+                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                          <span>{call.callType === 'video' ? '🎥 Video' : '📞 Voice'}</span>
+                          {call.status === 'missed' ? (
+                            <span className="text-red-400">Missed</span>
+                          ) : (
+                            <span>{call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'Incoming'}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Time */}
+                      <div className="text-xs text-gray-500 flex-shrink-0 text-right">
+                        {new Date(call.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
 

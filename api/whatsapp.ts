@@ -853,6 +853,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'getAllCalls': {
+        // GET /api/whatsapp?action=getAllCalls&limit=100
+        // Fetch all calls across all chats, sorted by date (missed first)
+        const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+        const offset = parseInt(req.query.offset as string) || 0;
+
+        if (supabase === null) {
+          return res.json({ success: false, error: 'Supabase not configured' });
+        }
+
+        try {
+          const { data: calls, error } = await supabase
+            .from('whatsapp_calls')
+            .select('*')
+            .order('started_at', { ascending: false })
+            .range(offset, offset + limit - 1);
+
+          if (error) {
+            console.error('[getAllCalls] Database error:', error);
+            return res.json({ success: false, error: error.message });
+          }
+
+          // Get contact names for each call
+          const chatIds = [...new Set((calls || []).map((c: any) => c.chat_id))];
+          const { data: chatMeta } = await supabase
+            .from('whatsapp_chats')
+            .select('chat_id, contact_name')
+            .in('chat_id', chatIds);
+
+          const contactMap: Record<string, string> = {};
+          (chatMeta || []).forEach((row: any) => {
+            contactMap[row.chat_id] = row.contact_name || '';
+          });
+
+          // Sort: missed calls first, then by timestamp
+          const sorted = (calls || []).sort((a: any, b: any) => {
+            const aMissed = a.status === 'missed' ? 0 : 1;
+            const bMissed = b.status === 'missed' ? 0 : 1;
+            if (aMissed !== bMissed) return aMissed - bMissed;
+            return new Date(b.started_at).getTime() - new Date(a.started_at).getTime();
+          });
+
+          return res.json({
+            success: true,
+            calls: sorted.map((call: any) => ({
+              id: call.id,
+              chatId: call.chat_id,
+              contactName: contactMap[call.chat_id] || call.chat_id.replace(/@[a-z.]+$/, ''),
+              callType: call.call_type, // 'voice' or 'video'
+              status: call.status, // 'answered', 'missed', 'rejected'
+              duration: call.duration_seconds,
+              timestamp: call.started_at
+            }))
+          });
+        } catch (err: any) {
+          console.error('[getAllCalls] Error:', err?.message || err);
+          return res.json({ success: false, error: err?.message || 'Failed to fetch calls' });
+        }
+      }
+
       case 'searchUnified': {
         // Unified search: finds contacts, chats, and messages in one query
         const q = req.query.q as string;
