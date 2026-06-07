@@ -1252,6 +1252,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
+      case 'initiateCall': {
+        // POST /api/whatsapp?action=initiateCall
+        // Initiate a WhatsApp call via Evolution API
+        const { chatId, isVideo } = req.body;
+
+        if (!chatId) {
+          return res.status(400).json({ success: false, error: 'chatId required' });
+        }
+
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName) {
+          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
+        }
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+
+        try {
+          const callUrl = new URL(`/message/sendCall/${instanceName}`, EVOLUTION_API_URL).toString();
+          const r = await fetch(callUrl, {
+            method: 'POST',
+            headers: {
+              'apikey': EVOLUTION_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              number: chatId,
+              isVideo: isVideo || false
+            })
+          });
+
+          const data = await r.json();
+
+          if (!r.ok) {
+            const errMsg = data.message || data.error || JSON.stringify(data);
+            console.error('Call initiation failed:', errMsg);
+            return res.json({ success: false, error: errMsg });
+          }
+
+          return res.json({
+            success: true,
+            callId: data.id || data.callId || 'unknown',
+            message: 'Call initiated'
+          });
+        } catch (err: any) {
+          console.error('Call initiation error:', err.message);
+          return res.json({ success: false, error: err.message });
+        }
+      }
+
       case 'disconnect': {
         // POST /api/whatsapp?action=disconnect
         // Disconnects WhatsApp (deletes Evolution instance)

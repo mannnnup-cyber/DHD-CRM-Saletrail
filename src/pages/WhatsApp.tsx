@@ -72,6 +72,9 @@ export default function WhatsApp() {
   const { state, addCall } = useApp();
   const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
   const [allCalls, setAllCalls] = useState<any[]>([]);
+  const [callingChatId, setCallingChatId] = useState<string | null>(null);
+  const [callTimer, setCallTimer] = useState(0);
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -528,6 +531,49 @@ export default function WhatsApp() {
     } catch (err) {
       console.error('[updateChatStatus] failed:', err);
     }
+  };
+
+  // Initiate a WhatsApp call
+  const initiateCall = async (chatId: string, isVideo?: boolean) => {
+    try {
+      setCallingChatId(chatId);
+      setCallTimer(0);
+
+      const res = await fetch('/api/whatsapp?action=initiateCall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, isVideo: isVideo || false })
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        console.error('Failed to initiate call:', data.error);
+        setCallingChatId(null);
+        alert(`Failed to initiate call: ${data.error}`);
+        return;
+      }
+
+      // Start call timer
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      callTimerRef.current = setInterval(() => {
+        setCallTimer(prev => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      console.error('Call error:', err);
+      setCallingChatId(null);
+      alert('Failed to initiate call');
+    }
+  };
+
+  // End the current call
+  const endCall = () => {
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    setCallingChatId(null);
+    setCallTimer(0);
   };
 
   // Mock helpers removed to reduce unused-symbol noise
@@ -1319,6 +1365,15 @@ export default function WhatsApp() {
                       )}
                     </div>
                     <button
+                      onClick={() => initiateCall(selectedChat.id, false)}
+                      disabled={callingChatId !== null}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs text-green-400 hover:text-green-300 transition-colors"
+                      title="Make WhatsApp call"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      Call
+                    </button>
+                    <button
                       onClick={() => {
                         // Search for contact by phone in the contacts list
                         // This filters the contacts table to find matching phone
@@ -1835,6 +1890,53 @@ export default function WhatsApp() {
             <p className="text-gray-400 text-sm mt-1">
               Green API works like WhatsApp Web. Your DHD Business phone must stay connected to WiFi at the office 24/7. Keep it plugged in and charging.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* CALLING UI OVERLAY */}
+      {callingChatId && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-3xl p-8 text-center max-w-sm w-full mx-4 border border-gray-700">
+            {/* Contact Avatar */}
+            <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-3xl mx-auto mb-6">
+              {avatars[callingChatId]
+                ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[callingChatId])}`} alt="" className="w-full h-full object-cover" />
+                : selectedChat?.name.charAt(0).toUpperCase()}
+            </div>
+
+            {/* Contact Name */}
+            <h2 className="text-white text-2xl font-bold mb-2">
+              {selectedChat?.name}
+            </h2>
+
+            {/* Call Status */}
+            <p className="text-gray-400 text-sm mb-6">
+              Calling...
+            </p>
+
+            {/* Timer */}
+            <div className="bg-gray-800/50 rounded-2xl py-4 px-6 mb-6">
+              <p className="text-green-400 text-3xl font-bold font-mono">
+                {`${Math.floor(callTimer / 60).toString().padStart(2, '0')}:${(callTimer % 60).toString().padStart(2, '0')}`}
+              </p>
+            </div>
+
+            {/* End Call Button */}
+            <button
+              onClick={endCall}
+              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-red-600 hover:bg-red-700 text-white rounded-full font-semibold transition-colors mb-4"
+            >
+              <Phone className="w-5 h-5 rotate-135" />
+              End Call
+            </button>
+
+            {/* Speaker Toggle */}
+            <button
+              className="w-full px-6 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-full text-sm transition-colors"
+            >
+              Speaker Off
+            </button>
           </div>
         </div>
       )}
