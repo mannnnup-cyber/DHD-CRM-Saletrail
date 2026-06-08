@@ -1692,12 +1692,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const chatsRes = await fetch(chatsUrl, {
             method: 'POST',
             headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+            body: JSON.stringify({}),
+            signal: AbortSignal.timeout(15000)
           });
 
           if (!chatsRes.ok) {
-            console.error('[syncEvolutionMessages] Failed to get chats:', chatsRes.status);
-            return res.json({ success: false, error: 'Failed to fetch chats' });
+            const errBody = await chatsRes.text().catch(() => '');
+            console.error('[syncEvolutionMessages] findChats failed:', chatsRes.status, errBody);
+
+            // Fallback: pull recent messages directly without chat list
+            // Groups them by chatId to build a synthetic chat list
+            console.log('[syncEvolutionMessages] Falling back to direct message fetch...');
+            const msgsUrl = new URL(`/chat/findMessages/${instanceName}`, EVOLUTION_API_URL).toString();
+            const msgsRes = await fetch(msgsUrl, {
+              method: 'POST',
+              headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ where: {}, limit: 200 }),
+              signal: AbortSignal.timeout(15000)
+            });
+
+            if (!msgsRes.ok) {
+              const msgsErr = await msgsRes.text().catch(() => '');
+              console.error('[syncEvolutionMessages] Fallback also failed:', msgsRes.status, msgsErr);
+              return res.json({ success: false, error: `Evolution API error ${chatsRes.status}: ${errBody.slice(0, 200)}` });
+            }
+
+            const msgsData = await msgsRes.json();
+            const allRecords = extractRecords(msgsData);
+            console.log('[syncEvolutionMessages] Fallback got', allRecords.length, 'messages');
+
+            if (supabase && allRecords.length > 0) {
+              const toInsert = allRecords.filter((m: any) => m.key?.id).map((m: any) => mapToDbRow(m, m.key?.remoteJid || '', m.pushName || ''));
+              const { error: dbErr } = await supabase.from('whatsapp_messages')
+                .upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
+              if (dbErr) return res.json({ success: false, error: dbErr.message });
+              return res.json({ success: true, count: toInsert.length, chatsProcessed: new Set(toInsert.map((m: any) => m.chat_id)).size, message: 'Synced via fallback (direct messages)' });
+            }
+            return res.json({ success: true, count: 0, message: 'No messages found via fallback' });
           }
 
           const allChats = await chatsRes.json();
