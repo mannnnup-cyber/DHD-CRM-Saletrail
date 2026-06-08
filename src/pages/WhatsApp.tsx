@@ -295,13 +295,13 @@ export default function WhatsApp() {
             const rawId: string = chat.id || '';
             const isLid = rawId.includes('@lid');
             const isGroup = rawId.includes('@g.us');
-            // @lid IDs have a numeric device ID that looks like a phone but isn't
-            // Don't use it as a display name — fall back to 'Unknown contact'
             const rawName: string = chat.name || '';
             const isNumericOnly = /^\d+$/.test(rawName.trim());
+            // Extract phone from chat ID (before @suffix) for fallback
+            const phoneFromId = rawId.includes('@') ? rawId.split('@')[0] : rawId;
             const displayName = rawName && !isNumericOnly
               ? rawName
-              : isGroup ? 'Group Chat' : 'Unknown contact';
+              : isGroup ? 'Group Chat' : phoneFromId; // show phone instead of "Unknown contact"
             return ({
             id: rawId,
             name: displayName,
