@@ -605,7 +605,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
             fromMe: m.direction === 'outbound',
             status: 'read',
-            type: m.message_type || 'text',
+            type: m.message_type || m.type || 'text', // message_type is new col; fall back to legacy 'type'
             mediaUrl: m.media_url || null
           }));
 
