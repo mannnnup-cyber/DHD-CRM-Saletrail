@@ -264,17 +264,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Handle CALL events (Evolution API)
-      if (provider === 'evolution' && typeWebhook === 'call') {
-        console.log('[Webhook] CALL event received:', { chatId: body.data?.remoteJid, callType: body.data?.callType, status: body.data?.status });
+      // Evolution API CALL event payload uses 'from' (not 'remoteJid') for the caller JID.
+      // Also handle 'calls.upsert' event name variant from newer Evolution builds.
+      if (provider === 'evolution' && (typeWebhook === 'call' || typeWebhook === 'calls.upsert')) {
+        // Evolution API v2 CALL payload: { event:'CALL', data:{ id, from, callType, status, timestamp, duration } }
+        const callData = body.data || body;
+        const rawCallerId = callData.from || callData.remoteJid || callData.chatId || '';
+        console.log('[Webhook] CALL event received:', { from: rawCallerId, callType: callData.callType, status: callData.status, raw: callData });
 
-        if (supabase !== null && body.data?.remoteJid) {
-          const callChatId = body.data.remoteJid;
-          const callId = body.data.id || `${callChatId}_${Date.now()}`;
-          const callType = body.data.callType || 'voice'; // 'voice' or 'video'
-          const callStatus = body.data.status || 'missed'; // 'answered', 'missed', 'rejected'
-          const callStarted = body.data.timestamp ? new Date(body.data.timestamp * 1000).toISOString() : new Date().toISOString();
-          const callEnded = body.data.endedAt ? new Date(body.data.endedAt * 1000).toISOString() : null;
-          const callDuration = body.data.duration || 0; // seconds
+        if (supabase !== null && rawCallerId) {
+          const callChatId = rawCallerId;
+          const callId = callData.id || callData.callId || `${callChatId}_${Date.now()}`;
+          const callType = callData.callType || callData.type || 'voice'; // 'voice' or 'video'
+          const callStatus = callData.status || callData.callStatus || 'missed'; // 'answered', 'missed', 'rejected'
+          const rawTs = callData.timestamp || callData.date || callData.dateTime;
+          const callStarted = rawTs ? new Date(rawTs * 1000).toISOString() : new Date().toISOString();
+          const rawEnd = callData.endedAt || callData.endAt;
+          const callEnded = rawEnd ? new Date(rawEnd * 1000).toISOString() : null;
+          const callDuration = callData.duration || callData.durationSeconds || 0; // seconds
 
           // Idempotency check
           const { data: existingCall } = await supabase
