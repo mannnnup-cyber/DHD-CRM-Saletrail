@@ -680,17 +680,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(404).json({ error: 'No media data in Evolution API response' });
             }
 
-            const match = b64Raw.match(/^data:([^;]+);base64,(.+)$/);
+            // Match full MIME type including codec params: data:audio/ogg; codecs=opus;base64,...
+            const match = b64Raw.match(/^data:([^,]+);base64,(.+)$/s);
+            let mimeType = 'application/octet-stream';
+            let b64Data = b64Raw;
             if (match) {
-              res.setHeader('Content-Type', match[1]);
-              res.setHeader('Cache-Control', 'public, max-age=3600');
-              return res.send(Buffer.from(match[2], 'base64'));
-            } else {
-              // Raw base64 without data URI prefix
-              res.setHeader('Content-Type', 'application/octet-stream');
-              res.setHeader('Cache-Control', 'public, max-age=3600');
-              return res.send(Buffer.from(b64Raw, 'base64'));
+              // match[1] = "audio/ogg; codecs=opus"  match[2] = base64 data
+              mimeType = match[1].trim();
+              b64Data = match[2];
             }
+            // Normalize OGG audio MIME for broad browser support
+            if (mimeType.startsWith('audio/ogg')) mimeType = 'audio/ogg';
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('Content-Disposition', 'inline'); // stream in <audio>/<img>, don't download
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            return res.send(Buffer.from(b64Data, 'base64'));
           } catch (err: any) {
             console.error('[mediaProxy/msgId] Error:', err.message);
             return res.status(500).json({ error: err.message });
