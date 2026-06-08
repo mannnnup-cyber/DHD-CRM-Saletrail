@@ -371,7 +371,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const stateRes = await fetch(stateUrl, {
               method: 'GET',
               headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {},
-              signal: AbortSignal.timeout(5000) // 5s timeout
+              signal: AbortSignal.timeout(15000) // 15s timeout (Railway cold start can be slow)
             });
 
             if (stateRes.ok) {

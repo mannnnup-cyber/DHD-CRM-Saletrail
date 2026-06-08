@@ -196,6 +196,38 @@ export default function WhatsApp() {
     }
   }, [chats]);
 
+  const [syncing2, setSyncing2] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+
+  // Sync missed messages from Evolution API (catches webhooks that were missed)
+  const syncNow = useCallback(async () => {
+    setSyncing2(true);
+    setSyncResult(null);
+    try {
+      const r = await fetch('/api/whatsapp?action=syncEvolutionMessages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 30 }) // sync top 30 most recent chats
+      });
+      const data = await r.json();
+      if (data.success) {
+        setSyncResult(`✓ Synced ${data.count ?? 0} messages from ${data.chatsProcessed ?? 0} chats`);
+        // Clear message cache and reload
+        chatMessagesCache.current = {};
+        await loadChats();
+        if (selectedChatRef.current) {
+          await loadMessages(selectedChatRef.current.id);
+        }
+      } else {
+        setSyncResult(`✗ Sync failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      setSyncResult(`✗ ${err.message}`);
+    }
+    setSyncing2(false);
+    setTimeout(() => setSyncResult(null), 5000);
+  }, [loadChats, loadMessages]);
+
   // Check connection status via backend API
   const checkStatus = useCallback(async () => {
     try {
@@ -980,9 +1012,19 @@ export default function WhatsApp() {
           <button
             onClick={() => { checkStatus(); checkWebhookStatus(); loadChats(); }}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+            title="Reload chats from database"
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
             Refresh
+          </button>
+          <button
+            onClick={syncNow}
+            disabled={syncing2}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+            title="Pull latest messages directly from Evolution API (catches missed webhook events)"
+          >
+            <Database className={`w-4 h-4 ${syncing2 ? 'animate-spin' : ''}`} />
+            {syncing2 ? 'Syncing...' : 'Sync'}
           </button>
           <button
             onClick={() => setShowNewMessage(true)}
@@ -1087,6 +1129,15 @@ export default function WhatsApp() {
           </button>
         ))}
       </div>
+
+      {/* Sync result toast */}
+      {syncResult && (
+        <div className={`mx-2 flex items-center gap-2 px-4 py-2 rounded-lg text-sm ${
+          syncResult.startsWith('✓') ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'
+        }`}>
+          {syncResult}
+        </div>
+      )}
 
       {/* INBOX TAB */}
       {activeTab === 'inbox' && (
