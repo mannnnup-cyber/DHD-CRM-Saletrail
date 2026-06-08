@@ -6,9 +6,13 @@ import { supabase } from '../lib/supabase';
 // WhatsApp API is handled by backend /api/whatsapp (Evolution API / Baileys)
 // This avoids CORS issues and keeps credentials secure
 
-const formatChatTimestamp = (rawTimestamp: number): string => {
+const formatChatTimestamp = (rawTimestamp: number | string): string => {
   if (!rawTimestamp) return '';
-  const date = new Date(rawTimestamp * 1000);
+  // Accept unix seconds (number) OR ISO string
+  const date = typeof rawTimestamp === 'string'
+    ? new Date(rawTimestamp)
+    : new Date(rawTimestamp * 1000);
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   const yesterday = new Date(now);
@@ -17,6 +21,23 @@ const formatChatTimestamp = (rawTimestamp: number): string => {
   if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   if (isYesterday) return 'Yesterday';
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
+// Friendly label for message type previews in the chat list
+const friendlyLastMessage = (text: string): string => {
+  const map: Record<string, string> = {
+    '[audioMessage]': '🎵 Voice note',
+    '[pttMessage]': '🎤 Voice note',
+    '[imageMessage]': '📷 Photo',
+    '[videoMessage]': '🎥 Video',
+    '[documentMessage]': '📄 Document',
+    '[stickerMessage]': '🏷️ Sticker',
+    '[reactionMessage]': '👍 Reaction',
+    '[locationMessage]': '📍 Location',
+    '[contactMessage]': '👤 Contact',
+    '[conversation]': '',
+  };
+  return map[text] ?? text;
 };
 
 // Format a message timestamp (unix seconds or ISO string) → "2:34 PM", "Yesterday 2:34 PM", "Jun 5, 2:34 PM"
@@ -249,11 +270,16 @@ export default function WhatsApp() {
           const formatted: Chat[] = data.chats.slice(0, 300).map((chat: any) => ({
             id: chat.id || '',
             name: chat.name || chat.phone || 'Unknown',
-            lastMessage: chat.lastMessage || '',
-            timestamp: chat.rawTimestamp ? formatChatTimestamp(chat.rawTimestamp) : (chat.timestamp || ''),
+            lastMessage: friendlyLastMessage(chat.lastMessage || ''),
+            // Format timestamp from either unix seconds or ISO string
+            timestamp: chat.rawTimestamp
+              ? formatChatTimestamp(chat.rawTimestamp)
+              : chat.timestamp
+                ? formatChatTimestamp(chat.timestamp)  // handles ISO string now
+                : '',
             rawTimestamp: chat.rawTimestamp || 0,
             unread: chat.unread || 0,
-            assignedTo: 'Unassigned',
+            assignedTo: chat.assignedTo || 'Unassigned',
             phone: chat.phone || chat.id?.split('@')[0] || '',
             status: (chat.status || 'active') as 'active' | 'resolved' | 'pending'
           }));
@@ -614,7 +640,8 @@ export default function WhatsApp() {
         // Update (or create) chat entry in the sidebar list, move it to top
         setChats(prev => {
           const existing = prev.find(c => c.id === msg.chat_id);
-          const snippet = (msg.body || '').slice(0, 80);
+          const rawSnippet = (msg.body || '').slice(0, 80);
+          const snippet = friendlyLastMessage(rawSnippet);
           const updatedChat: Chat = existing
             ? {
                 ...existing,
@@ -1268,7 +1295,7 @@ export default function WhatsApp() {
                           <span className="text-gray-500 text-[10px] flex-shrink-0 ml-2">{chat.timestamp}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <p className="text-gray-400 text-xs truncate">{chat.lastMessage}</p>
+                          <p className="text-gray-400 text-xs truncate">{friendlyLastMessage(chat.lastMessage)}</p>
                           {chat.unread > 0 && (
                             <span className="ml-2 flex-shrink-0 bg-green-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center font-bold">
                               {chat.unread}
