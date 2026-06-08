@@ -396,8 +396,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Fallback: if we have recent messages, webhook is working → consider connected
+        // Empty DB (e.g. after a fresh wipe) does NOT mean disconnected — return null (unknown)
         const active = await hasRecentMessages();
-        return res.json({ success: true, connected: active, state: active ? 'webhook_active' : 'unknown', instanceName });
+        return res.json({
+          success: true,
+          connected: active ? true : null, // null = unknown, don't show red banner
+          state: active ? 'webhook_active' : 'unknown',
+          instanceName
+        });
       }
 
       case 'webhookInfo': {

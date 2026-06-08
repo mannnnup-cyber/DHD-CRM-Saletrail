@@ -221,12 +221,16 @@ export default function WhatsApp() {
       const r = await fetch('/api/whatsapp?action=status');
       const data = await r.json();
       if (data.success) {
-        setConnected(data.connected === true);
+        // null = unknown state (e.g. fresh DB wipe, can't reach Evolution API)
+        // Don't show red banner for unknown — only for definite false
+        if (data.connected === true) setConnected(true);
+        else if (data.connected === false) setConnected(false);
+        else setConnected(null); // unknown → keep checking spinner, no red banner
       } else {
         setConnected(false);
       }
     } catch {
-      setConnected(false);
+      setConnected(null); // network error → unknown, not disconnected
     }
   }, []);
 
