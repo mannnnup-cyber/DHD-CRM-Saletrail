@@ -109,6 +109,7 @@ interface DBTestResult {
 export default function WhatsApp() {
   const { state, addCall } = useApp();
   const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
+  const [chatFilter, setChatFilter] = useState<'all' | 'individual' | 'groups'>('all');
   const [allCalls, setAllCalls] = useState<any[]>([]);
   const [callingChatId, setCallingChatId] = useState<string | null>(null);
   const [callTimer, setCallTimer] = useState(0);
@@ -681,24 +682,20 @@ export default function WhatsApp() {
       .catch(() => {}); // fire-and-forget, non-blocking
   }, [checkStatus, checkWebhookStatus, loadChats]);
 
-  // Poll for new messages every 30 seconds
+  // Poll for new messages every 15 seconds (fallback when webhook/realtime misses events)
   useEffect(() => {
     const interval = setInterval(() => {
-      checkStatus();
-      if (selectedChat) {
-        loadMessages(selectedChat.id);
-      }
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [checkStatus, selectedChat, loadMessages]);
-
-  // Reload chats periodically
-  useEffect(() => {
-    const interval = setInterval(() => {
+      // Always reload chats to surface new conversations
       loadChats();
-    }, 60000);
+      // Reload messages for the open chat (clears cache entry first so it re-fetches)
+      if (selectedChatRef.current) {
+        const id = selectedChatRef.current.id;
+        delete chatMessagesCache.current[id];
+        loadMessages(id);
+      }
+    }, 15000);
     return () => clearInterval(interval);
-  }, [loadChats]);
+  }, [loadChats, loadMessages]);
 
   useEffect(() => {
     if (selectedChat) loadMessages(selectedChat.id);
@@ -924,6 +921,11 @@ export default function WhatsApp() {
   // (messageCount/loadingCount removed — Green API quota tracking no longer needed)
 
   const filteredChats = chats.filter(c => {
+    // Group vs individual filter: groups have @g.us JID suffix
+    const isGroup = c.id.includes('@g.us');
+    if (chatFilter === 'groups' && !isGroup) return false;
+    if (chatFilter === 'individual' && isGroup) return false;
+
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase().replace(/\D/g, '');
     const nameMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1193,6 +1195,23 @@ export default function WhatsApp() {
               )}
             </div>
 
+            {/* Chat type filter: All / Individual / Groups */}
+            <div className="flex border-b border-gray-700/50">
+              {(['all', 'individual', 'groups'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setChatFilter(f)}
+                  className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                    chatFilter === f
+                      ? 'text-green-400 border-b-2 border-green-400 bg-green-500/5'
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {f === 'all' ? 'All' : f === 'individual' ? '👤 People' : '👥 Groups'}
+                </button>
+              ))}
+            </div>
+
             {/* Bulk Actions Toolbar */}
             {selectedChatIds.size > 0 && (
               <div className="p-2 bg-blue-900/30 border-t border-blue-700/50 space-y-2">
@@ -1292,6 +1311,9 @@ export default function WhatsApp() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-white text-sm font-medium truncate">{chat.name}</span>
+                          {chat.id.includes('@g.us') && (
+                            <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded px-1 flex-shrink-0">GROUP</span>
+                          )}
                           <span className="text-gray-500 text-[10px] flex-shrink-0 ml-2">{chat.timestamp}</span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1515,11 +1537,13 @@ export default function WhatsApp() {
                               Download document
                             </a>
                           )}
-                          {/* Text / caption */}
-                          {msg.text ? (
+                          {/* Text / caption — hide raw type placeholders like [audioMessage] */}
+                          {msg.text && !msg.text.match(/^\[.+Message\]$|^\[conversation\]$/) ? (
                             <p className="text-sm leading-relaxed">{msg.text}</p>
-                          ) : !msg.mediaUrl ? (
-                            <p className="text-sm leading-relaxed italic opacity-60">Media message</p>
+                          ) : !msg.mediaUrl && (!msg.text || msg.text.match(/^\[.+\]$/)) ? (
+                            <p className="text-sm leading-relaxed italic opacity-60">
+                              {friendlyLastMessage(msg.text || '') || 'Media message'}
+                            </p>
                           ) : null}
                           <div className={`flex items-center gap-1 mt-1 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
                             <span className="text-[10px] opacity-70">{formatMessageTime(msg.timestamp)}</span>
@@ -1672,9 +1696,20 @@ export default function WhatsApp() {
         <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto">
           <div className="space-y-2">
             {allCalls.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                <Phone className="w-12 h-12 mb-3 opacity-50" />
-                <p className="text-sm">No calls yet</p>
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center px-6">
+                <Phone className="w-12 h-12 mb-3 opacity-30" />
+                <p className="text-white font-medium mb-1">No call logs yet</p>
+                <p className="text-sm text-gray-500 mb-4">
+                  Calls appear here when customers call your WhatsApp Business number
+                  and Evolution API sends the call webhook event.
+                </p>
+                <div className="bg-gray-800 rounded-lg p-4 text-left text-xs text-gray-400 space-y-1 w-full max-w-sm">
+                  <p className="text-gray-300 font-medium mb-2">To enable call logging:</p>
+                  <p>1. Open your Evolution API dashboard</p>
+                  <p>2. Go to your instance → Webhook settings</p>
+                  <p>3. Enable the <code className="bg-gray-700 px-1 rounded">CALL</code> event type</p>
+                  <p>4. Make or receive a WhatsApp call</p>
+                </div>
               </div>
             ) : (
               allCalls.map((call, idx) => (
