@@ -199,35 +199,6 @@ export default function WhatsApp() {
   const [syncing2, setSyncing2] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
-  // Sync missed messages from Evolution API (catches webhooks that were missed)
-  const syncNow = useCallback(async () => {
-    setSyncing2(true);
-    setSyncResult(null);
-    try {
-      const r = await fetch('/api/whatsapp?action=syncEvolutionMessages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 30 }) // sync top 30 most recent chats
-      });
-      const data = await r.json();
-      if (data.success) {
-        setSyncResult(`✓ Synced ${data.count ?? 0} messages from ${data.chatsProcessed ?? 0} chats`);
-        // Clear message cache and reload
-        chatMessagesCache.current = {};
-        await loadChats();
-        if (selectedChatRef.current) {
-          await loadMessages(selectedChatRef.current.id);
-        }
-      } else {
-        setSyncResult(`✗ Sync failed: ${data.error}`);
-      }
-    } catch (err: any) {
-      setSyncResult(`✗ ${err.message}`);
-    }
-    setSyncing2(false);
-    setTimeout(() => setSyncResult(null), 5000);
-  }, [loadChats, loadMessages]);
-
   // Check connection status via backend API
   const checkStatus = useCallback(async () => {
     try {
@@ -393,6 +364,36 @@ export default function WhatsApp() {
     };
     loadCallsForChat();
   }, []);
+
+  // Sync missed messages from Evolution API (catches webhooks that were missed)
+  // Defined AFTER loadChats and loadMessages to avoid temporal dead zone (TDZ) error
+  const syncNow = useCallback(async () => {
+    setSyncing2(true);
+    setSyncResult(null);
+    try {
+      const r = await fetch('/api/whatsapp?action=syncEvolutionMessages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 30 }) // sync top 30 most recent chats
+      });
+      const data = await r.json();
+      if (data.success) {
+        setSyncResult(`✓ Synced ${data.count ?? 0} messages from ${data.chatsProcessed ?? 0} chats`);
+        // Clear message cache and reload
+        chatMessagesCache.current = {};
+        await loadChats();
+        if (selectedChatRef.current) {
+          await loadMessages(selectedChatRef.current.id);
+        }
+      } else {
+        setSyncResult(`✗ Sync failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      setSyncResult(`✗ ${err.message}`);
+    }
+    setSyncing2(false);
+    setTimeout(() => setSyncResult(null), 5000);
+  }, [loadChats, loadMessages]);
 
   // Load all calls from all chats
   const loadAllCalls = useCallback(async () => {
