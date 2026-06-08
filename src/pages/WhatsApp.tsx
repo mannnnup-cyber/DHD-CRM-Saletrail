@@ -423,19 +423,27 @@ export default function WhatsApp() {
       });
       const data = await r.json();
       if (data.success) {
-        setMoreHistoryResult(`✅ Pulled ${data.count} messages`);
+        const msg = data.count > 0
+          ? `✓ Pulled ${data.count} messages for this chat`
+          : `✓ Already up to date — no new messages found`;
+        setMoreHistoryResult(msg);
+        setSyncResult(msg); // also show in the always-visible sidebar toast
         // Bust the cache and reload messages
         delete chatMessagesCache.current[chatId];
         await loadMessages(chatId);
       } else {
-        setMoreHistoryResult(`❌ ${data.error || 'Failed to pull history'}`);
+        const err = `✗ ${data.error || 'Failed to pull history'}`;
+        setMoreHistoryResult(err);
+        setSyncResult(err);
       }
     } catch (err) {
-      setMoreHistoryResult('❌ Network error');
+      const msg = '✗ Network error pulling history';
+      setMoreHistoryResult(msg);
+      setSyncResult(msg);
     }
     setLoadingMoreHistory(false);
-    // Clear the result label after 4 seconds
-    setTimeout(() => setMoreHistoryResult(null), 4000);
+    // Clear the result label after 5 seconds
+    setTimeout(() => { setMoreHistoryResult(null); setSyncResult(null); }, 5000);
   }, [loadingMoreHistory, loadMessages]);
 
   // Send message via backend API

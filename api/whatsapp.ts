@@ -1675,9 +1675,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 console.error('[syncEvolutionMessages] DB error:', error);
                 return res.json({ success: false, error: 'Failed to save messages', dbError: error.message });
               }
-              return res.json({ success: true, message: 'Single chat synced', count: toInsert.length });
+              return res.json({ success: true, message: 'Single chat synced', count: toInsert.length, fromApi: records.length });
             }
-            return res.json({ success: true, message: 'No messages found', count: 0 });
+            return res.json({ success: true, message: 'No messages found in Evolution API', count: 0, fromApi: 0 });
           }
 
           // Sync batch of recent chats (sorted by updatedAt descending)
