@@ -223,15 +223,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               : new Date().toISOString();
 
             // Extract media URL from Evolution API message format
+            // Evolution API uses 'url' (not 'downloadUrl') on the media message sub-object
             let mediaUrl = null;
             if (body.data?.message) {
               const msg = body.data.message;
               mediaUrl =
-                msg.imageMessage?.downloadUrl ||
-                msg.videoMessage?.downloadUrl ||
-                msg.audioMessage?.downloadUrl ||
-                msg.documentMessage?.downloadUrl ||
-                msg.stickerMessage?.downloadUrl ||
+                msg.imageMessage?.url || msg.imageMessage?.downloadUrl ||
+                msg.videoMessage?.url || msg.videoMessage?.downloadUrl ||
+                msg.audioMessage?.url || msg.audioMessage?.downloadUrl ||
+                msg.pttMessage?.url || msg.pttMessage?.downloadUrl ||
+                msg.documentMessage?.url || msg.documentMessage?.downloadUrl ||
+                msg.stickerMessage?.url || msg.stickerMessage?.downloadUrl ||
                 null;
             }
 
@@ -629,7 +631,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'mediaProxy': {
         const mediaUrl = req.query.url as string;
-        if (!mediaUrl) return res.status(400).json({ error: 'url required' });
+        const msgId = req.query.msgId as string; // Evolution API message ID (provider_message_id)
+
+        // --- msgId mode: fetch media via Evolution API's base64 decode endpoint ---
+        // WhatsApp media URLs are encrypted CDN links; Evolution API decrypts them
+        // using the mediaKey stored in the raw message. This is the reliable path.
+        if (msgId && !mediaUrl) {
+          if (supabase === null) return res.status(500).json({ error: 'Supabase not configured' });
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (!instanceName || !EVOLUTION_API_URL) {
+            return res.status(500).json({ error: 'Evolution API not configured' });
+          }
+
+          // Load the raw message from DB (we need the full Baileys message object for decryption)
+          const { data: msgRow } = await supabase
+            .from('whatsapp_messages')
+            .select('raw')
+            .eq('provider_message_id', msgId)
+            .maybeSingle();
+
+          if (!msgRow?.raw) {
+            console.error('[mediaProxy/msgId] Message not found in DB:', msgId);
+            return res.status(404).json({ error: 'Message not found' });
+          }
+
+          // Evolution API v2: POST /chat/getBase64FromMediaMessage/{instance}
+          // Body: { message: <full baileys message object> }
+          const b64Url = new URL(`/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`, EVOLUTION_API_URL).toString();
+          try {
+            const rawMsg = msgRow.raw?.data || msgRow.raw; // handle {event, data:msg} or plain msg
+            const r = await fetch(b64Url, {
+              method: 'POST',
+              headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: rawMsg, convertToMp4: false }),
+              signal: AbortSignal.timeout(20000)
+            });
+
+            if (!r.ok) {
+              console.error('[mediaProxy/msgId] Evolution API error:', r.status, await r.text().catch(() => ''));
+              return res.status(r.status).json({ error: `Evolution API returned ${r.status}` });
+            }
+
+            const rData = await r.json();
+            // Response may be: { base64: "data:image/jpeg;base64,..." } or { base64: "raw..." }
+            const b64Raw: string = rData.base64 || rData.data?.base64 || '';
+            if (!b64Raw) {
+              console.error('[mediaProxy/msgId] No base64 in response:', JSON.stringify(rData).slice(0, 200));
+              return res.status(404).json({ error: 'No media data in Evolution API response' });
+            }
+
+            const match = b64Raw.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              res.setHeader('Content-Type', match[1]);
+              res.setHeader('Cache-Control', 'public, max-age=3600');
+              return res.send(Buffer.from(match[2], 'base64'));
+            } else {
+              // Raw base64 without data URI prefix
+              res.setHeader('Content-Type', 'application/octet-stream');
+              res.setHeader('Cache-Control', 'public, max-age=3600');
+              return res.send(Buffer.from(b64Raw, 'base64'));
+            }
+          } catch (err: any) {
+            console.error('[mediaProxy/msgId] Error:', err.message);
+            return res.status(500).json({ error: err.message });
+          }
+        }
+
+        // --- URL mode: direct proxy (for avatars, locally-stored media, etc.) ---
+        if (!mediaUrl) return res.status(400).json({ error: 'url or msgId required' });
         let parsed: URL;
         try { parsed = new URL(mediaUrl); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
         // Allow both https and http (Evolution API on Railway uses http internally)
@@ -1555,6 +1624,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                           msg.message?.videoMessage?.caption ||
                           msg.message?.documentMessage?.caption ||
                           '';
+          // Extract media URL (Evolution API uses 'url' field on media sub-objects)
+          const m = msg.message || {};
+          const mediaSrc =
+            m.imageMessage?.url || m.imageMessage?.downloadUrl ||
+            m.videoMessage?.url || m.videoMessage?.downloadUrl ||
+            m.audioMessage?.url || m.audioMessage?.downloadUrl ||
+            m.pttMessage?.url || m.pttMessage?.downloadUrl ||
+            m.documentMessage?.url || m.documentMessage?.downloadUrl ||
+            m.stickerMessage?.url || m.stickerMessage?.downloadUrl ||
+            null;
           return {
             provider: 'evolution',
             provider_message_id: msg.key?.id,
@@ -1562,7 +1641,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             sender_name: msg.pushName || chatName || '',
             direction: msg.key?.fromMe ? 'outbound' : 'inbound',
             body: msgText || (msg.messageType ? `[${msg.messageType}]` : ''),
-            type: msg.messageType || 'conversation',
+            message_type: msg.messageType || 'conversation',
+            media_url: mediaSrc,
             raw: msg,
             created_at: msg.messageTimestamp
               ? new Date(msg.messageTimestamp > 1e10 ? msg.messageTimestamp : msg.messageTimestamp * 1000).toISOString()

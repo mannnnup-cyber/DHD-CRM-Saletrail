@@ -1554,45 +1554,64 @@ export default function WhatsApp() {
                             ? 'bg-green-600 text-white rounded-br-sm'
                             : 'bg-gray-700 text-gray-100 rounded-bl-sm'
                         }`}>
-                          {/* Inline image */}
-                          {msg.mediaUrl && (msg.type === 'imageMessage' || msg.type?.includes('image')) && (
-                            <img
-                              src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`}
-                              alt="Image"
-                              className="max-w-full rounded-lg mb-1 cursor-pointer"
-                              onClick={() => window.open(`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl!)}`, '_blank')}
-                              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                            />
-                          )}
-                          {/* Audio player (voice note) */}
-                          {msg.mediaUrl && (msg.type === 'audioMessage' || msg.type === 'pttMessage' || msg.type?.includes('audio')) && (
-                            <div className="flex items-center gap-2 mb-1">
-                              <Volume2 className="w-4 h-4 flex-shrink-0 opacity-70" />
-                              <audio controls className="w-48 h-8" src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`} />
-                            </div>
-                          )}
-                          {/* Video */}
-                          {msg.mediaUrl && (msg.type === 'videoMessage' || msg.type?.includes('video')) && (
-                            <video controls className="max-w-full rounded-lg mb-1 max-h-48"
-                              src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`} />
-                          )}
-                          {/* Document download */}
-                          {msg.mediaUrl && (msg.type === 'documentMessage' || msg.type?.includes('document')) && (
-                            <a
-                              href={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`}
-                              download
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-2 mb-1 underline opacity-80 hover:opacity-100 text-xs"
-                            >
-                              <FileText className="w-4 h-4" />
-                              Download document
-                            </a>
-                          )}
+                          {/* ── Media rendering ─────────────────────────────────────
+                               WhatsApp CDN URLs are encrypted and can't be shown directly.
+                               We use Evolution API's /chat/getBase64FromMediaMessage endpoint
+                               (via mediaProxy?msgId=) to decode them server-side.
+                               Falls back to direct URL proxy if the message ID looks like a UUID. */}
+                          {(() => {
+                            const isMediaType = (t: string) =>
+                              ['imageMessage','videoMessage','audioMessage','pttMessage','documentMessage','stickerMessage']
+                                .some(m => t === m || t?.includes(m.replace('Message','')));
+                            if (!isMediaType(msg.type || '')) return null;
+                            // Use msgId mode (Evolution API base64 decode) when we have a real message ID
+                            // Fall back to direct URL proxy for locally-stored / blob URLs
+                            const proxyUrl = msg.mediaUrl && (msg.mediaUrl.startsWith('blob:') || msg.mediaUrl.startsWith('/'))
+                              ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`
+                              : `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(msg.id)}`;
+                            const isImage = msg.type === 'imageMessage' || msg.type?.includes('image');
+                            const isAudio = msg.type === 'audioMessage' || msg.type === 'pttMessage' || msg.type?.includes('audio');
+                            const isVideo = msg.type === 'videoMessage' || msg.type?.includes('video');
+                            const isDoc   = msg.type === 'documentMessage' || msg.type?.includes('document');
+                            return (
+                              <>
+                                {isImage && (
+                                  <img
+                                    src={proxyUrl}
+                                    alt="Image"
+                                    className="max-w-full rounded-lg mb-1 cursor-pointer"
+                                    onClick={() => window.open(proxyUrl, '_blank')}
+                                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                )}
+                                {isAudio && (
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Volume2 className="w-4 h-4 flex-shrink-0 opacity-70" />
+                                    <audio controls className="w-48 h-8" src={proxyUrl} />
+                                  </div>
+                                )}
+                                {isVideo && (
+                                  <video controls className="max-w-full rounded-lg mb-1 max-h-48" src={proxyUrl} />
+                                )}
+                                {isDoc && (
+                                  <a
+                                    href={proxyUrl}
+                                    download
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 mb-1 underline opacity-80 hover:opacity-100 text-xs"
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                    Download document
+                                  </a>
+                                )}
+                              </>
+                            );
+                          })()}
                           {/* Text / caption — hide raw type placeholders like [audioMessage] */}
                           {msg.text && !msg.text.match(/^\[.+Message\]$|^\[conversation\]$/) ? (
                             <p className="text-sm leading-relaxed">{msg.text}</p>
-                          ) : !msg.mediaUrl && (!msg.text || msg.text.match(/^\[.+\]$/)) ? (
+                          ) : (!msg.text || msg.text.match(/^\[.+\]$/)) ? (
                             <p className="text-sm leading-relaxed italic opacity-60">
                               {friendlyLastMessage(msg.text || '') || 'Media message'}
                             </p>
