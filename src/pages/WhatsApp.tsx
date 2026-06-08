@@ -284,7 +284,9 @@ export default function WhatsApp() {
             rawTimestamp: chat.rawTimestamp || 0,
             unread: chat.unread || 0,
             assignedTo: chat.assignedTo || 'Unassigned',
-            phone: chat.phone || chat.id?.split('@')[0] || '',
+            // @lid = WhatsApp linked device ID (not a phone number) — show blank
+            // @s.whatsapp.net = real phone number — extract digits before @
+            phone: chat.id?.includes('@lid') ? '' : (chat.phone || chat.id?.split('@')[0] || ''),
             status: (chat.status || 'active') as 'active' | 'resolved' | 'pending'
           }));
           setChats(formatted);
@@ -715,20 +717,14 @@ export default function WhatsApp() {
       .catch(() => {}); // fire-and-forget, non-blocking
   }, [checkStatus, checkWebhookStatus, loadChats]);
 
-  // Poll for new messages every 15 seconds (fallback when webhook/realtime misses events)
+  // Poll chat LIST every 30 seconds to surface new conversations (quiet — no cache clear)
+  // New messages inside open chats arrive via Supabase real-time subscription, not polling
   useEffect(() => {
     const interval = setInterval(() => {
-      // Always reload chats to surface new conversations
-      loadChats();
-      // Reload messages for the open chat (clears cache entry first so it re-fetches)
-      if (selectedChatRef.current) {
-        const id = selectedChatRef.current.id;
-        delete chatMessagesCache.current[id];
-        loadMessages(id);
-      }
-    }, 15000);
+      loadChats(); // updates unread counts & new chat entries without clearing message cache
+    }, 30000);
     return () => clearInterval(interval);
-  }, [loadChats, loadMessages]);
+  }, [loadChats]);
 
   useEffect(() => {
     if (selectedChat) loadMessages(selectedChat.id);
@@ -747,23 +743,8 @@ export default function WhatsApp() {
     } catch {}
   }, []);
 
-  // Load avatars for top visible chats after chat list updates
-  useEffect(() => {
-    if (chats.length === 0) return;
-    let i = 0;
-    const ids = chats.slice(0, 15).map(c => c.id).filter(id => !fetchingAvatars.current.has(id));
-    const timer = setInterval(() => {
-      if (i >= ids.length) { clearInterval(timer); return; }
-      loadAvatar(ids[i]);
-      i++;
-    }, 250);
-    return () => clearInterval(timer);
-  }, [chats, loadAvatar]);
-
-  // Load avatar for selected chat immediately
-  useEffect(() => {
-    if (selectedChat) loadAvatar(selectedChat.id);
-  }, [selectedChat, loadAvatar]);
+  // Avatar loading disabled — Evolution API avatar endpoint not supported (returns 400)
+  // Chats fall back to initials display which is already implemented
 
   // Request browser notification permission on mount
   useEffect(() => {
@@ -1418,7 +1399,7 @@ export default function WhatsApp() {
                     </div>
                     <div>
                       <p className="text-white font-medium">{selectedChat.name}</p>
-                      <p className="text-gray-400 text-xs">+{selectedChat.phone}</p>
+                      <p className="text-gray-400 text-xs">{selectedChat.phone ? `+${selectedChat.phone}` : selectedChat.id?.split('@')[0] || ''}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
