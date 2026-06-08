@@ -25,6 +25,7 @@ const formatChatTimestamp = (rawTimestamp: number | string): string => {
 
 // Friendly label for message type previews in the chat list
 const friendlyLastMessage = (text: string): string => {
+  if (!text) return '';
   const map: Record<string, string> = {
     '[audioMessage]': '🎵 Voice note',
     '[pttMessage]': '🎤 Voice note',
@@ -36,8 +37,23 @@ const friendlyLastMessage = (text: string): string => {
     '[locationMessage]': '📍 Location',
     '[contactMessage]': '👤 Contact',
     '[conversation]': '',
+    '[groupStatusMentionMessage]': '📢 Group update',
+    '[secretEncryptedMessage]': '🔒 Encrypted message',
+    '[pollCreationMessage]': '📊 Poll',
+    '[pollCreationMessageV3]': '📊 Poll',
+    '[buttonsMessage]': '🔘 Button message',
+    '[listMessage]': '📋 List message',
+    '[templateMessage]': '📝 Template',
+    '[orderMessage]': '🛒 Order',
+    '[productMessage]': '🛍️ Product',
+    '[callLogMessage]': '📞 Call',
+    '[protocolMessage]': '',
+    '[senderKeyDistributionMessage]': '',
   };
-  return map[text] ?? text;
+  // If it matches [someType] pattern not in map, show generic label
+  if (map[text] !== undefined) return map[text];
+  if (/^\[.+\]$/.test(text)) return '📎 Attachment';
+  return text;
 };
 
 // Format a message timestamp (unix seconds or ISO string) → "2:34 PM", "Yesterday 2:34 PM", "Jun 5, 2:34 PM"
@@ -271,9 +287,20 @@ export default function WhatsApp() {
             chatMessagesCache.current = data.messages;
           }
 
-          const formatted: Chat[] = data.chats.slice(0, 500).map((chat: any) => ({
-            id: chat.id || '',
-            name: chat.name || chat.phone || 'Unknown',
+          const formatted: Chat[] = data.chats.slice(0, 500).map((chat: any) => {
+            const rawId: string = chat.id || '';
+            const isLid = rawId.includes('@lid');
+            const isGroup = rawId.includes('@g.us');
+            // @lid IDs have a numeric device ID that looks like a phone but isn't
+            // Don't use it as a display name — fall back to 'Unknown contact'
+            const rawName: string = chat.name || '';
+            const isNumericOnly = /^\d+$/.test(rawName.trim());
+            const displayName = rawName && !isNumericOnly
+              ? rawName
+              : isGroup ? 'Group Chat' : 'Unknown contact';
+            return ({
+            id: rawId,
+            name: displayName,
             lastMessage: friendlyLastMessage(chat.lastMessage || ''),
             // Format timestamp from either unix seconds or ISO string
             timestamp: chat.rawTimestamp
@@ -288,7 +315,7 @@ export default function WhatsApp() {
             // @s.whatsapp.net = real phone number — extract digits before @
             phone: chat.id?.includes('@lid') ? '' : (chat.phone || chat.id?.split('@')[0] || ''),
             status: (chat.status || 'active') as 'active' | 'resolved' | 'pending'
-          }));
+          });});
           setChats(formatted);
           setHasRealData(true);
 
