@@ -506,22 +506,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
-          const activePhone = activeProvider === 'evolution'
-            ? await getSetting('EVOLUTION_PHONE', '')
-            : '';
+          // Use DB function to get ONE row per chat (latest message) — no memory-based grouping limit
+          // This correctly returns ALL chats regardless of total message volume
+          const { data: filteredMsgs, error: fnError } = await supabase
+            .rpc('get_chats_from_messages', { provider_filter: 'evolution' });
 
-          // Fetch recent messages for chat aggregation (sorted newest first)
-          const { data: msgs } = await supabase
-            .from('whatsapp_messages')
-            .select('chat_id, body, created_at, direction, sender_name, provider')
-            .order('created_at', { ascending: false })
-            .limit(2000);
-
-          // Filter to Evolution API messages only
-          const filteredMsgs = (msgs || []).filter((m: any) =>
-            m.provider === 'evolution' || (m.provider === null && activePhone && m.chat_id?.includes(activePhone))
-          );
+          if (fnError) {
+            console.error('[chatsFromDb] RPC error:', fnError);
+            return res.json({ success: false, error: fnError.message });
+          }
 
           // Load persisted chat metadata (status, assignedTo, contact_name for @lid resolution)
           const { data: chatMeta } = await supabase
@@ -575,8 +568,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
 
           const chats = Object.values(byChat)
-            .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-            .slice(0, 300);
+            .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          // No slice — return all chats (DB function already deduplicates efficiently)
           return res.json({ success: true, chats, source: 'db' });
         } catch (err) {
           console.error('chatsFromDb error', err);
