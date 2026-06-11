@@ -1983,6 +1983,144 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
+      case 'addGSMCall': {
+        // POST /api/whatsapp?action=addGSMCall
+        // Receives batched call log from Android companion app
+        // Body: { calls: [{phoneNumber, callType, duration_seconds, timestamp}], device: string, phone?: string }
+        if (req.method !== 'POST') {
+          return res.status(405).json({ success: false, error: 'Method not allowed' });
+        }
+        if (supabase === null) {
+          return res.json({ success: false, error: 'Supabase not configured' });
+        }
+
+        const { calls: gsmCalls, device: deviceModel } = req.body;
+
+        if (!gsmCalls || !Array.isArray(gsmCalls) || gsmCalls.length === 0) {
+          return res.status(400).json({ success: false, error: 'calls array required' });
+        }
+
+        try {
+          let inserted = 0;
+          let skipped = 0;
+
+          for (const call of gsmCalls) {
+            const { phoneNumber, callType, duration_seconds, timestamp } = call;
+            if (!phoneNumber || !callType || !timestamp) { skipped++; continue; }
+
+            // Normalize phone — strip non-digits
+            const phoneNorm = String(phoneNumber).replace(/[^\d]/g, '');
+            const calledAt = new Date(Number(timestamp)).toISOString();
+
+            // Look up existing contact by normalized phone
+            let contactId: string | null = null;
+            let contactName: string | null = null;
+            if (phoneNorm) {
+              const { data: contact } = await supabase
+                .from('contacts')
+                .select('id, name')
+                .eq('phone_normalized', phoneNorm)
+                .maybeSingle();
+              if (contact) {
+                contactId = contact.id;
+                contactName = contact.name || null;
+              }
+            }
+
+            // Upsert into cellular_calls (deduplicate on phone + timestamp)
+            const { error: upsertErr } = await supabase
+              .from('cellular_calls')
+              .upsert({
+                phone_number: String(phoneNumber),
+                phone_normalized: phoneNorm || null,
+                call_type: String(callType).toUpperCase(),
+                duration_seconds: Number(duration_seconds) || 0,
+                called_at: calledAt,
+                contact_id: contactId,
+                contact_name: contactName,
+                device_model: deviceModel || null
+              }, { onConflict: 'phone_normalized,called_at', ignoreDuplicates: true });
+
+            if (!upsertErr) {
+              inserted++;
+              // Log interaction for the contact if matched
+              if (contactId) {
+                const direction = String(callType).toUpperCase() === 'OUTGOING' ? 'OUTBOUND' : 'INBOUND';
+                await supabase.from('interactions').insert({
+                  contact_id: contactId,
+                  type: 'CALL',
+                  direction,
+                  content: `GSM ${callType} call${duration_seconds ? ` (${duration_seconds}s)` : ''}`,
+                  metadata: { source: 'gsm', device_model: deviceModel, phone_number: phoneNumber, duration_seconds },
+                  timestamp: calledAt
+                }).catch(() => {}); // non-blocking
+              }
+            } else {
+              if (upsertErr.code !== '23505') { // ignore unique violation
+                console.error('[addGSMCall] upsert error:', upsertErr.message);
+              }
+              skipped++;
+            }
+          }
+
+          return res.json({ success: true, inserted, skipped, total: gsmCalls.length });
+        } catch (err: any) {
+          console.error('[addGSMCall] Error:', err?.message || err);
+          return res.json({ success: false, error: err?.message || 'Failed to store GSM calls' });
+        }
+      }
+
+      case 'getGSMCalls': {
+        // GET /api/whatsapp?action=getGSMCalls&limit=100&offset=0&type=MISSED
+        if (supabase === null) {
+          return res.json({ success: false, error: 'Supabase not configured' });
+        }
+
+        const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+        const offset = parseInt(req.query.offset as string) || 0;
+        const typeFilter = req.query.type as string | undefined;
+
+        try {
+          let query = supabase
+            .from('cellular_calls')
+            .select('*', { count: 'exact' })
+            .order('called_at', { ascending: false })
+            .range(offset, offset + limit - 1);
+
+          if (typeFilter && typeFilter !== 'All') {
+            query = query.eq('call_type', typeFilter.toUpperCase());
+          }
+
+          const { data: calls, error, count } = await query;
+
+          if (error) {
+            console.error('[getGSMCalls] DB error:', error);
+            return res.json({ success: false, error: error.message });
+          }
+
+          return res.json({
+            success: true,
+            calls: (calls || []).map((c: any) => ({
+              id: c.id,
+              phoneNumber: c.phone_number,
+              phoneNormalized: c.phone_normalized,
+              callType: c.call_type,
+              duration: c.duration_seconds,
+              calledAt: c.called_at,
+              contactId: c.contact_id,
+              contactName: c.contact_name,
+              deviceModel: c.device_model
+            })),
+            total: count || 0,
+            offset,
+            limit
+          });
+        } catch (err: any) {
+          console.error('[getGSMCalls] Error:', err?.message || err);
+          return res.json({ success: false, error: err?.message || 'Failed to fetch GSM calls' });
+        }
+      }
+
       default:
         return res.status(400).json({
           success: false,
@@ -1992,8 +2130,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             'messages', 'chats', 'chatsFromDb', 'send', 'sendMedia', 'sendAudio', 'messageCount', 'mediaProxy',
             // Search & Filtering
             'searchMessages', 'searchUnified',
-            // Call management
-            'getCalls', 'bulkUpdateChats',
+            // WhatsApp call management
+            'getCalls', 'getAllCalls', 'bulkUpdateChats',
+            // GSM companion app
+            'addGSMCall', 'getGSMCalls',
             // Instance management
             'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'setWebhook', 'syncEvolutionMessages',
             // Utilities
