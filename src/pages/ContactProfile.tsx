@@ -161,7 +161,7 @@ const ContactProfile: React.FC = () => {
         requestBody.companyUrl = enrichUrl.trim();
       }
 
-      const response = await fetch('/api/scrape?action=enrichLead', {
+      const response = await fetch('/api/enrichment?action=enrichLead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
@@ -236,7 +236,7 @@ const ContactProfile: React.FC = () => {
     setEnrichError('');
 
     try {
-      const mergeResponse = await fetch('/api/duplicates?action=mergeContacts', {
+      const mergeResponse = await fetch('/api/contacts?action=mergeContacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -272,7 +272,7 @@ const ContactProfile: React.FC = () => {
     if (!id) return;
 
     try {
-      const r = await fetch(`/api/organizations?action=getOrganizations&contactId=${id}`);
+      const r = await fetch(`/api/crm?target=organizations&action=getOrganizations&contactId=${id}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
       setOrganizations(json.organizations || []);
@@ -308,7 +308,7 @@ const ContactProfile: React.FC = () => {
     setOrgError('');
 
     try {
-      const r = await fetch('/api/organizations?action=linkContact', {
+      const r = await fetch('/api/crm?target=organizations&action=linkContact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -349,7 +349,7 @@ const ContactProfile: React.FC = () => {
     if (!confirm('Remove this organizational link?')) return;
 
     try {
-      const r = await fetch('/api/organizations?action=unlinkContact', {
+      const r = await fetch('/api/crm?target=organizations&action=unlinkContact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ linkId })

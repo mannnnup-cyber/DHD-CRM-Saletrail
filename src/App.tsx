@@ -137,7 +137,7 @@ const AppInner: React.FC = () => {
   }, [searchQuery, state.leads, state.deals]);
 
   useEffect(() => {
-    fetch('/api/opportunities')
+    fetch('/api/crm?target=opportunities')
       .then(r => r.json())
       .then(json => setUnreadCount(json.count || 0))
       .catch(() => {});

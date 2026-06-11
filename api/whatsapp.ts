@@ -449,7 +449,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           const webhookSetUrl = new URL(`/webhook/set/${instanceName}`, EVOLUTION_API_URL).toString();
-          const events = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'];
+          const events = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED', 'CALL'];
 
           const r = await fetch(webhookSetUrl, {
             method: 'POST',

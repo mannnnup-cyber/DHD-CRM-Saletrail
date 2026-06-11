@@ -171,6 +171,8 @@ export default function WhatsApp() {
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
   const [moreHistoryResult, setMoreHistoryResult] = useState<string | null>(null);
   const [sendingFile, setSendingFile] = useState(false);
+  const [configuringWebhook, setConfiguringWebhook] = useState(false);
+  const [webhookConfigResult, setWebhookConfigResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingWATarget = useRef<{ phone: string; name: string } | null>(null);
 
@@ -439,6 +441,31 @@ export default function WhatsApp() {
     } catch (err) {
       console.error('Error loading all calls:', err);
     }
+  }, []);
+
+  // Auto-configure Evolution API webhook with all required events (including CALL)
+  const autoConfigureWebhook = useCallback(async () => {
+    setConfiguringWebhook(true);
+    setWebhookConfigResult(null);
+    try {
+      const webhookUrl = `${window.location.origin}/api/whatsapp`;
+      const res = await fetch('/api/whatsapp?action=setWebhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookUrl })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setWebhookConfigResult('✓ Webhook configured! MESSAGES_UPSERT, CONNECTION_UPDATE, and CALL events are now enabled.');
+        setWebhookStatus({ configured: true, url: webhookUrl });
+      } else {
+        setWebhookConfigResult(`✗ ${data.error || 'Failed to configure webhook'}`);
+      }
+    } catch (err: any) {
+      setWebhookConfigResult(`✗ ${err.message}`);
+    }
+    setConfiguringWebhook(false);
+    setTimeout(() => setWebhookConfigResult(null), 8000);
   }, []);
 
   // Pull more message history for the current chat from Evolution API
@@ -1794,13 +1821,19 @@ export default function WhatsApp() {
                   Calls appear here when customers call your WhatsApp Business number
                   and Evolution API sends the call webhook event.
                 </p>
-                <div className="bg-gray-800 rounded-lg p-4 text-left text-xs text-gray-400 space-y-1 w-full max-w-sm">
+                <div className="bg-gray-800 rounded-lg p-4 text-left text-xs text-gray-400 space-y-2 w-full max-w-sm">
                   <p className="text-gray-300 font-medium mb-2">To enable call logging:</p>
-                  <p>1. Open your Evolution API dashboard</p>
-                  <p>2. Go to your instance → Webhook settings</p>
-                  <p>3. Enable the <code className="bg-gray-700 px-1 rounded">CALL</code> event type</p>
-                  <p>4. Make or receive a WhatsApp call</p>
+                  <p>1. Go to the <strong className="text-white">Setup tab</strong> above</p>
+                  <p>2. Click <strong className="text-green-400">⚡ Auto-Configure Webhook</strong></p>
+                  <p>3. Make or receive a WhatsApp call</p>
+                  <p className="text-gray-500 pt-1">This enables the <code className="bg-gray-700 px-1 rounded">CALL</code> event so Evolution API sends call notifications to your CRM.</p>
                 </div>
+                <button
+                  onClick={() => setActiveTab('setup')}
+                  className="mt-3 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Go to Setup →
+                </button>
               </div>
             ) : (
               allCalls.map((call, idx) => (
@@ -1934,18 +1967,33 @@ export default function WhatsApp() {
               {webhookStatus?.configured && (
                 <p className="text-gray-400 text-xs">URL: {webhookStatus.url}</p>
               )}
-              {!webhookStatus?.configured && (
-                <div className="mt-3">
-                  <p className="text-gray-400 text-sm mb-2">To receive real-time messages:</p>
-                  <ol className="text-gray-500 text-xs list-decimal list-inside space-y-1">
-                    <li>Go to your Evolution API dashboard</li>
-                    <li>Select your instance → Webhook settings</li>
-                    <li>Set Webhook URL to: <code className="bg-gray-800 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/whatsapp</code></li>
-                    <li>Enable MESSAGES_UPSERT and CONNECTION_UPDATE events</li>
-                    <li>Save and test</li>
-                  </ol>
-                </div>
-              )}
+              {/* Auto-configure button — shown always so you can re-run after code changes */}
+              <div className="mt-3 space-y-2">
+                <button
+                  onClick={autoConfigureWebhook}
+                  disabled={configuringWebhook}
+                  className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  {configuringWebhook ? (
+                    <>
+                      <span className="animate-spin">⟳</span>
+                      Configuring…
+                    </>
+                  ) : (
+                    <>⚡ Auto-Configure Webhook (includes CALL events)</>
+                  )}
+                </button>
+                {webhookConfigResult && (
+                  <p className={`text-xs px-1 ${webhookConfigResult.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>
+                    {webhookConfigResult}
+                  </p>
+                )}
+                {!webhookStatus?.configured && (
+                  <p className="text-gray-500 text-xs">
+                    Or manually set webhook URL to <code className="bg-gray-800 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/whatsapp</code> and enable: MESSAGES_UPSERT, CONNECTION_UPDATE, CALL
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
@@ -1987,7 +2035,7 @@ export default function WhatsApp() {
               {[
                 { step: '1', title: 'Evolution API Server Running', desc: 'Your Evolution API instance should be running (Railway, Docker, or VPS). Check EVOLUTION_API_URL in Vercel env vars.', done: connected !== null },
                 { step: '2', title: 'Link WhatsApp Business', desc: 'In Settings → Integrations → Link WhatsApp. Scan the QR code with your WhatsApp Business phone.', done: connected === true },
-                { step: '3', title: 'Configure Webhook', desc: 'Webhook URL: ' + (typeof window !== 'undefined' ? window.location.origin : '') + '/api/whatsapp — Set this in your Evolution API dashboard under Webhook settings.', done: webhookStatus?.configured || false },
+                { step: '3', title: 'Configure Webhook', desc: 'Click "Auto-Configure Webhook" above — sets URL and enables MESSAGES_UPSERT, CONNECTION_UPDATE, and CALL events automatically.', done: webhookStatus?.configured || false },
                 { step: '4', title: 'Environment Variables Set', desc: 'EVOLUTION_API_URL and EVOLUTION_API_KEY added to Vercel project settings.', done: connected !== null },
               ].map(item => (
                 <div key={item.step} className={`flex items-start gap-4 p-4 rounded-xl ${

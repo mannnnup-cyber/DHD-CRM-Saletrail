@@ -155,7 +155,7 @@ const LeadImport: React.FC = () => {
     setEnrichError('');
 
     try {
-      const response = await fetch('/api/enrichBulk?action=previewEnrichment', {
+      const response = await fetch('/api/enrichment?action=previewEnrichment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contacts: csvData, sampleSize: 5 })
@@ -184,7 +184,7 @@ const LeadImport: React.FC = () => {
     setEnrichError('');
 
     try {
-      const response = await fetch('/api/enrichBulk?action=enrichContacts', {
+      const response = await fetch('/api/enrichment?action=enrichContacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contacts: csvData })

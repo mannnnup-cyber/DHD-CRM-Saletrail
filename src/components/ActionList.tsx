@@ -51,7 +51,7 @@ const ActionList: React.FC<ActionListProps> = ({ onCountChange, compact = false 
     setLoading(true);
     setError('');
     try {
-      const r = await fetch('/api/opportunities');
+      const r = await fetch('/api/crm?target=opportunities');
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
       const opps: Opportunity[] = json.opportunities || [];
@@ -69,7 +69,7 @@ const ActionList: React.FC<ActionListProps> = ({ onCountChange, compact = false 
   const dismiss = async (opp: Opportunity) => {
     setDismissing(prev => new Set(prev).add(opp.id));
     try {
-      await fetch('/api/opportunities?action=dismiss', {
+      await fetch('/api/crm?target=opportunities&action=dismiss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ruleKey: opp.rule, sourceId: opp.sourceId }),

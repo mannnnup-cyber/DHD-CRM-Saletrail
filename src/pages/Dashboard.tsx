@@ -70,7 +70,7 @@ const Dashboard: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const r = await fetch('/api/dashboard');
+      const r = await fetch('/api/crm');
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setData(await r.json());
     } catch (e: any) {
