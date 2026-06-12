@@ -152,43 +152,62 @@ async function handleUploadRecording(
   res: NextApiResponse
 ) {
   try {
-    // Parse multipart form data
     const { fields, files } = await parseFormData(req);
 
-    const org_id = fields.org_id?.[0] || '';
-    const user_id = fields.user_id?.[0] || '';
-    const device_id = fields.device_id?.[0] || '';
-    const call_id = fields.call_id?.[0] || '';
+    // Fields sent by useCallRecorder.ts in the companion app
     const phone_number = fields.phone_number?.[0] || '';
-    const filename = fields.filename?.[0] || '';
-    const duration_ms = parseInt(fields.duration_ms?.[0] || '0', 10);
-    const file = files.file?.[0];
+    const timestamp_ms = parseInt(fields.timestamp_ms?.[0] || '0', 10);
+    const device_phone = fields.device_phone?.[0] || '';
+    const filename     = fields.filename?.[0] || '';
+    const duration_ms  = parseInt(fields.duration_ms?.[0] || '0', 10);
+    const file         = files.file?.[0];
 
-    console.log('[recordings] Upload request:', {
-      call_id,
-      org_id,
-      filename,
-      size: file?.size,
-    });
+    console.log('[recordings] Upload request:', { phone_number, timestamp_ms, filename, size: file?.size });
 
-    if (!file || !call_id || !org_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: file, call_id, org_id',
-      });
+    if (!file || !filename) {
+      return res.status(400).json({ success: false, error: 'Missing file or filename' });
     }
 
-    // Check if we should record this call
+    // ── Resolve org_id ─────────────────────────────────────────────────────
+    // Use the single org in app_settings, or 'default' if none configured.
+    // In a multi-tenant setup this would come from an API key header.
+    const { data: orgRow } = await supabase
+      .from('app_settings')
+      .select('setting_value')
+      .eq('setting_key', 'ORG_ID')
+      .maybeSingle();
+    const org_id = orgRow?.setting_value || 'default';
+
+    // ── Resolve call_id ────────────────────────────────────────────────────
+    // Try to find a matching cellular_call (phone + timestamp within ±2 min).
+    // Falls back to a deterministic UUID derived from phone + timestamp.
+    let call_id: string;
+    if (phone_number && timestamp_ms) {
+      const windowMs = 2 * 60 * 1000;
+      const low  = new Date(timestamp_ms - windowMs).toISOString();
+      const high = new Date(timestamp_ms + windowMs).toISOString();
+      const normPhone = phone_number.replace(/\D/g, '');
+
+      const { data: matched } = await supabase
+        .from('cellular_calls')
+        .select('id')
+        .ilike('phone_number', `%${normPhone}%`)
+        .gte('called_at', low)
+        .lte('called_at', high)
+        .order('called_at', { ascending: false })
+        .limit(1);
+
+      call_id = matched?.[0]?.id || crypto.randomUUID();
+    } else {
+      call_id = crypto.randomUUID();
+    }
+
+    // ── Policy check ───────────────────────────────────────────────────────
     if (await shouldSkipRecording(phone_number, org_id)) {
-      console.log('[recordings] Recording skipped based on settings');
-      return res.json({
-        success: true,
-        skipped: true,
-        message: 'Recording skipped by policy',
-      });
+      return res.json({ success: true, skipped: true, message: 'Recording skipped by policy' });
     }
 
-    // Check if recording already exists (multi-device dedup)
+    // ── Multi-device dedup ─────────────────────────────────────────────────
     const { data: existing } = await supabase
       .from('audio_recordings')
       .select('recording_id')
@@ -197,80 +216,58 @@ async function handleUploadRecording(
       .limit(1);
 
     if (existing && existing.length > 0) {
-      console.log('[recordings] Recording already exists for this call');
       return res.json({
         success: true,
         recording_id: existing[0].recording_id,
-        message: 'Recording already exists from another device',
+        message: 'Recording already exists (deduplicated)',
       });
     }
 
-    // Upload file to Supabase Storage
-    const storagePath = `org-${org_id}/recordings/${user_id}/${filename}`;
-    const uploadResult = await uploadToStorage(
-      file.filepath,
-      storagePath,
-      org_id
-    );
+    // ── Upload to Supabase Storage ─────────────────────────────────────────
+    const storagePath = `recordings/${org_id}/${device_phone || 'unknown'}/${filename}`;
+    const uploadResult = await uploadToStorage(file.filepath, storagePath, org_id);
 
-    // Create recording metadata in database
+    // ── Save metadata ──────────────────────────────────────────────────────
     const { data: recording, error: dbError } = await supabase
       .from('audio_recordings')
       .insert({
         call_id,
-        device_id: device_id || null,
-        user_id,
         org_id,
-        file_path: uploadResult.path,
-        file_size_bytes: uploadResult.size,
-        duration_seconds: Math.floor(duration_ms / 1000),
+        file_path:            uploadResult.path,
+        file_size_bytes:      uploadResult.size,
+        duration_seconds:     Math.floor(duration_ms / 1000),
         transcription_status: 'PENDING',
       })
       .select()
       .single();
 
     if (dbError) {
-      console.error('[recordings] Database error:', dbError);
-      return res.status(500).json({
-        success: false,
-        error: `Recording save failed: ${dbError.message}`,
-      });
+      console.error('[recordings] DB insert error:', dbError);
+      return res.status(500).json({ success: false, error: dbError.message });
     }
 
-    // Queue transcription job
-    const { error: jobError } = await supabase
-      .from('transcription_jobs')
-      .insert({
-        recording_id: recording.recording_id,
-        status: 'QUEUED',
-        attempts: 0,
-        max_attempts: 3,
-      });
+    // ── Queue transcription job ────────────────────────────────────────────
+    await supabase.from('transcription_jobs').insert({
+      recording_id: recording.recording_id,
+      status:       'QUEUED',
+      attempts:     0,
+      max_attempts: 3,
+    });
 
-    if (jobError) {
-      console.error('[recordings] Job queue error:', jobError);
-      // Don't fail the upload if job queueing fails - retry later
-    }
-
-    // Clean up temp file
-    try {
-      fs.unlinkSync(file.filepath);
-    } catch (_) {}
+    try { fs.unlinkSync(file.filepath); } catch (_) {}
 
     console.log('[recordings] Upload complete:', recording.recording_id);
-
     return res.json({
       success: true,
-      recording_id: recording.recording_id,
+      recording_id:         recording.recording_id,
+      call_id,
       transcription_status: 'PENDING',
-      message: 'Recording uploaded and queued for transcription',
+      message:              'Recording uploaded and queued for transcription',
     });
+
   } catch (err: any) {
     console.error('[recordings] Upload error:', err);
-    return res.status(500).json({
-      success: false,
-      error: err.message || 'Upload failed',
-    });
+    return res.status(500).json({ success: false, error: err.message || 'Upload failed' });
   }
 }
 

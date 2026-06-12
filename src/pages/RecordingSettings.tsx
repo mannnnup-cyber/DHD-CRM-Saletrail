@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useSupabase } from '../hooks/useSupabase';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface RecordingSettingsType {
   setting_id: string;
@@ -16,7 +16,6 @@ interface RecordingSettingsType {
 }
 
 export default function RecordingSettings() {
-  const { supabase } = useSupabase();
   const [settings, setSettings] = useState<RecordingSettingsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

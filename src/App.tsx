@@ -12,6 +12,8 @@ import LeadImport from './pages/LeadImport';
 import WooCommerce from './pages/WooCommerce';
 import CallSync from './pages/CallSync';
 import CompanionApp from './pages/CompanionApp';
+import CoachingDashboard from './pages/CoachingDashboard';
+import RecordingSettings from './pages/RecordingSettings';
 import Templates from './pages/Templates';
 import Team from './pages/Team';
 import Reports from './pages/Reports';
@@ -333,6 +335,8 @@ const AppInner: React.FC = () => {
             <Route path="/woocommerce" element={<WooCommerce />} />
             <Route path="/call-sync" element={<CallSync />} />
             <Route path="/companion" element={<CompanionApp />} />
+            <Route path="/coaching" element={<CoachingDashboard />} />
+            <Route path="/recording-settings" element={<RecordingSettings />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/team" element={<Team />} />
             <Route path="/reports" element={<Reports />} />
