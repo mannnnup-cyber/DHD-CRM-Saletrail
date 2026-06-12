@@ -2046,14 +2046,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               // Log interaction for the contact if matched
               if (contactId) {
                 const direction = String(callType).toUpperCase() === 'OUTGOING' ? 'OUTBOUND' : 'INBOUND';
-                await supabase.from('interactions').insert({
-                  contact_id: contactId,
-                  type: 'CALL',
-                  direction,
-                  content: `GSM ${callType} call${duration_seconds ? ` (${duration_seconds}s)` : ''}`,
-                  metadata: { source: 'gsm', device_model: deviceModel, phone_number: phoneNumber, duration_seconds },
-                  timestamp: calledAt
-                }).catch(() => {}); // non-blocking
+                try {
+                  await supabase.from('interactions').insert({
+                    contact_id: contactId,
+                    type: 'CALL',
+                    direction,
+                    content: `GSM ${callType} call${duration_seconds ? ` (${duration_seconds}s)` : ''}`,
+                    metadata: { source: 'gsm', device_model: deviceModel, phone_number: phoneNumber, duration_seconds },
+                    timestamp: calledAt
+                  });
+                } catch (interactionErr) {
+                  // Log interaction insertion errors but don't fail the sync (non-blocking)
+                  console.warn('[addGSMCall] interaction insert failed (non-blocking):', interactionErr);
+                }
               }
             } else {
               if (upsertErr.code !== '23505') { // ignore unique violation
