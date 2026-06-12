@@ -11,6 +11,7 @@ import Quotes from './pages/Quotes';
 import LeadImport from './pages/LeadImport';
 import WooCommerce from './pages/WooCommerce';
 import CallSync from './pages/CallSync';
+import CompanionApp from './pages/CompanionApp';
 import Templates from './pages/Templates';
 import Team from './pages/Team';
 import Reports from './pages/Reports';
@@ -315,6 +316,7 @@ const AppInner: React.FC = () => {
             <Route path="/leads" element={<LeadImport />} />
             <Route path="/woocommerce" element={<WooCommerce />} />
             <Route path="/call-sync" element={<CallSync />} />
+            <Route path="/companion" element={<CompanionApp />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/team" element={<Team />} />
             <Route path="/reports" element={<Reports />} />
