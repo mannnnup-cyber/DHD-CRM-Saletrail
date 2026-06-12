@@ -27,7 +27,7 @@ import ContactModal from './components/ContactModal';
 import ActionList from './components/ActionList';
 import {
   Menu, Bell, Search, X, LogOut, User,
-  ChevronDown, AlertTriangle
+  ChevronDown, AlertTriangle, Smartphone
 } from 'lucide-react';
 
 class ErrorBoundary extends React.Component<
@@ -221,6 +221,22 @@ const AppInner: React.FC = () => {
 
           {/* Right: Notifications + Profile */}
           <div className="flex items-center gap-2">
+
+            {/* Companion App download icon */}
+            <div className="relative group">
+              <button
+                onClick={() => { window.location.hash = '#/companion'; }}
+                className="p-2 text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded-lg transition-colors"
+                title="Get the Android companion app"
+              >
+                <Smartphone className="w-5 h-5" />
+              </button>
+              {/* Tooltip */}
+              <div className="absolute right-0 top-full mt-2 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 px-3 py-2.5 hidden group-hover:block pointer-events-none">
+                <p className="text-xs font-semibold text-white">Companion App</p>
+                <p className="text-xs text-gray-400 mt-0.5">Download the Android app for call sync & recording</p>
+              </div>
+            </div>
 
             {/* Notification Bell */}
             <div className="relative" ref={notifRef}>
