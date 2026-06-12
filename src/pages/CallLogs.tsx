@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed,
   MessageSquare, Search, Filter, RefreshCw, Smartphone,
-  ChevronDown
+  ChevronDown, QrCode
 } from 'lucide-react';
+import CompanionConnect from '../components/CompanionConnect';
 
 interface GSMCall {
   id: string;
@@ -73,6 +74,7 @@ const CallLogs: React.FC = () => {
   const [tab, setTab]               = useState<ActiveTab>('gsm');
   const [search, setSearch]         = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [showConnect, setShowConnect] = useState(false);
 
   // GSM state
   const [gsmCalls, setGsmCalls]   = useState<GSMCall[]>([]);
@@ -257,7 +259,17 @@ const CallLogs: React.FC = () => {
                 ))}
               </select>
             </div>
+            <button
+              onClick={() => setShowConnect(true)}
+              className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded-xl py-2.5 px-4 text-sm font-semibold hover:bg-amber-500/20"
+            >
+              <QrCode className="w-4 h-4" /> Connect Phone
+            </button>
           </div>
+
+          {showConnect && (
+            <CompanionConnect asModal onClose={() => setShowConnect(false)} />
+          )}
 
           {/* Empty state — no app installed yet */}
           {!gsmLoading && gsmTotal === 0 && !gsmError && (
@@ -271,11 +283,8 @@ const CallLogs: React.FC = () => {
                 sync cellular call logs here. The app runs in the background and syncs
                 every 60 minutes.
               </p>
-              <div className="bg-gray-800 rounded-xl p-4 text-left max-w-sm mx-auto">
-                <p className="text-xs font-semibold text-gray-300 mb-2">Webhook URL for the app:</p>
-                <code className="text-xs text-amber-400 break-all">
-                  {window.location.origin}/api/whatsapp?action=addGSMCall
-                </code>
+              <div className="flex justify-center">
+                <CompanionConnect />
               </div>
             </div>
           )}
