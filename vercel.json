@@ -16,12 +16,19 @@
     },
     "api/transcribe.ts": {
       "maxDuration": 300
+    },
+    "api/analyze.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
     {
       "path": "/api/transcribe",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/analyze?action=batchAnalyze",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
