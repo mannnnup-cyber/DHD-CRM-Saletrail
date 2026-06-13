@@ -1,4 +1,4 @@
-name: CI
+name: CI + Deploy
 
 on:
   push:
@@ -7,19 +7,30 @@ on:
     branches: [ master ]
 
 jobs:
-  build:
-    runs-on: windows-latest
+  build-and-deploy:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      - name: Install
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
         run: npm ci
+
       - name: TypeScript check
         run: npx tsc --noEmit
-      - name: Secrets quick-scan
+
+      - name: Deploy to Vercel (Production)
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
-          if (git rev-parse --is-inside-work-tree > /dev/null 2>&1); then true; fi
-          git grep -n "API_KEY\|PASSWORD\|SECRET\|PRIVATE_KEY" || true
+          npm install -g vercel@latest
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
