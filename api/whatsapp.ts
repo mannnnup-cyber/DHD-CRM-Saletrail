@@ -1994,7 +1994,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.json({ success: false, error: 'Supabase not configured' });
         }
 
-        const { calls: gsmCalls, device: deviceModel } = req.body;
+        const { calls: gsmCalls, device: deviceModel, phone: repPhone } = req.body;
 
         if (!gsmCalls || !Array.isArray(gsmCalls) || gsmCalls.length === 0) {
           return res.status(400).json({ success: false, error: 'calls array required' });
@@ -2003,6 +2003,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           let inserted = 0;
           let skipped = 0;
+
+          // ── Auto-register / heartbeat device ────────────────────────────────
+          // Upserts on phone_number so the same rep never creates duplicate rows.
+          // rep_name starts NULL; manager sets it in the Device Admin page.
+          if (repPhone) {
+            await supabase.from('devices').upsert({
+              phone_number:   repPhone,
+              device_model:   deviceModel || null,
+              is_active:      true,
+              last_heartbeat: new Date().toISOString(),
+            }, { onConflict: 'phone_number' }).select();
+          }
 
           for (const call of gsmCalls) {
             const { phoneNumber, callType, duration_seconds, timestamp } = call;
@@ -2038,7 +2050,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 called_at: calledAt,
                 contact_id: contactId,
                 contact_name: contactName,
-                device_model: deviceModel || null
+                device_model: deviceModel || null,
+                rep_phone: repPhone || null,
               }, { onConflict: 'phone_normalized,called_at', ignoreDuplicates: true });
 
             if (!upsertErr) {
@@ -2052,7 +2065,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     type: 'CALL',
                     direction,
                     content: `GSM ${callType} call${duration_seconds ? ` (${duration_seconds}s)` : ''}`,
-                    metadata: { source: 'gsm', device_model: deviceModel, phone_number: phoneNumber, duration_seconds },
+                    metadata: { source: 'gsm', device_model: deviceModel, phone_number: phoneNumber, duration_seconds, rep_phone: repPhone || null },
                     timestamp: calledAt
                   });
                 } catch (interactionErr) {
@@ -2075,6 +2088,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'getDevices': {
+        // GET /api/whatsapp?action=getDevices
+        // Returns all registered companion devices with last heartbeat & rep name
+        if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
+        try {
+          const { data, error } = await supabase
+            .from('devices')
+            .select('device_id, phone_number, device_name, device_model, is_active, last_heartbeat, created_at')
+            .order('last_heartbeat', { ascending: false });
+          if (error) throw error;
+          return res.json({ success: true, devices: data || [] });
+        } catch (err: any) {
+          return res.json({ success: false, error: err.message });
+        }
+      }
+
+      case 'updateDeviceName': {
+        // POST /api/whatsapp?action=updateDeviceName
+        // Body: { phone_number, device_name }
+        // Lets a manager assign a friendly name (e.g. "John Smith") to a device
+        if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
+        const { phone_number: devPhone, device_name: devName } = req.body;
+        if (!devPhone) return res.status(400).json({ success: false, error: 'phone_number required' });
+        try {
+          const { error } = await supabase
+            .from('devices')
+            .update({ device_name: devName || null })
+            .eq('phone_number', devPhone);
+          if (error) throw error;
+          // Also backfill rep_name on all existing cellular_calls from this device
+          await supabase
+            .from('cellular_calls')
+            .update({ rep_name: devName || null })
+            .eq('rep_phone', devPhone);
+          return res.json({ success: true });
+        } catch (err: any) {
+          return res.json({ success: false, error: err.message });
+        }
+      }
+
       case 'getGSMCalls': {
         // GET /api/whatsapp?action=getGSMCalls&limit=100&offset=0&type=MISSED
         if (supabase === null) {
@@ -2084,6 +2137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
         const offset = parseInt(req.query.offset as string) || 0;
         const typeFilter = req.query.type as string | undefined;
+        const repFilter  = req.query.rep  as string | undefined;
 
         try {
           let query = supabase
@@ -2094,6 +2148,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           if (typeFilter && typeFilter !== 'All') {
             query = query.eq('call_type', typeFilter.toUpperCase());
+          }
+          if (repFilter && repFilter !== 'all') {
+            query = query.eq('rep_phone', repFilter);
           }
 
           const { data: calls, error, count } = await query;

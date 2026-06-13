@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Smartphone, Download, QrCode, CheckCircle2, Phone, Mic,
   RefreshCw, BarChart3, ChevronDown, ChevronUp, ExternalLink,
-  Shield, Wifi, Clock, Copy, Check
+  Shield, Wifi, Clock, Copy, Check, Users, Pencil, Save, X,
+  Circle, Activity
 } from 'lucide-react';
 
 const REPO = 'mannnnup-cyber/DHD-CRM-Companion';
@@ -179,6 +180,9 @@ export default function CompanionApp() {
         </div>
       </div>
 
+      {/* ── Device Admin ── */}
+      <DeviceAdmin />
+
       {/* ── Footer links ── */}
       <div className="flex flex-wrap gap-3 justify-center text-xs text-[#656d76]">
         <a
@@ -202,6 +206,215 @@ export default function CompanionApp() {
         </a>
       </div>
 
+    </div>
+  );
+}
+
+// ── Device Admin ─────────────────────────────────────────────────────────────
+interface Device {
+  device_id: string;
+  phone_number: string;
+  device_name: string | null;
+  device_model: string | null;
+  is_active: boolean;
+  last_heartbeat: string | null;
+  created_at: string;
+}
+
+function DeviceAdmin() {
+  const [devices, setDevices]     = useState<Device[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName]   = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
+
+  async function loadDevices() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/whatsapp?action=getDevices');
+      const data = await res.json();
+      if (data.success) setDevices(data.devices);
+      else setError(data.error || 'Failed to load devices');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadDevices(); }, []);
+
+  async function saveName(phone_number: string) {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/whatsapp?action=updateDeviceName', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number, device_name: editName.trim() || null }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDevices(prev => prev.map(d =>
+          d.phone_number === phone_number ? { ...d, device_name: editName.trim() || null } : d
+        ));
+        setEditingId(null);
+      } else {
+        setError(data.error || 'Save failed');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function isOnline(heartbeat: string | null): boolean {
+    if (!heartbeat) return false;
+    return (Date.now() - new Date(heartbeat).getTime()) < 5 * 60 * 1000; // online if heartbeat < 5 min ago
+  }
+
+  function lastSeen(heartbeat: string | null): string {
+    if (!heartbeat) return 'Never';
+    const diff = Date.now() - new Date(heartbeat).getTime();
+    const m = Math.floor(diff / 60000);
+    const h = Math.floor(m / 60);
+    const d = Math.floor(h / 24);
+    if (m < 2)   return 'Just now';
+    if (m < 60)  return `${m}m ago`;
+    if (h < 24)  return `${h}h ago`;
+    return `${d}d ago`;
+  }
+
+  return (
+    <div className="bg-[#0d1117] border border-[#30363d] rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between p-5 border-b border-[#30363d]">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[#00c89622] flex items-center justify-center">
+            <Users size={16} className="text-[#00c896]" />
+          </div>
+          <div>
+            <div className="text-white font-semibold text-sm">Connected Devices</div>
+            <div className="text-[#656d76] text-xs">Manage rep phones and assign names to each device</div>
+          </div>
+        </div>
+        <button
+          onClick={loadDevices}
+          className="p-2 text-[#656d76] hover:text-white hover:bg-[#161b22] rounded-lg transition-colors"
+          title="Refresh"
+        >
+          <RefreshCw size={14} />
+        </button>
+      </div>
+
+      <div className="p-5">
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">{error}</div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-8 text-[#656d76] text-sm">Loading devices…</div>
+        ) : devices.length === 0 ? (
+          <div className="text-center py-8">
+            <Smartphone size={32} className="text-[#30363d] mx-auto mb-3" />
+            <p className="text-[#8b949e] text-sm font-medium">No devices registered yet</p>
+            <p className="text-[#656d76] text-xs mt-1">Devices appear here automatically after the first sync from the companion app.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {devices.map(device => {
+              const online  = isOnline(device.last_heartbeat);
+              const editing = editingId === device.device_id;
+              return (
+                <div key={device.device_id} className="bg-[#161b22] border border-[#30363d] rounded-xl p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    {/* Left: status dot + info */}
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className="flex-shrink-0 mt-0.5">
+                        {online
+                          ? <Activity size={16} className="text-[#00c896]" />
+                          : <Circle   size={16} className="text-[#656d76]" />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {/* Rep name (editable) */}
+                        {editing ? (
+                          <div className="flex items-center gap-2 mb-2">
+                            <input
+                              autoFocus
+                              value={editName}
+                              onChange={e => setEditName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') saveName(device.phone_number); if (e.key === 'Escape') setEditingId(null); }}
+                              placeholder="Rep name (e.g. John Smith)"
+                              className="flex-1 bg-[#0d1117] border border-[#00c89666] rounded-lg px-3 py-1.5 text-sm text-white placeholder-[#656d76] focus:outline-none focus:border-[#00c896]"
+                            />
+                            <button
+                              onClick={() => saveName(device.phone_number)}
+                              disabled={saving}
+                              className="p-1.5 bg-[#00c896] text-black rounded-lg hover:bg-[#00b085] disabled:opacity-50"
+                            >
+                              <Save size={13} />
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="p-1.5 text-[#656d76] hover:text-white hover:bg-[#30363d] rounded-lg"
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-semibold text-white">
+                              {device.device_name || <span className="text-[#656d76] italic font-normal">Unnamed rep</span>}
+                            </span>
+                            <button
+                              onClick={() => { setEditingId(device.device_id); setEditName(device.device_name || ''); }}
+                              className="p-1 text-[#656d76] hover:text-[#00c896] rounded transition-colors"
+                              title="Set rep name"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Phone number */}
+                        <div className="text-xs text-[#4da6ff] font-mono">{device.phone_number}</div>
+
+                        {/* Device model */}
+                        {device.device_model && (
+                          <div className="text-xs text-[#656d76] mt-0.5">{device.device_model}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: status badge + last seen */}
+                    <div className="flex-shrink-0 text-right">
+                      <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        online
+                          ? 'bg-[#00c89622] text-[#00c896] border border-[#00c89633]'
+                          : 'bg-[#ffffff0a] text-[#656d76] border border-[#30363d]'
+                      }`}>
+                        {online ? 'Online' : 'Offline'}
+                      </span>
+                      <div className="text-[10px] text-[#656d76] mt-1">
+                        {lastSeen(device.last_heartbeat)}
+                      </div>
+                      <div className="text-[10px] text-[#656d76]">
+                        Since {new Date(device.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="text-xs text-[#656d76] mt-4 leading-relaxed">
+          Devices register automatically on first sync. Set a rep name here — it will appear in Call Logs and Coaching Dashboard to identify whose calls are whose.
+        </p>
+      </div>
     </div>
   );
 }

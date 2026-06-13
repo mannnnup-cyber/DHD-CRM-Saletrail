@@ -16,6 +16,13 @@ interface GSMCall {
   contactId: string | null;
   contactName: string | null;
   deviceModel: string | null;
+  repPhone: string | null;
+  repName: string | null;
+}
+
+interface RepOption {
+  phone: string;
+  name: string | null;
 }
 
 interface WhatsAppCall {
@@ -74,6 +81,8 @@ const CallLogs: React.FC = () => {
   const [tab, setTab]               = useState<ActiveTab>('gsm');
   const [search, setSearch]         = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [repFilter, setRepFilter]   = useState('all');
+  const [reps, setReps]             = useState<RepOption[]>([]);
   const [showConnect, setShowConnect] = useState(false);
 
   // GSM state
@@ -100,14 +109,21 @@ const CallLogs: React.FC = () => {
         action: 'getGSMCalls',
         limit: String(PAGE),
         offset: String(offset),
-        ...(typeFilter !== 'All' ? { type: typeFilter } : {})
+        ...(typeFilter !== 'All' ? { type: typeFilter } : {}),
+        ...(repFilter  !== 'all' ? { rep:  repFilter  } : {}),
       });
       const res  = await fetch(`/api/whatsapp?${params}`);
       const data = await res.json();
       if (data.success) {
-        setGsmCalls(prev => reset ? data.calls : [...prev, ...data.calls]);
+        // Map snake_case DB fields to camelCase
+        const mapped = (data.calls || []).map((c: any) => ({
+          ...c,
+          repPhone: c.rep_phone ?? null,
+          repName:  c.rep_name  ?? null,
+        }));
+        setGsmCalls(prev => reset ? mapped : [...prev, ...mapped]);
         setGsmTotal(data.total ?? 0);
-        setGsmOffset(offset + data.calls.length);
+        setGsmOffset(offset + mapped.length);
       } else {
         setGsmError(data.error || 'Failed to load calls');
       }
@@ -115,7 +131,21 @@ const CallLogs: React.FC = () => {
       setGsmError(e.message);
     }
     setGsmLoading(false);
-  }, [gsmOffset, typeFilter]);
+  }, [gsmOffset, typeFilter, repFilter]);
+
+  // Load unique reps for filter dropdown
+  const loadReps = useCallback(async () => {
+    try {
+      const res  = await fetch('/api/whatsapp?action=getDevices');
+      const data = await res.json();
+      if (data.success) {
+        setReps((data.devices || []).map((d: any) => ({
+          phone: d.phone_number,
+          name:  d.device_name || null,
+        })));
+      }
+    } catch {}
+  }, []);
 
   // ─── Fetch WhatsApp calls ─────────────────────────────────────────────────
 
@@ -129,8 +159,8 @@ const CallLogs: React.FC = () => {
     setWaLoading(false);
   }, []);
 
-  useEffect(() => { loadGSMCalls(true); setGsmOffset(0); }, [typeFilter]);
-  useEffect(() => { loadWACalls(); }, []);
+  useEffect(() => { loadGSMCalls(true); setGsmOffset(0); }, [typeFilter, repFilter]);
+  useEffect(() => { loadWACalls(); loadReps(); }, []);
 
   // ─── Filtering ───────────────────────────────────────────────────────────
 
@@ -140,7 +170,9 @@ const CallLogs: React.FC = () => {
     return (
       (c.contactName || '').toLowerCase().includes(q) ||
       c.phoneNumber.includes(q) ||
-      (c.deviceModel || '').toLowerCase().includes(q)
+      (c.deviceModel || '').toLowerCase().includes(q) ||
+      (c.repName  || '').toLowerCase().includes(q) ||
+      (c.repPhone || '').includes(q)
     );
   });
 
@@ -259,6 +291,23 @@ const CallLogs: React.FC = () => {
                 ))}
               </select>
             </div>
+            {reps.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-gray-500" />
+                <select
+                  value={repFilter}
+                  onChange={e => setRepFilter(e.target.value)}
+                  className="bg-gray-900 border border-gray-800 rounded-xl py-2.5 px-3 text-sm text-white outline-none"
+                >
+                  <option value="all">All Reps</option>
+                  {reps.map(r => (
+                    <option key={r.phone} value={r.phone}>
+                      {r.name || r.phone}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               onClick={() => setShowConnect(true)}
               className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded-xl py-2.5 px-4 text-sm font-semibold hover:bg-amber-500/20"
@@ -303,7 +352,7 @@ const CallLogs: React.FC = () => {
                 <table className="w-full">
                   <thead className="bg-gray-800/50">
                     <tr>
-                      {['Type', 'Contact / Number', 'Duration', 'Date & Time', 'Device', 'WhatsApp'].map(h => (
+                      {['Type', 'Contact / Number', 'Sales Rep', 'Duration', 'Date & Time', 'Device', 'WhatsApp'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
                           {h}
                         </th>
@@ -330,6 +379,18 @@ const CallLogs: React.FC = () => {
                             </p>
                             {call.contactName && (
                               <p className="text-xs text-gray-500">{call.phoneNumber}</p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {call.repPhone ? (
+                              <div>
+                                <p className="text-sm font-medium text-white">
+                                  {call.repName || <span className="text-gray-500 italic text-xs">Unnamed</span>}
+                                </p>
+                                <p className="text-xs text-blue-400 font-mono">{call.repPhone}</p>
+                              </div>
+                            ) : (
+                              <span className="text-gray-600 text-xs">—</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-300">
