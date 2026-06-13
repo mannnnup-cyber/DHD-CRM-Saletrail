@@ -352,6 +352,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Check Evolution API connection status.
         // Strategy: try Evolution API connectionState first, then fall back to
         // checking for recent DB messages (if webhook is delivering, we're connected).
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
 
         // Helper: check recent DB activity as proof of connection
@@ -408,6 +409,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'webhookInfo': {
         // Return webhook configuration info for Evolution API
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         const webhookUrl = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`;
 
@@ -438,6 +440,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'setWebhook': {
         // Set webhook for Evolution API
         const { webhookUrl } = req.body;
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName) {
           return res.status(400).json({ success: false, error: 'Evolution API not linked' });
@@ -637,7 +640,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // using the mediaKey stored in the raw message. This is the reliable path.
         if (msgId && !mediaUrl) {
           if (supabase === null) return res.status(500).json({ error: 'Supabase not configured' });
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
           if (!instanceName || !EVOLUTION_API_URL) {
             return res.status(500).json({ error: 'Evolution API not configured' });
           }
@@ -739,6 +743,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ success: false, error: 'chatId and message are required' });
         }
 
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName) {
           return res.status(400).json({ success: false, error: 'Evolution API not linked' });
@@ -802,6 +807,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ error: 'chatId, audioBase64 required' });
         }
 
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName) {
           return res.status(400).json({ success: false, error: 'Evolution API not linked' });
@@ -860,6 +866,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ error: 'chatId, mediaBase64, mediaType, fileName required' });
         }
 
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName) {
           return res.status(400).json({ success: false, error: 'Evolution API not linked' });
@@ -1419,6 +1426,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'webhookConfig': {
         // Returns webhook configuration info for Evolution API
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         const isConfigured = !!instanceName;
 
@@ -1441,6 +1449,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ success: false, error: 'chatId required' });
         }
 
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName) {
           return res.status(400).json({ success: false, error: 'Evolution API not linked' });
@@ -1495,7 +1504,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           // Read instance name from settings
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
 
           if (!instanceName) {
             return res.status(400).json({
@@ -1602,6 +1612,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const maxChats = Math.min(parseInt(syncLimit) || 50, 100); // max 100 chats per call
         const chatOffset = parseInt(syncOffset) || 0;
 
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName) {
           return res.status(400).json({ success: false, error: 'Evolution API not linked' });
@@ -1836,6 +1847,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'syncContactNames': {
         // Fetch contacts from Evolution API and store name+phone mappings
         // so @lid JIDs can be resolved to real names in the chat list
+        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
         const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         if (!instanceName || !EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
           return res.status(400).json({ success: false, error: 'Evolution API not configured' });
