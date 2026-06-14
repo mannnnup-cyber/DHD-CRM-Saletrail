@@ -20,15 +20,5 @@
     "api/analyze.ts": {
       "maxDuration": 120
     }
-  },
-  "crons": [
-    {
-      "path": "/api/transcribe",
-      "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/analyze?action=batchAnalyze",
-      "schedule": "30 * * * *"
-    }
-  ]
+  }
 }
