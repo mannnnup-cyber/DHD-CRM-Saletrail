@@ -154,7 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'testEmail': {
         // Test IMAP connection
-        const { host, port, user, password, useTls } = req.body;
+        const { host, user, password } = req.body;
 
         // For now, return success - actual IMAP test would require native module
         // In production, this would use imap library to test connection

@@ -13,7 +13,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -263,7 +263,7 @@ async function calculateRepMetrics(user_id: string, org_id: string): Promise<any
 /**
  * Handle single call analysis
  */
-async function handleAnalyzeCall(req: NextApiRequest, res: NextApiResponse) {
+async function handleAnalyzeCall(req: VercelRequest, res: VercelResponse) {
   try {
     const { call_id, user_id, org_id } = req.body;
 
@@ -341,7 +341,7 @@ async function handleAnalyzeCall(req: NextApiRequest, res: NextApiResponse) {
 /**
  * Handle batch analysis (process all new transcripts)
  */
-async function handleBatchAnalyze(req: NextApiRequest, res: NextApiResponse) {
+async function handleBatchAnalyze(req: VercelRequest, res: VercelResponse) {
   try {
     console.log('[analyze] Starting batch analysis');
 
@@ -418,7 +418,7 @@ async function handleBatchAnalyze(req: NextApiRequest, res: NextApiResponse) {
 /**
  * Get rep metrics
  */
-async function handleGetMetrics(req: NextApiRequest, res: NextApiResponse) {
+async function handleGetMetrics(req: VercelRequest, res: VercelResponse) {
   try {
     const { user_id, org_id } = req.body;
 
@@ -448,8 +448,8 @@ async function handleGetMetrics(req: NextApiRequest, res: NextApiResponse) {
  * Main handler
  */
 export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
+  req: VercelRequest,
+  res: VercelResponse
 ) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });

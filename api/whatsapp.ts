@@ -33,7 +33,7 @@ try {
 
 console.log('[Supabase Init] URL:', _supabaseUrl ? '✓ ' + _supabaseUrl.substring(0, 30) : '✗ MISSING', 'Key:', _supabaseKey ? '✓ set (length: ' + _supabaseKey.length + ')' : '✗ MISSING', 'Client:', supabase ? '✓ CREATED' : '✗ NULL');
 
-const supaDb = {
+_supaDb = false; const supaDb = {
   createCall: async (call: any) => {
     if (!supabase) return;
     await supabase.from('calls').insert(call);
@@ -59,7 +59,7 @@ async function getSetting(key: string, defaultValue: string = ''): Promise<strin
   if (!supabase) return defaultValue;
 
   try {
-    const { data, error } = await supabase
+    const { data, error: _error } = await supabase
       .from('app_settings')
       .select('setting_value')
       .eq('setting_key', key)
@@ -1831,7 +1831,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'getChatStatuses': {
         // Return all persisted chat statuses so the UI can restore state after refresh
         if (!supabase) return res.json({ success: true, statuses: {} });
-        const { data, error } = await supabase
+        const { data, error: _error } = await supabase
           .from('whatsapp_chats')
           .select('chat_id, status, assigned_to, contact_name');
         if (error) return res.status(500).json({ success: false, error: error.message });
@@ -2105,7 +2105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Returns all registered companion devices with last heartbeat & rep name
         if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
         try {
-          const { data, error } = await supabase
+          const { data, error: _error } = await supabase
             .from('devices')
             .select('device_id, phone_number, device_name, device_model, is_active, last_heartbeat, created_at')
             .order('last_heartbeat', { ascending: false });

@@ -10,7 +10,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import formidable from 'formidable';
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,7 @@ export const config = {
  */
 async function shouldSkipRecording(
   phoneNumber: string,
-  org_id: string
+  _org_id: string
 ): Promise<boolean> {
   try {
     // Get org recording settings
@@ -92,7 +92,7 @@ async function shouldSkipRecording(
  * Parse multipart form data (recordings file + metadata)
  */
 async function parseFormData(
-  req: NextApiRequest
+  req: VercelRequest
 ): Promise<{ fields: any; files: any }> {
   return new Promise((resolve, reject) => {
     const form = formidable({
@@ -101,7 +101,7 @@ async function parseFormData(
       maxFileSize: 500 * 1024 * 1024, // 500MB max
     });
 
-    form.parse(req, (err, fields, files) => {
+    form.parse(req, (err: any, fields: any, files: any) => {
       if (err) reject(err);
       else resolve({ fields, files });
     });
@@ -114,11 +114,11 @@ async function parseFormData(
 async function uploadToStorage(
   filePath: string,
   storagePath: string,
-  org_id: string
+  _org_id: string
 ): Promise<{ path: string; size: number }> {
   try {
     const fileContent = fs.readFileSync(filePath);
-    const fileName = path.basename(storagePath);
+    const _fileName = path.basename(storagePath);
 
     const { data, error } = await supabase.storage
       .from('call-recordings')
@@ -148,8 +148,8 @@ async function uploadToStorage(
  * Handle recording upload
  */
 async function handleUploadRecording(
-  req: NextApiRequest,
-  res: NextApiResponse
+  req: VercelRequest,
+  res: VercelResponse
 ) {
   try {
     const { fields, files } = await parseFormData(req);
@@ -275,8 +275,8 @@ async function handleUploadRecording(
  * List pending recordings for a user
  */
 async function handleListRecordings(
-  req: NextApiRequest,
-  res: NextApiResponse
+  req: VercelRequest,
+  res: VercelResponse
 ) {
   try {
     const user_id = req.body.user_id || '';
@@ -319,8 +319,8 @@ async function handleListRecordings(
  * Get transcript for a call
  */
 async function handleGetTranscript(
-  req: NextApiRequest,
-  res: NextApiResponse
+  req: VercelRequest,
+  res: VercelResponse
 ) {
   try {
     const call_id = req.body.call_id || '';
@@ -368,8 +368,8 @@ async function handleGetTranscript(
  * Main handler
  */
 export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
+  req: VercelRequest,
+  res: VercelResponse
 ) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });

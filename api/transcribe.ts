@@ -17,11 +17,9 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import FormData from 'form-data';
 import fetch from 'node-fetch';
-import fs from 'fs';
-import path from 'path';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -88,7 +86,6 @@ async function transcribeWithWhisper(audioBuffer: Buffer, filename: string): Pro
         ...form.getHeaders(),
       },
       body: form as any,
-      timeout: 300000, // 5 minute timeout for large files
     });
 
     if (!response.ok) {
@@ -255,7 +252,7 @@ async function processJob(jobId: string, recordingId: string): Promise<boolean> 
  * - Via scheduled task (Vercel Cron)
  * - Via edge function trigger
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     console.log('[transcribe] Handler called');
 
