@@ -407,15 +407,16 @@ const CallLogs: React.FC = () => {
                           </td>
                           <td className="px-4 py-3">
                             {waNum && (
-                              <a
-                                href={`https://wa.me/${waNum}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                onClick={() => {
+                                  localStorage.setItem('wa_open_contact', JSON.stringify({ phone: waNum, name: call.contactName || '' }));
+                                  window.location.href = '#/whatsapp';
+                                }}
                                 className="w-7 h-7 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white rounded-lg flex items-center justify-center transition-all"
-                                title="Open in WhatsApp"
+                                title="Open WhatsApp chat with this contact"
                               >
                                 <MessageSquare className="w-3.5 h-3.5" />
-                              </a>
+                              </button>
                             )}
                           </td>
                         </tr>

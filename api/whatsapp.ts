@@ -2109,7 +2109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .from('devices')
             .select('device_id, phone_number, device_name, device_model, is_active, last_heartbeat, created_at')
             .order('last_heartbeat', { ascending: false });
-          if (error) throw error;
+          if (_error) throw _error;
           return res.json({ success: true, devices: data || [] });
         } catch (err: any) {
           return res.json({ success: false, error: err.message });
@@ -2128,7 +2128,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .from('devices')
             .update({ device_name: devName || null })
             .eq('phone_number', devPhone);
-          if (error) throw error;
+          if (_error) throw _error;
           // Also backfill rep_name on all existing cellular_calls from this device
           await supabase
             .from('cellular_calls')
