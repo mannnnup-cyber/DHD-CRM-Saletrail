@@ -171,6 +171,7 @@ export default function WhatsApp() {
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
   const [moreHistoryResult, setMoreHistoryResult] = useState<string | null>(null);
   const [sendingFile, setSendingFile] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [webhookConfigResult, setWebhookConfigResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1627,7 +1628,7 @@ export default function WhatsApp() {
                                     src={proxyUrl}
                                     alt="Image"
                                     className="max-w-full rounded-lg mb-1 cursor-pointer"
-                                    onClick={() => window.open(proxyUrl, '_blank')}
+                                    onClick={() => setLightboxUrl(proxyUrl)}
                                     onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                   />
                                 )}
@@ -1778,7 +1779,8 @@ export default function WhatsApp() {
                           sendMessage();
                         }
                       }}
-                      placeholder="Type a message... (Enter to send)"
+                      onPaste={e => { const img = Array.from(e.clipboardData?.items||[]).find((i:any)=>i.type.startsWith("image/")); if(img){e.preventDefault();const f=(img as any).getAsFile();if(f)setAttachFile(f);} }}
+                      placeholder="Type a message or paste an image... (Enter to send)"
                       rows={1}
                       className="flex-1 px-4 py-2.5 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-green-500 resize-none"
                       style={{ minHeight: '42px', maxHeight: '120px' }}
@@ -2133,5 +2135,16 @@ export default function WhatsApp() {
         </div>
       )}
     </div>
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightboxUrl(null)}>
+          <button className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full bg-black/40" onClick={() => setLightboxUrl(null)}>
+            <X className="w-6 h-6" />
+          </button>
+          <img src={lightboxUrl} alt="Media" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
+          <a href={lightboxUrl} download className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium" onClick={e => e.stopPropagation()}>
+            <Download className="w-4 h-4" /> Download
+          </a>
+        </div>
+      )}
   );
 }
