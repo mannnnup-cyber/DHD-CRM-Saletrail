@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive, CornerUpLeft, Info, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
@@ -176,6 +176,10 @@ export default function WhatsApp() {
   const [forwardMsg, setForwardMsg] = useState<any>(null);
   const [forwardingTo, setForwardingTo] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<any>(null);
+  const [showContactInfo, setShowContactInfo] = useState(false);
+  const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<string | null>(null);
+  const [msgReactions, setMsgReactions] = useState<Record<string, string>>({});
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [webhookConfigResult, setWebhookConfigResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -514,7 +518,9 @@ export default function WhatsApp() {
     if (!replyText.trim() || !selectedChat) return;
     setSending(true);
     const text = replyText;
+    const quotedMsg = replyingTo;
     setReplyText('');
+    setReplyingTo(null);
 
     const newMsg: Message = {
       id: Date.now().toString(),
@@ -522,15 +528,20 @@ export default function WhatsApp() {
       timestamp: Math.floor(Date.now() / 1000),
       fromMe: true,
       status: 'sent',
-      type: 'text'
-    };
+      type: 'text',
+      ...(quotedMsg ? { quotedText: quotedMsg.text || '[media]', quotedAuthor: quotedMsg.fromMe ? 'You' : selectedChat.name } : {})
+    } as any;
     setMessages(prev => [...prev, newMsg]);
 
     try {
       const r = await fetch('/api/whatsapp?action=send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId: selectedChat.id, message: text })
+        body: JSON.stringify({
+          chatId: selectedChat.id,
+          message: text,
+          ...(quotedMsg ? { quotedMessageId: quotedMsg.id, quotedText: quotedMsg.text } : {})
+        })
       });
       const data = await r.json();
 
@@ -988,6 +999,20 @@ export default function WhatsApp() {
     setForwardingTo(null);
   };
 
+  // Send emoji reaction to a message
+  const sendReaction = async (msgId: string, fromMe: boolean, emoji: string) => {
+    if (!selectedChat) return;
+    setEmojiPickerMsgId(null);
+    setMsgReactions(prev => ({ ...prev, [msgId]: emoji }));
+    try {
+      await fetch('/api/whatsapp?action=sendReaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: selectedChat.id, messageId: msgId, fromMe, reaction: emoji })
+      });
+    } catch {}
+  };
+
   // Send file attachment
   const sendAttachment = async () => {
     if (!attachFile || !selectedChat) return;
@@ -1097,21 +1122,13 @@ export default function WhatsApp() {
             {connected === true ? 'Connected' : connected === false ? 'Disconnected' : 'Checking...'}
           </div>
           <button
-            onClick={() => { checkStatus(); checkWebhookStatus(); loadChats(); }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
-            title="Reload chats from database"
+            onClick={() => { checkStatus(); checkWebhookStatus(); loadChats(); syncNow(); }}
+            disabled={syncing || syncing2}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition-colors"
+            title="Refresh from database + pull latest from Evolution API"
           >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            onClick={syncNow}
-            disabled={syncing2}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-            title="Pull latest messages directly from Evolution API (catches missed webhook events)"
-          >
-            <Database className={`w-4 h-4 ${syncing2 ? 'animate-spin' : ''}`} />
-            {syncing2 ? 'Syncing...' : 'Sync'}
+            <RefreshCw className={`w-4 h-4 ${(syncing || syncing2) ? 'animate-spin' : ''}`} />
+            {syncing2 ? 'Syncing...' : 'Refresh'}
           </button>
           <button
             onClick={() => setShowNewMessage(true)}
@@ -1484,17 +1501,17 @@ export default function WhatsApp() {
               <>
                 {/* Chat Header */}
                 <div className="p-4 border-b border-gray-700/50 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                  <button className="flex items-center gap-3 hover:bg-gray-700/30 rounded-lg px-2 py-1 -ml-2 transition-colors" onClick={() => setShowContactInfo(v => !v)} title="View contact info">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold flex-shrink-0">
                       {avatars[selectedChat.id]
                         ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[selectedChat.id])}`} alt="" className="w-full h-full object-cover" />
                         : selectedChat.name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <p className="text-white font-medium">{selectedChat.name}</p>
+                    <div className="text-left">
+                      <p className="text-white font-medium flex items-center gap-1">{selectedChat.name}<ChevronRight className="w-3 h-3 text-gray-500" /></p>
                       <p className="text-gray-400 text-xs">{selectedChat.phone ? `+${selectedChat.phone}` : selectedChat.id?.split('@')[0] || ''}</p>
                     </div>
-                  </div>
+                  </button>
                   <div className="flex items-center gap-2">
                     <div className="relative">
                       <button
@@ -1585,13 +1602,13 @@ export default function WhatsApp() {
                       <Archive className="w-3.5 h-3.5" />
                     </button>
                     <a
-                      href={`https://wa.me/${selectedChat.phone}`}
+                      href={`https://wa.me/${(selectedChat.phone || '').replace(/\D/g,'')}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2 bg-green-600/20 hover:bg-green-600/40 text-green-400 rounded-lg transition-colors"
-                      title="Open in WhatsApp"
+                      className="p-2 bg-gray-700/50 hover:bg-gray-600 text-gray-400 hover:text-white rounded-lg transition-colors"
+                      title="Open on phone — launches WhatsApp app directly to this contact"
                     >
-                      <MessageCircle className="w-4 h-4" />
+                      <Phone className="w-3.5 h-3.5" />
                     </a>
                   </div>
                 </div>
@@ -1605,7 +1622,7 @@ export default function WhatsApp() {
                     </div>
                     {(() => {
                       const mediaMessages = messages.filter((m: any) =>
-                        (m.type === 'imageMessage' || m.type === 'videoMessage') && m.mediaUrl
+                        m.type === 'imageMessage' || m.type === 'videoMessage'
                       );
                       if (mediaMessages.length === 0) {
                         return <p className="text-gray-500 text-xs text-center py-6">No shared images or videos yet</p>;
@@ -1613,9 +1630,11 @@ export default function WhatsApp() {
                       return (
                         <div className="grid grid-cols-4 gap-1 p-2 max-h-48 overflow-y-auto">
                           {mediaMessages.map((m: any) => {
-                            const proxyUrl = m.mediaUrl?.startsWith('http')
-                              ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(m.mediaUrl)}`
-                              : m.mediaUrl;
+                            const proxyUrl = m.mediaUrl?.startsWith('blob:')
+                              ? m.mediaUrl
+                              : m.mediaUrl?.startsWith('http')
+                                ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(m.mediaUrl)}`
+                                : `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(m.id)}`;
                             return (
                               <button
                                 key={m.id}
@@ -1684,16 +1703,26 @@ export default function WhatsApp() {
                             <div key={msg.id} className={`flex items-end gap-1 group ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
                               {/* Hover actions — left side for incoming */}
                               {!msg.fromMe && (
-                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mb-1 flex-shrink-0">
+                                <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mb-1 flex-shrink-0">
+                                  <button onClick={() => setReplyingTo(msg)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Reply"><CornerUpLeft className="w-3 h-3" /></button>
+                                  <button onClick={() => setEmojiPickerMsgId(emojiPickerMsgId === msg.id ? null : msg.id)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="React"><Smile className="w-3 h-3" /></button>
                                   {msg.text && <button onClick={() => navigator.clipboard?.writeText(msg.text)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Copy"><Copy className="w-3 h-3" /></button>}
                                   <button onClick={() => setForwardMsg(msg)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Forward"><Share2 className="w-3 h-3" /></button>
                                 </div>
                               )}
-                        <div className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl ${
+                        <div className={`max-w-xs lg:max-w-md rounded-2xl ${
                           msg.fromMe
                             ? 'bg-green-600 text-white rounded-br-sm'
                             : 'bg-gray-700 text-gray-100 rounded-bl-sm'
                         }`}>
+                          {/* Quoted reply preview */}
+                          {msg.quotedText && (
+                            <div className={`mx-3 mt-2.5 px-2 py-1.5 rounded-lg border-l-2 text-xs opacity-80 ${msg.fromMe ? 'bg-green-700/50 border-white/40' : 'bg-gray-600/50 border-green-400'}`}>
+                              <p className="font-medium mb-0.5">{msg.quotedAuthor || (msg.fromMe ? 'You' : selectedChat?.name)}</p>
+                              <p className="truncate">{msg.quotedText}</p>
+                            </div>
+                          )}
+                          <div className="px-4 py-2.5">
                           {/* ── Media rendering ─────────────────────────────────────
                                WhatsApp CDN URLs are encrypted and can't be shown directly.
                                We use Evolution API's /chat/getBase64FromMediaMessage endpoint
@@ -1764,17 +1793,34 @@ export default function WhatsApp() {
                             return <p className="text-sm leading-relaxed">{msg.text}</p>;
                           })()}
                           <div className={`flex items-center gap-1 mt-1 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
-                            <span className="text-[10px] opacity-70">{formatMessageTime(msg.timestamp)}</span>
+                            <span className="text-[10px] opacity-70" title={msg.timestamp ? new Date(msg.timestamp).toLocaleString() : ''}>{formatMessageTime(msg.timestamp)}</span>
                             {msg.fromMe && (
-                              msg.status === 'read' ? <CheckCheck className="w-3 h-3 text-blue-300" /> :
-                              msg.status === 'delivered' ? <CheckCheck className="w-3 h-3 opacity-70" /> :
-                              <Check className="w-3 h-3 opacity-70" />
+                              msg.status === 'read' ? <CheckCheck className="w-3 h-3 text-blue-300" title="Read" /> :
+                              msg.status === 'delivered' ? <CheckCheck className="w-3 h-3 opacity-70" title="Delivered" /> :
+                              <Check className="w-3 h-3 opacity-70" title="Sent" />
                             )}
                           </div>
+                          </div>{/* end inner padding */}
+                          {/* Reactions display */}
+                          {msgReactions[msg.id] && (
+                            <div className={`flex px-3 pb-2 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
+                              <span className="text-base bg-gray-800/60 rounded-full px-1.5 py-0.5 border border-gray-600/40">{msgReactions[msg.id]}</span>
+                            </div>
+                          )}
+                          {/* Emoji picker */}
+                          {emojiPickerMsgId === msg.id && (
+                            <div className={`flex gap-1 px-3 pb-2 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
+                              {['👍','❤️','😂','😮','😢','🙏','🔥','✅'].map(e => (
+                                <button key={e} onClick={() => sendReaction(msg.id, msg.fromMe, e)} className="text-lg hover:scale-125 transition-transform">{e}</button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                               {/* Hover actions — right side for outgoing */}
                               {msg.fromMe && (
-                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mb-1 flex-shrink-0">
+                                <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mb-1 flex-shrink-0">
+                                  <button onClick={() => setReplyingTo(msg)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Reply"><CornerUpLeft className="w-3 h-3" /></button>
+                                  <button onClick={() => setEmojiPickerMsgId(emojiPickerMsgId === msg.id ? null : msg.id)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="React"><Smile className="w-3 h-3" /></button>
                                   {msg.text && <button onClick={() => navigator.clipboard?.writeText(msg.text)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Copy"><Copy className="w-3 h-3" /></button>}
                                   <button onClick={() => setForwardMsg(msg)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Forward"><Share2 className="w-3 h-3" /></button>
                                 </div>
@@ -1849,6 +1895,17 @@ export default function WhatsApp() {
                         {sendingFile ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                         Send
                       </button>
+                    </div>
+                  )}
+                  {/* Reply preview bar */}
+                  {replyingTo && (
+                    <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-gray-700/60 rounded-xl border-l-2 border-green-500">
+                      <CornerUpLeft className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-green-400 text-[10px] font-semibold mb-0.5">{replyingTo.fromMe ? 'You' : selectedChat?.name}</p>
+                        <p className="text-gray-300 text-xs truncate">{replyingTo.text || '[media]'}</p>
+                      </div>
+                      <button onClick={() => setReplyingTo(null)} className="text-gray-500 hover:text-white flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
                     </div>
                   )}
                   <input
@@ -2332,6 +2389,75 @@ export default function WhatsApp() {
                   {forwardingTo === chat.id && <Loader2 className="w-4 h-4 text-green-400 animate-spin flex-shrink-0" />}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Info Panel */}
+      {showContactInfo && selectedChat && (
+        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setShowContactInfo(false)}>
+          <div className="w-80 h-full bg-gray-900 border-l border-gray-700 shadow-2xl flex flex-col overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+              <h3 className="font-semibold text-white">Contact Info</h3>
+              <button className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors" onClick={() => setShowContactInfo(false)}>
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 flex flex-col items-center gap-4 border-b border-gray-800">
+              <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-2xl flex-shrink-0">
+                {avatars[selectedChat.id]
+                  ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[selectedChat.id])}`} alt="" className="w-full h-full object-cover" />
+                  : selectedChat.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-white">{selectedChat.name}</p>
+                <p className="text-sm text-gray-400 mt-0.5">{selectedChat.phone || selectedChat.id?.split('@')[0]}</p>
+              </div>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-widest text-gray-500 font-bold">Status</p>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${selectedChat.status === 'resolved' ? 'bg-green-400' : selectedChat.status === 'pending' ? 'bg-amber-400' : 'bg-blue-400'}`} />
+                  <span className="text-sm text-gray-300 capitalize">{selectedChat.status || 'open'}</span>
+                </div>
+              </div>
+              {selectedChat.assignedTo && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-widest text-gray-500 font-bold">Assigned To</p>
+                  <p className="text-sm text-gray-300">{selectedChat.assignedTo}</p>
+                </div>
+              )}
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-widest text-gray-500 font-bold">WhatsApp ID</p>
+                <p className="text-sm text-gray-400 font-mono break-all">{selectedChat.id}</p>
+              </div>
+              {selectedChat.unread > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-widest text-gray-500 font-bold">Unread Messages</p>
+                  <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-green-500/20 text-green-400 text-sm font-bold">{selectedChat.unread}</span>
+                </div>
+              )}
+            </div>
+            <div className="p-5 mt-auto border-t border-gray-800 space-y-2">
+              <button
+                onClick={() => {
+                  const phone = (selectedChat.phone || selectedChat.id?.split('@')[0] || '').replace(/\D/g, '');
+                  localStorage.setItem('contacts_search', phone);
+                  window.location.hash = '#/contacts';
+                  setShowContactInfo(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
+              >
+                <User className="w-4 h-4" /> Open in CRM
+              </button>
+              <button
+                onClick={() => { window.open(`https://wa.me/${(selectedChat.phone || selectedChat.id?.split('@')[0] || '').replace(/\D/g, '')}`, '_blank'); setShowContactInfo(false); }}
+                className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-600 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
+              >
+                <Phone className="w-4 h-4" /> Open in WhatsApp
+              </button>
             </div>
           </div>
         </div>

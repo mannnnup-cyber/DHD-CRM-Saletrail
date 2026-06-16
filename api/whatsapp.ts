@@ -741,6 +741,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'sendReaction': {
+        const { chatId, messageId, fromMe, reaction } = req.body;
+        if (!chatId || !messageId || reaction === undefined) {
+          return res.status(400).json({ success: false, error: 'chatId, messageId, and reaction are required' });
+        }
+        const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+        if (!instanceName || !EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+        const url = new URL(`/message/sendReaction/${instanceName}`, EVOLUTION_API_URL).toString();
+        try {
+          const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: { remoteJid: chatId, fromMe: !!fromMe, id: messageId }, reaction })
+          });
+          const data = await r.json();
+          if (!r.ok) return res.json({ success: false, error: data.message || JSON.stringify(data) });
+          return res.json({ success: true });
+        } catch (err: any) {
+          return res.json({ success: false, error: err.message });
+        }
+      }
+
       case 'send': {
         const { chatId, message } = req.body;
         if (!chatId || !message) {

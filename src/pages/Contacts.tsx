@@ -62,7 +62,11 @@ const Contacts: React.FC = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const stored = localStorage.getItem('contacts_search');
+    if (stored) { setSearch(stored); localStorage.removeItem('contacts_search'); }
+  }, []);
 
   const filtered = contacts.filter(c => {
     if (filterSource !== 'all' && c.source !== filterSource) return false;
