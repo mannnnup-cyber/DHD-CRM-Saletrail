@@ -859,6 +859,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'sendFile':
+        req.body.mediaBase64 = req.body.fileBase64;
+        req.body.mediaType = req.body.mimeType || 'application/octet-stream';
+        // falls through to sendMedia
       case 'sendMedia': {
         // Send images, videos, or documents via Evolution API
         const { chatId, mediaBase64, mediaType, fileName, caption, mimeType } = req.body;
@@ -947,6 +951,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .ilike('body', `%${q}%`)
           .order('created_at', { ascending: false }).limit(50);
         return res.json({ success: true, results: msgs || [] });
+      }
+
+      case 'readChat': {
+        // POST /api/whatsapp?action=readChat
+        // Marks all messages in a chat as read in Evolution API
+        const { chatId: readChatId } = req.body;
+        if (!readChatId) return res.status(400).json({ success: false, error: 'chatId required' });
+        try {
+          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
+          if (instanceName && EVOLUTION_API_URL && EVOLUTION_API_KEY) {
+            await fetch(new URL(`/chat/markMessageAsRead/${instanceName}`, EVOLUTION_API_URL).toString(), {
+              method: 'POST',
+              headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ readMessages: [{ remoteJid: readChatId }] })
+            });
+          }
+          return res.json({ success: true });
+        } catch (err: any) {
+          return res.json({ success: false, error: err.message });
+        }
       }
 
       case 'bulkUpdateChats': {
@@ -2128,7 +2152,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .from('devices')
             .update({ device_name: devName || null })
             .eq('phone_number', devPhone);
-          if (_error) throw _error;
+          if (error) throw error;
           // Also backfill rep_name on all existing cellular_calls from this device
           await supabase
             .from('cellular_calls')
