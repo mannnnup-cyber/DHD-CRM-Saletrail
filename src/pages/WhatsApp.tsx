@@ -1679,11 +1679,14 @@ export default function WhatsApp() {
                               ['imageMessage','videoMessage','audioMessage','pttMessage','documentMessage','stickerMessage']
                                 .some(m => t === m || t?.includes(m.replace('Message','')));
                             if (!isMediaType(msg.type || '')) return null;
-                            // Use msgId mode (Evolution API base64 decode) when we have a real message ID
-                            // Fall back to direct URL proxy for locally-stored / blob URLs
-                            const proxyUrl = msg.mediaUrl && (msg.mediaUrl.startsWith('blob:') || msg.mediaUrl.startsWith('/'))
-                              ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`
-                              : `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(msg.id)}`;
+                            // blob: URLs are local object URLs — use directly (server can't fetch them)
+                            // http URLs from Evolution API need the server-side proxy for auth headers
+                            // Fallback to msgId-based fetch for messages without a mediaUrl
+                            const proxyUrl = msg.mediaUrl?.startsWith('blob:')
+                              ? msg.mediaUrl
+                              : msg.mediaUrl?.startsWith('http')
+                                ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`
+                                : `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(msg.id)}`;
                             const isImage = msg.type === 'imageMessage' || msg.type?.includes('image');
                             const isAudio = msg.type === 'audioMessage' || msg.type === 'pttMessage' || msg.type?.includes('audio');
                             const isVideo = msg.type === 'videoMessage' || msg.type?.includes('video');
@@ -1723,14 +1726,18 @@ export default function WhatsApp() {
                               </>
                             );
                           })()}
-                          {/* Text / caption — hide raw type placeholders like [audioMessage] */}
-                          {msg.text && !msg.text.match(/^\[.+Message\]$|^\[conversation\]$/) ? (
-                            <p className="text-sm leading-relaxed">{msg.text}</p>
-                          ) : (!msg.text || msg.text.match(/^\[.+\]$/)) ? (
-                            <p className="text-sm leading-relaxed italic opacity-60">
-                              {friendlyLastMessage(msg.text || '') || 'Media message'}
-                            </p>
-                          ) : null}
+                          {/* Text / caption — hide raw type placeholders and [File: ...] when media is shown */}
+                          {(() => {
+                            const hasMedia = msg.mediaUrl && ['imageMessage','videoMessage','audioMessage','pttMessage','documentMessage','stickerMessage'].some(t => msg.type === t || msg.type?.includes(t.replace('Message','')));
+                            const isPlaceholder = !msg.text || msg.text.match(/^\[.+Message\]$|^\[conversation\]$|^\[File:.+\]$|^\[.+\]$/);
+                            if (isPlaceholder && hasMedia) return null;
+                            if (isPlaceholder) return (
+                              <p className="text-sm leading-relaxed italic opacity-60">
+                                {friendlyLastMessage(msg.text || '') || 'Media message'}
+                              </p>
+                            );
+                            return <p className="text-sm leading-relaxed">{msg.text}</p>;
+                          })()}
                           <div className={`flex items-center gap-1 mt-1 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
                             <span className="text-[10px] opacity-70">{formatMessageTime(msg.timestamp)}</span>
                             {msg.fromMe && (
