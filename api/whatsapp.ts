@@ -883,10 +883,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         let messageId = 'unknown';
         let rawData: any = {};
 
-        // Determine Evolution mediatype
+        // Determine Evolution mediatype (must be lowercase)
         let evolutionMediaType = 'document';
-        if (mediaType.toLowerCase().includes('image')) evolutionMediaType = 'Image';
+        if (mediaType.toLowerCase().includes('image')) evolutionMediaType = 'image';
         else if (mediaType.toLowerCase().includes('video')) evolutionMediaType = 'video';
+        else if (mediaType.toLowerCase().includes('audio')) evolutionMediaType = 'audio';
 
         const evolutionUrl = new URL(`/message/sendMedia/${instanceName}`, EVOLUTION_API_URL).toString();
         try {
@@ -899,9 +900,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             body: JSON.stringify({
               number: chatId,
               mediatype: evolutionMediaType,
-              mimetype: mimeType || 'application/octet-stream',
+              mimetype: mimeType || mediaType || 'application/octet-stream',
               caption: caption || '',
-              media: `data:${mimeType || 'application/octet-stream'};base64,${mediaBase64}`,
+              media: mediaBase64,
               fileName
             })
           });
