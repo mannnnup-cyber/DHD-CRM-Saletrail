@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
@@ -172,6 +172,7 @@ export default function WhatsApp() {
   const [moreHistoryResult, setMoreHistoryResult] = useState<string | null>(null);
   const [sendingFile, setSendingFile] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [webhookConfigResult, setWebhookConfigResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -929,24 +930,43 @@ export default function WhatsApp() {
 
   // Handle unified search result selection
   const selectUnifiedResult = (result: any) => {
+    setUnifiedSearchActive(false);
+    setUnifiedSearchQuery('');
     if (result.type === 'chat') {
       const chat = chats.find(c => c.id === result.id);
       if (chat) {
         setSelectedChat(chat);
-        setUnifiedSearchActive(false);
-        setUnifiedSearchQuery('');
+      } else {
+        // Fallback: construct chat from search result when IDs don't match in memory
+        setSelectedChat({
+          id: result.id,
+          name: result.name || result.id,
+          lastMessage: '',
+          timestamp: '',
+          rawTimestamp: 0,
+          unread: 0,
+          assignedTo: result.assignedTo || 'Unassigned',
+          phone: result.phone || result.id.replace(/@[a-z.]+$/, ''),
+          status: (result.status || 'active') as 'active' | 'resolved' | 'pending'
+        });
       }
     } else if (result.type === 'message') {
       const chat = chats.find(c => c.id === result.chatId);
       if (chat) {
         setSelectedChat(chat);
-        setUnifiedSearchActive(false);
-        setUnifiedSearchQuery('');
-        // Optional: jump to message (future enhancement)
+      } else {
+        setSelectedChat({
+          id: result.chatId,
+          name: result.chatName || result.chatId,
+          lastMessage: result.text || '',
+          timestamp: '',
+          rawTimestamp: 0,
+          unread: 0,
+          assignedTo: 'Unassigned',
+          phone: result.chatId.replace(/@[a-z.]+$/, ''),
+          status: 'active' as 'active' | 'resolved' | 'pending'
+        });
       }
-    } else if (result.type === 'contact') {
-      // Optional: open contact in CRM (future enhancement)
-      console.log('Contact selected:', result);
     }
   };
 
@@ -1509,11 +1529,16 @@ export default function WhatsApp() {
                       Call
                     </button>
                     <button
+                      onClick={() => setShowMediaGallery(v => !v)}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors ${showMediaGallery ? 'bg-purple-600/50 text-purple-300' : 'bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 hover:text-purple-300'}`}
+                      title="Media gallery"
+                    >
+                      <Image className="w-3.5 h-3.5" />
+                      Media
+                    </button>
+                    <button
                       onClick={() => {
-                        // Search for contact by phone in the contacts list
-                        // This filters the contacts table to find matching phone
                         const phone = selectedChat.phone.replace(/\D/g, '');
-                        // Open contacts in new tab with search
                         const contactsUrl = `/contacts?search=${encodeURIComponent(phone)}`;
                         window.open(contactsUrl, '_blank');
                       }}
@@ -1552,6 +1577,48 @@ export default function WhatsApp() {
                     </a>
                   </div>
                 </div>
+
+                {/* Media Gallery Panel */}
+                {showMediaGallery && (
+                  <div className="border-b border-gray-700/50 bg-gray-900/60">
+                    <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-700/30">
+                      <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">Shared Media</p>
+                      <button onClick={() => setShowMediaGallery(false)} className="text-gray-500 hover:text-white text-xs">Close</button>
+                    </div>
+                    {(() => {
+                      const mediaMessages = messages.filter((m: any) =>
+                        (m.type === 'imageMessage' || m.type === 'videoMessage') && m.mediaUrl
+                      );
+                      if (mediaMessages.length === 0) {
+                        return <p className="text-gray-500 text-xs text-center py-6">No shared images or videos yet</p>;
+                      }
+                      return (
+                        <div className="grid grid-cols-4 gap-1 p-2 max-h-48 overflow-y-auto">
+                          {mediaMessages.map((m: any) => {
+                            const proxyUrl = m.mediaUrl?.startsWith('http')
+                              ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(m.mediaUrl)}`
+                              : m.mediaUrl;
+                            return (
+                              <button
+                                key={m.id}
+                                onClick={() => { setLightboxUrl(proxyUrl); }}
+                                className="aspect-square rounded overflow-hidden bg-gray-800 hover:ring-2 hover:ring-purple-500 transition-all relative group"
+                              >
+                                {m.type === 'videoMessage' ? (
+                                  <div className="w-full h-full flex items-center justify-center bg-gray-700">
+                                    <span className="text-2xl">▶</span>
+                                  </div>
+                                ) : (
+                                  <img src={proxyUrl} alt="" className="w-full h-full object-cover" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {/* Messages */}
                 <div
@@ -2134,7 +2201,8 @@ export default function WhatsApp() {
           </div>
         </div>
       )}
-    </div>
+
+      {/* Lightbox */}
       {lightboxUrl && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightboxUrl(null)}>
           <button className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full bg-black/40" onClick={() => setLightboxUrl(null)}>
@@ -2146,5 +2214,6 @@ export default function WhatsApp() {
           </a>
         </div>
       )}
+    </div>
   );
 }

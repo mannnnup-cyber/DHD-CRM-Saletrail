@@ -42,11 +42,28 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
 
   const getPath = () => window.location.hash.replace('#', '') || '/dashboard';
   const [currentPath, setCurrentPath] = useState(getPath);
+  const [waUnread, setWaUnread] = useState(0);
 
   useEffect(() => {
     const onHashChange = () => setCurrentPath(getPath());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        const r = await fetch('/api/whatsapp?action=chatsFromDb');
+        const data = await r.json();
+        if (data.success && Array.isArray(data.chats)) {
+          const total = data.chats.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+          setWaUnread(total);
+        }
+      } catch {}
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const filteredItems = NAV_ITEMS.filter(item => {
@@ -132,6 +149,11 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
                         {item.path === '/tasks' && (
                           <span className="ml-auto text-[9px] bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center font-bold animate-pulse">
                             {(state.tasks || []).filter((t: any) => !t.completed && new Date(t.dueDate) < new Date()).length || ''}
+                          </span>
+                        )}
+                        {item.path === '/whatsapp' && waUnread > 0 && (
+                          <span className="ml-auto text-[9px] bg-green-500 text-white min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center font-bold">
+                            {waUnread > 99 ? '99+' : waUnread}
                           </span>
                         )}
                         {item.path === '/woocommerce' && (
