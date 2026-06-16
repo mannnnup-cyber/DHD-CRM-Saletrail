@@ -74,10 +74,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { name, email, role } = req.body;
         if (!name || !email || !role) return res.status(400).json({ success: false, error: 'name, email and role are required' });
 
-        // Create user in Supabase Auth (sends invite email via configured SMTP)
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-          redirectTo: `${APP_URL}/#/login`,
-          data: { name, role }
+        // Generate a temporary password they must change on first login
+        const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '!';
+
+        // Create confirmed user directly — no Supabase SMTP needed
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email,
+          password: tempPassword,
+          email_confirm: true,
+          user_metadata: { name, role }
         });
 
         if (authError) return res.json({ success: false, error: authError.message });
@@ -88,12 +93,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .insert({ id: authData.user.id, name, email, role, is_active: true });
 
         if (profileError) {
-          // Roll back auth user if profile insert fails
           await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
           return res.json({ success: false, error: profileError.message });
         }
 
-        // Send branded invite email via Resend as well (belt-and-suspenders)
+        // Send invite email via Resend with temporary credentials
         if (RESEND_API_KEY) {
           try {
             await fetch('https://api.resend.com/emails', {
@@ -104,20 +108,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 to: [email],
                 subject: "You've been invited to DHD SalesTrail",
                 html: `
-                  <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
-                    <div style="background:#f59e0b;width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
+                  <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px;background:#fff;">
+                    <div style="background:#f59e0b;width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:24px;">
                       <span style="color:#000;font-weight:900;font-size:16px;">DH</span>
                     </div>
-                    <h2 style="color:#111;margin:0 0 8px;">You've been invited</h2>
-                    <p style="color:#555;margin:0 0 24px;">Hi ${name}, you've been added to DHD SalesTrail as a <strong>${role.replace('_', ' ')}</strong>.</p>
-                    <p style="color:#555;margin:0 0 24px;">Check your inbox for a separate email from Supabase to set your password and log in.</p>
-                    <p style="color:#555;margin:0;">Once set up, log in at <a href="${APP_URL}" style="color:#f59e0b;">${APP_URL}</a></p>
+                    <h2 style="color:#111;margin:0 0 8px 0;">You've been invited to DHD SalesTrail</h2>
+                    <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, you've been added as a <strong>${role.replace('_', ' ')}</strong>.</p>
+                    <div style="background:#f9f9f9;border:1px solid #eee;border-radius:12px;padding:20px;margin:0 0 24px 0;">
+                      <p style="margin:0 0 8px 0;color:#333;font-weight:600;">Your login details:</p>
+                      <p style="margin:0 0 4px 0;color:#555;">Email: <strong>${email}</strong></p>
+                      <p style="margin:0 0 16px 0;color:#555;">Temporary password: <strong style="font-family:monospace;background:#eee;padding:2px 6px;border-radius:4px;">${tempPassword}</strong></p>
+                      <p style="margin:0;color:#888;font-size:13px;">Please change your password after first login.</p>
+                    </div>
+                    <a href="${APP_URL}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">Log In Now</a>
+                    <p style="color:#aaa;font-size:12px;margin:24px 0 0 0;">If you weren't expecting this invite, you can ignore this email.</p>
                   </div>
                 `
               })
             });
-          } catch (e) {
-            // Non-fatal — Supabase invite email is primary
+          } catch (emailErr: any) {
+            // User created but email failed — still return success with a warning
+            return res.json({ success: true, userId: authData.user.id, warning: 'Account created but invite email failed to send. Share credentials manually.' });
           }
         }
 
