@@ -1157,27 +1157,6 @@ export default function WhatsApp() {
         </div>
       )}
 
-      {/* Stats Bar */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
-        {[
-          { label: 'Total Chats', value: totalChats, color: 'blue' },
-          { label: 'Unread', value: totalUnread, color: 'red' },
-          { label: 'Active', value: activeChats, color: 'green' },
-          { label: 'Resolved', value: resolvedChats, color: 'gray' },
-          { label: 'Resolved Today', value: resolvedChats, color: 'purple' },
-        ].map((stat, i) => (
-          <div key={i} className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50">
-            <p className="text-gray-400 text-xs mb-1">{stat.label}</p>
-            <p className={`text-2xl font-bold ${
-              stat.color === 'blue' ? 'text-blue-400' :
-              stat.color === 'red' ? 'text-red-400' :
-              stat.color === 'green' ? 'text-green-400' :
-              stat.color === 'purple' ? 'text-purple-400' : 'text-gray-400'
-            }`}>{stat.value}</p>
-          </div>
-        ))}
-      </div>
-
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-800/40 rounded-xl p-1">
         {(['inbox', 'calls', 'stats', 'setup'] as const).map(tab => (
@@ -1538,12 +1517,12 @@ export default function WhatsApp() {
                     </button>
                     <button
                       onClick={() => {
-                        const phone = selectedChat.phone.replace(/\D/g, '');
-                        const contactsUrl = `/contacts?search=${encodeURIComponent(phone)}`;
-                        window.open(contactsUrl, '_blank');
+                        const phone = (selectedChat.phone || selectedChat.id?.split('@')[0] || '').replace(/\D/g, '');
+                        if (phone) localStorage.setItem('contacts_search', phone);
+                        window.location.hash = '#/contacts';
                       }}
                       className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 rounded-lg text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                      title="Open contact in CRM"
+                      title="Find in CRM contacts"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       Contact
@@ -1964,42 +1943,99 @@ export default function WhatsApp() {
       )}
 
       {/* STATS TAB */}
-      {activeTab === 'stats' && (
-        <div className="grid grid-cols-2 gap-4">
-          {[
-            { label: 'Total Messages Today', value: chats.reduce((s, c) => s + c.unread, 0).toString(), icon: MessageCircle, color: 'green' },
-            { label: 'Active Conversations', value: activeChats.toString(), icon: Send, color: 'blue' },
-            { label: 'Resolved Conversations', value: resolvedChats.toString(), icon: Phone, color: 'purple' },
-            { label: 'Avg Response Time', value: '4 min', icon: Clock, color: 'amber' },
-            { label: 'Conversations Resolved', value: resolvedChats.toString(), icon: CheckCheck, color: 'green' },
-            { label: 'Unassigned Chats', value: chats.filter(c => c.assignedTo === 'Unassigned').length.toString(), icon: User, color: 'red' },
-            // Call metrics
-            { label: 'Total Calls', value: totalCalls.toString(), icon: Phone, color: 'blue' },
-            { label: 'Calls Today', value: todaysCalls.length.toString(), icon: Phone, color: 'green' },
-            { label: 'Missed Call Rate', value: `${missedCallRate}%`, icon: Phone, color: missedCallRate > 30 ? 'red' : 'amber' },
-            { label: 'Avg Call Duration', value: avgCallDuration > 0 ? `${avgCallDuration}s` : '0s', icon: Clock, color: 'purple' },
-            { label: 'Missed Calls Today', value: todaysMissedCalls.toString(), icon: Phone, color: todaysMissedCalls > 0 ? 'red' : 'green' },
-          ].map((stat, i) => (
-            <div key={i} className="bg-gray-800/60 rounded-xl p-6 border border-gray-700/50">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                stat.color === 'green' ? 'bg-green-500/20' :
-                stat.color === 'blue' ? 'bg-blue-500/20' :
-                stat.color === 'purple' ? 'bg-purple-500/20' :
-                stat.color === 'amber' ? 'bg-amber-500/20' : 'bg-red-500/20'
-              }`}>
-                <stat.icon className={`w-6 h-6 ${
-                  stat.color === 'green' ? 'text-green-400' :
-                  stat.color === 'blue' ? 'text-blue-400' :
-                  stat.color === 'purple' ? 'text-purple-400' :
-                  stat.color === 'amber' ? 'text-amber-400' : 'text-red-400'
-                }`} />
+      {activeTab === 'stats' && (() => {
+        const pendingChats = chats.filter(c => c.status === 'pending').length;
+        const unassignedChats = chats.filter(c => c.assignedTo === 'Unassigned').length;
+        const groupChats = chats.filter(c => c.id.includes('@g.us')).length;
+        const individualChats = chats.filter(c => !c.id.includes('@g.us')).length;
+        // Team workload
+        const byAssignee = chats.reduce((acc: Record<string, number>, c) => {
+          const key = c.assignedTo || 'Unassigned';
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        }, {});
+        const teamRows = Object.entries(byAssignee).sort((a, b) => b[1] - a[1]);
+
+        const StatCard = ({ label, value, color = 'gray', sub }: { label: string; value: string | number; color?: string; sub?: string }) => (
+          <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50">
+            <p className="text-gray-400 text-xs mb-1">{label}</p>
+            <p className={`text-2xl font-bold ${
+              color === 'green' ? 'text-green-400' : color === 'red' ? 'text-red-400' :
+              color === 'blue' ? 'text-blue-400' : color === 'amber' ? 'text-amber-400' :
+              color === 'purple' ? 'text-purple-400' : 'text-gray-300'
+            }`}>{value}</p>
+            {sub && <p className="text-gray-500 text-[11px] mt-0.5">{sub}</p>}
+          </div>
+        );
+
+        return (
+          <div className="space-y-6 overflow-y-auto max-h-[calc(100vh-260px)] pr-1">
+            {/* Conversations */}
+            <div>
+              <p className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Conversations</p>
+              <div className="grid grid-cols-4 gap-3">
+                <StatCard label="Total Chats" value={totalChats} color="blue" />
+                <StatCard label="Active" value={activeChats} color="green" sub={`${totalChats > 0 ? Math.round(activeChats/totalChats*100) : 0}% of total`} />
+                <StatCard label="Resolved" value={resolvedChats} color="gray" sub={`${totalChats > 0 ? Math.round(resolvedChats/totalChats*100) : 0}% of total`} />
+                <StatCard label="Pending" value={pendingChats} color="amber" />
               </div>
-              <p className="text-3xl font-bold text-white mb-1">{stat.value}</p>
-              <p className="text-gray-400 text-sm">{stat.label}</p>
             </div>
-          ))}
-        </div>
-      )}
+
+            {/* Inbox health */}
+            <div>
+              <p className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Inbox Health</p>
+              <div className="grid grid-cols-4 gap-3">
+                <StatCard label="Unread Messages" value={totalUnread} color={totalUnread > 10 ? 'red' : 'green'} />
+                <StatCard label="Unassigned" value={unassignedChats} color={unassignedChats > 5 ? 'red' : 'gray'} sub="need attention" />
+                <StatCard label="Individual Chats" value={individualChats} color="blue" />
+                <StatCard label="Group Chats" value={groupChats} color="purple" />
+              </div>
+            </div>
+
+            {/* Call metrics */}
+            <div>
+              <p className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Calls</p>
+              <div className="grid grid-cols-4 gap-3">
+                <StatCard label="Total Calls" value={totalCalls} color="blue" />
+                <StatCard label="Calls Today" value={todaysCalls.length} color="green" />
+                <StatCard label="Missed Today" value={todaysMissedCalls} color={todaysMissedCalls > 0 ? 'red' : 'green'} />
+                <StatCard label="Missed Rate" value={`${missedCallRate}%`} color={missedCallRate > 30 ? 'red' : missedCallRate > 15 ? 'amber' : 'green'} sub={`${missedCalls} of ${totalCalls} calls`} />
+              </div>
+              {avgCallDuration > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <StatCard label="Avg Call Duration" value={avgCallDuration >= 60 ? `${Math.floor(avgCallDuration/60)}m ${avgCallDuration%60}s` : `${avgCallDuration}s`} color="purple" />
+                  <StatCard label="Total Call Time" value={totalDuration >= 3600 ? `${Math.floor(totalDuration/3600)}h ${Math.floor((totalDuration%3600)/60)}m` : totalDuration >= 60 ? `${Math.floor(totalDuration/60)}m ${totalDuration%60}s` : `${totalDuration}s`} color="blue" />
+                </div>
+              )}
+            </div>
+
+            {/* Team workload */}
+            {teamRows.length > 0 && (
+              <div>
+                <p className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Team Workload</p>
+                <div className="bg-gray-800/60 rounded-xl border border-gray-700/50 overflow-hidden">
+                  {teamRows.map(([name, count], i) => (
+                    <div key={name} className={`flex items-center justify-between px-4 py-3 ${i < teamRows.length - 1 ? 'border-b border-gray-700/30' : ''}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-xs font-bold">
+                          {name[0]?.toUpperCase() || '?'}
+                        </div>
+                        <span className="text-sm text-gray-200">{name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-32 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-green-500 rounded-full" style={{ width: `${totalChats > 0 ? (count/totalChats*100) : 0}%` }} />
+                        </div>
+                        <span className="text-sm font-semibold text-white w-6 text-right">{count}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* SETUP TAB */}
       {activeTab === 'setup' && (
