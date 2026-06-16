@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  Save, Shield, Smartphone, Globe, Mail, Bot, Link2, CheckCircle, XCircle, Loader2, Eye, EyeOff, MessageCircle
+  Save, Shield, Smartphone, Globe, Mail, Bot, Link2, CheckCircle, XCircle, Loader2, Eye, EyeOff, MessageCircle,
+  Users, UserPlus, Trash2, Crown, UserCheck
 } from 'lucide-react';
 
 interface SettingItem {
@@ -24,7 +25,23 @@ const Settings: React.FC = () => {
   const { state, updateSettings } = useApp();
   const settings = state.settings;
 
-  const [activeTab, setActiveTab] = useState<'email' | 'api' | 'integrations' | 'automation'>('email');
+  const [activeTab, setActiveTab] = useState<'email' | 'api' | 'integrations' | 'automation' | 'team'>('email');
+
+  // Team management state
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'manager' | 'sales_rep'>('sales_rep');
+  const [inviting, setInviting] = useState(false);
+  const [teamMessage, setTeamMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // First-time owner setup state
+  const [showOwnerSetup, setShowOwnerSetup] = useState(false);
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerEmail, setOwnerEmail] = useState('');
+  const [ownerPassword, setOwnerPassword] = useState('');
   const [_dbSettings, setDbSettings] = useState<SettingsByCategory>({
     email: [],
     api: [],
@@ -333,7 +350,85 @@ const Settings: React.FC = () => {
     { id: 'api' as const, label: 'AI & API', icon: Bot },
     { id: 'integrations' as const, label: 'Integrations', icon: Link2 },
     { id: 'automation' as const, label: 'Automation', icon: Smartphone },
+    { id: 'team' as const, label: 'Team', icon: Users },
   ];
+
+  const loadTeam = async () => {
+    setTeamLoading(true);
+    try {
+      const r = await fetch('/api/users?action=list');
+      const data = await r.json();
+      if (data.success) setTeamMembers(data.users || []);
+    } catch {}
+    setTeamLoading(false);
+  };
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviting(true);
+    setTeamMessage(null);
+    try {
+      const r = await fetch('/api/users?action=invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: inviteName, email: inviteEmail, role: inviteRole })
+      });
+      const data = await r.json();
+      if (data.success) {
+        setTeamMessage({ type: 'success', text: `Invite sent to ${inviteEmail}` });
+        setInviteName(''); setInviteEmail(''); setInviteRole('sales_rep');
+        setShowInviteForm(false);
+        loadTeam();
+      } else {
+        setTeamMessage({ type: 'error', text: data.error || 'Failed to send invite' });
+      }
+    } catch {
+      setTeamMessage({ type: 'error', text: 'Network error' });
+    }
+    setInviting(false);
+  };
+
+  const handleRemoveMember = async (id: string, name: string) => {
+    if (!confirm(`Remove ${name} from the team?`)) return;
+    try {
+      const r = await fetch('/api/users?action=remove', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      const data = await r.json();
+      if (data.success) { setTeamMessage({ type: 'success', text: `${name} removed` }); loadTeam(); }
+      else setTeamMessage({ type: 'error', text: data.error || 'Failed to remove' });
+    } catch {}
+  };
+
+  const handleCreateOwner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviting(true);
+    setTeamMessage(null);
+    try {
+      const r = await fetch('/api/users?action=createOwner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: ownerName, email: ownerEmail, password: ownerPassword })
+      });
+      const data = await r.json();
+      if (data.success) {
+        setTeamMessage({ type: 'success', text: 'Owner account created. You can now log in with the new email.' });
+        setShowOwnerSetup(false);
+        loadTeam();
+      } else {
+        setTeamMessage({ type: 'error', text: data.error || 'Failed to create owner' });
+      }
+    } catch {
+      setTeamMessage({ type: 'error', text: 'Network error' });
+    }
+    setInviting(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'team') loadTeam();
+  }, [activeTab]);
 
   return (
     <div className="space-y-6">
@@ -928,8 +1023,175 @@ const Settings: React.FC = () => {
             </div>
           )}
 
-          {/* Save Button */}
-          <div className="flex justify-end gap-4 pt-4">
+          {/* Team Settings */}
+          {activeTab === 'team' && (
+            <div className="space-y-6">
+              {teamMessage && (
+                <div className={`p-4 rounded-xl flex items-center gap-3 ${teamMessage.type === 'success' ? 'bg-green-500/10 border border-green-500/30 text-green-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'}`}>
+                  {teamMessage.type === 'success' ? <CheckCircle className="w-4 h-4 flex-shrink-0" /> : <XCircle className="w-4 h-4 flex-shrink-0" />}
+                  {teamMessage.text}
+                </div>
+              )}
+
+              {/* Owner Setup */}
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-white flex items-center gap-2">
+                    <Crown className="w-5 h-5 text-amber-500" />
+                    Owner Account Setup
+                  </h3>
+                  <button
+                    onClick={() => setShowOwnerSetup(v => !v)}
+                    className="text-xs text-amber-400 hover:text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    {showOwnerSetup ? 'Cancel' : 'Set Up Owner Login'}
+                  </button>
+                </div>
+                <p className="text-sm text-gray-400 mb-4">
+                  Create the owner account using <span className="text-white font-medium">support@dirtyhanddesigns.com</span>. This replaces the shared login and must be done once.
+                </p>
+                {showOwnerSetup && (
+                  <form onSubmit={handleCreateOwner} className="space-y-4 border-t border-gray-800 pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1.5">Display Name</label>
+                        <input type="text" value={ownerName} onChange={e => setOwnerName(e.target.value)} required
+                          placeholder="e.g. DHD Owner"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1.5">Email</label>
+                        <input type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} required
+                          placeholder="support@dirtyhanddesigns.com"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1.5">Password</label>
+                      <input type="password" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} required
+                        placeholder="Choose a strong password"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+                    </div>
+                    <button type="submit" disabled={inviting}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black text-sm font-bold rounded-xl transition-colors">
+                      {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}
+                      Create Owner Account
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              {/* Team Members List */}
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-bold text-white flex items-center gap-2">
+                    <Users className="w-5 h-5 text-amber-500" />
+                    Team Members
+                    {teamMembers.length > 0 && (
+                      <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{teamMembers.length}</span>
+                    )}
+                  </h3>
+                  <button
+                    onClick={() => setShowInviteForm(v => !v)}
+                    className="flex items-center gap-1.5 text-sm text-amber-400 hover:text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Invite Member
+                  </button>
+                </div>
+
+                {/* Invite Form */}
+                {showInviteForm && (
+                  <form onSubmit={handleInvite} className="mb-6 p-4 bg-gray-800/60 rounded-xl border border-gray-700 space-y-4">
+                    <p className="text-sm font-medium text-white">Send Invite</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1.5">Name</label>
+                        <input type="text" value={inviteName} onChange={e => setInviteName(e.target.value)} required
+                          placeholder="Full name"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1.5">Personal Email</label>
+                        <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required
+                          placeholder="their@email.com"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1.5">Role</label>
+                        <select value={inviteRole} onChange={e => setInviteRole(e.target.value as any)}
+                          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50">
+                          <option value="sales_rep">Sales Rep</option>
+                          <option value="manager">Manager</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="submit" disabled={inviting}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors">
+                        {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                        Send Invite Email
+                      </button>
+                      <button type="button" onClick={() => setShowInviteForm(false)}
+                        className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">They'll receive an email to set their password and log in with their personal email address.</p>
+                  </form>
+                )}
+
+                {/* Members List */}
+                {teamLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+                  </div>
+                ) : teamMembers.length === 0 ? (
+                  <div className="text-center py-10 text-gray-500">
+                    <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm font-medium text-gray-400">No team members yet</p>
+                    <p className="text-xs mt-1">Set up the owner account above, then invite your team.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {teamMembers.map(member => {
+                      const roleColors: Record<string, string> = {
+                        owner: 'bg-amber-500/20 text-amber-400',
+                        manager: 'bg-blue-500/20 text-blue-400',
+                        sales_rep: 'bg-green-500/20 text-green-400',
+                      };
+                      const RoleIcon = member.role === 'owner' ? Crown : member.role === 'manager' ? UserCheck : Users;
+                      return (
+                        <div key={member.id} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800/60 transition-colors">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+                            <span className="text-amber-400 font-bold text-sm">{member.name?.[0]?.toUpperCase() || '?'}</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-white truncate">{member.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                          </div>
+                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[member.role] || 'bg-gray-700 text-gray-400'}`}>
+                            <RoleIcon className="w-3 h-3" />
+                            {member.role === 'sales_rep' ? 'Sales Rep' : member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                          </span>
+                          {member.role !== 'owner' && (
+                            <button onClick={() => handleRemoveMember(member.id, member.name)}
+                              className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
+                              title="Remove member">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Save Button — hidden on team tab */}
+          <div className={`flex justify-end gap-4 pt-4 ${activeTab === 'team' ? 'hidden' : ''}`}>
             <button
               onClick={loadSettings}
               className="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-400 hover:text-white transition-colors"

@@ -74,14 +74,7 @@ const formatMessageTime = (ts: number | string): string => {
   return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${timeStr}`;
 };
 
-const TEAM_MEMBERS = [
-  { id: 'all', name: 'Unassigned' },
-  { id: 'keisha', name: 'Keisha' },
-  { id: 'andre', name: 'Andre' },
-  { id: 'marcia', name: 'Marcia' },
-  { id: 'devon', name: 'Devon' },
-  { id: 'tanya', name: 'Tanya' },
-];
+const UNASSIGNED = { id: 'all', name: 'Unassigned' };
 
 const MESSAGE_TEMPLATES = [
   { id: 1, name: 'Initial Response', text: 'Hi! Thanks for reaching out to Dirty Hand Designs. How can we help you today?' },
@@ -182,10 +175,23 @@ export default function WhatsApp() {
   const [msgReactions, setMsgReactions] = useState<Record<string, string>>({});
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [webhookConfigResult, setWebhookConfigResult] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([UNASSIGNED]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingWATarget = useRef<{ phone: string; name: string } | null>(null);
 
   const user = state.user;
+
+  // Load team members from DB (replaces hardcoded array)
+  useEffect(() => {
+    fetch('/api/users?action=list')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && d.users?.length) {
+          setTeamMembers([UNASSIGNED, ...d.users.map((u: any) => ({ id: u.id, name: u.name }))]);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Read navigation target written by WooCommerce (or any other page)
   useEffect(() => {

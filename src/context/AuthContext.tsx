@@ -1,37 +1,64 @@
-import React, { createContext, useContext, useState } from 'react';
-import { User } from '../data/types';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+
+interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: 'owner' | 'manager' | 'sales_rep' | 'rep';
+}
 
 interface AuthContextType {
-  user: User | null;
-  login: (username: string, password: string) => boolean;
+  user: AuthUser | null;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
 }
 
-const DEMO_USERS: (User & { username: string; password: string })[] = [
-  { id: 'manager1', username: 'manager', password: 'manager123', name: 'Manager', email: 'manager@dhd.com', role: 'manager' },
-  { id: 'rep1', username: 'keisha', password: 'keisha123', name: 'Keisha Brown', email: 'keisha@dhd.com', role: 'rep' },
-  { id: 'rep2', username: 'andre', password: 'andre123', name: 'Andre Wilson', email: 'andre@dhd.com', role: 'rep' },
-  { id: 'rep3', username: 'marcia', password: 'marcia123', name: 'Marcia Campbell', email: 'marcia@dhd.com', role: 'rep' },
-  { id: 'rep4', username: 'devon', password: 'devon123', name: 'Devon Clarke', email: 'devon@dhd.com', role: 'rep' },
-  { id: 'rep5', username: 'tanya', password: 'tanya123', name: 'Tanya Morrison', email: 'tanya@dhd.com', role: 'rep' },
-];
+const SESSION_KEY = 'dhd_auth';
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
-  const login = (username: string, password: string): boolean => {
-    const match = DEMO_USERS.find(u => u.username === username && u.password === password);
-    if (match) {
-      const { username: _u, password: _p, ...userRecord } = match;
-      setUser(userRecord);
-      return true;
+  // Restore session on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const { user: stored, expiresAt } = JSON.parse(raw);
+        // Accept session if it hasn't expired (or no expiry set)
+        if (!expiresAt || new Date(expiresAt * 1000) > new Date()) {
+          setUser(stored);
+        } else {
+          localStorage.removeItem(SESSION_KEY);
+        }
+      }
+    } catch {
+      localStorage.removeItem(SESSION_KEY);
     }
-    return false;
+  }, []);
+
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const r = await fetch('/api/users?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await r.json();
+      if (!data.success) return false;
+      setUser(data.user);
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ user: data.user, expiresAt: data.expiresAt }));
+      return true;
+    } catch {
+      return false;
+    }
   };
 
-  const logout = () => setUser(null);
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem(SESSION_KEY);
+  };
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>
