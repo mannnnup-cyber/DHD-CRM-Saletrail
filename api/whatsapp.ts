@@ -454,6 +454,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const webhookSetUrl = new URL(`/webhook/set/${instanceName}`, EVOLUTION_API_URL).toString();
           const events = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED', 'CALL'];
 
+          const finalWebhookUrl = webhookUrl || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`;
           const r = await fetch(webhookSetUrl, {
             method: 'POST',
             headers: {
@@ -461,20 +462,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              url: webhookUrl || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`,
-              events,
-              enabled: true,
-              webhookByEvents: true,
-              webhookBase64: false
+              webhook: {
+                url: finalWebhookUrl,
+                events,
+                enabled: true,
+                webhookByEvents: false,
+                webhookBase64: false
+              }
             })
           });
 
           const data = await r.json();
-          return res.json({
-            success: r.ok,
-            data,
-            message: r.ok ? 'Webhook configured successfully' : 'Failed to configure webhook'
-          });
+          if (!r.ok) {
+            const errDetail = data?.message || data?.error || data?.response?.message || JSON.stringify(data).slice(0, 200);
+            console.error('[setWebhook] Evolution API error:', r.status, errDetail);
+            return res.json({ success: false, error: `Evolution API ${r.status}: ${errDetail}` });
+          }
+          return res.json({ success: true, data, message: 'Webhook configured successfully' });
         } catch (err: any) {
           console.error('[Evolution setWebhook] Error:', err.message);
           return res.json({ success: false, error: err.message });

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 
@@ -173,6 +173,9 @@ export default function WhatsApp() {
   const [sendingFile, setSendingFile] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [showMediaGallery, setShowMediaGallery] = useState(false);
+  const [forwardMsg, setForwardMsg] = useState<any>(null);
+  const [forwardingTo, setForwardingTo] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [webhookConfigResult, setWebhookConfigResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -970,6 +973,21 @@ export default function WhatsApp() {
     }
   };
 
+  // Forward a message to a chosen chat
+  const forwardMessage = async (targetChatId: string) => {
+    if (!forwardMsg) return;
+    setForwardingTo(targetChatId);
+    try {
+      await fetch('/api/whatsapp?action=send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: targetChatId, message: forwardMsg.text || '' })
+      });
+      setForwardMsg(null);
+    } catch {}
+    setForwardingTo(null);
+  };
+
   // Send file attachment
   const sendAttachment = async () => {
     if (!attachFile || !selectedChat) return;
@@ -1022,16 +1040,16 @@ export default function WhatsApp() {
   // (messageCount/loadingCount removed — Green API quota tracking no longer needed)
 
   const filteredChats = chats.filter(c => {
-    // Group vs individual filter: groups have @g.us JID suffix
     const isGroup = c.id.includes('@g.us');
     if (chatFilter === 'groups' && !isGroup) return false;
     if (chatFilter === 'individual' && isGroup) return false;
-
+    // Show archived chats only in archive view; hide them in main inbox
+    if (showArchived && (c as any).status !== 'archived') return false;
+    if (!showArchived && (c as any).status === 'archived') return false;
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase().replace(/\D/g, '');
     const nameMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
-    // Strip non-digits from both sides so 8768412776 matches 18768412776
-    const phoneMatch = q.length > 0 && c.phone.replace(/\D/g, '').includes(q);
+    const phoneMatch = q.length > 0 && (c.phone || '').replace(/\D/g, '').includes(q);
     return nameMatch || phoneMatch;
   });
 
@@ -1449,6 +1467,15 @@ export default function WhatsApp() {
                 ))
               )}
             </div>
+
+            {/* Archived toggle */}
+            <button
+              onClick={() => { setShowArchived(v => !v); setSelectedChat(null); }}
+              className="flex items-center gap-2 px-4 py-2.5 text-xs text-gray-500 hover:text-gray-300 border-t border-gray-700/40 transition-colors w-full"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              {showArchived ? 'Back to Inbox' : `Archived (${chats.filter(c => (c as any).status === 'archived').length})`}
+            </button>
           </div> {/* end chat list */}
 
           {/* Message Area */}
@@ -1534,16 +1561,28 @@ export default function WhatsApp() {
                           c.id === selectedChat.id ? { ...c, status: nextStatus } : c
                         ));
                         setSelectedChat(prev => prev ? { ...prev, status: nextStatus } : null);
-                        // Persist status to DB so it survives page refresh
                         updateChatStatus(selectedChat.id, nextStatus);
+                        if (nextStatus === 'resolved') setSelectedChat(null);
                       }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                         selectedChat.status === 'resolved'
                           ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                           : 'bg-green-600/30 text-green-400 hover:bg-green-600/50'
                       }`}
+                      title={selectedChat.status === 'resolved' ? 'Move back to active inbox' : 'Mark done — removes from active inbox, keeps full history'}
                     >
                       {selectedChat.status === 'resolved' ? 'Reopen' : 'Resolve'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        updateChatStatus(selectedChat.id, 'archived' as any);
+                        setChats(prev => prev.map(c => c.id === selectedChat.id ? { ...c, status: 'archived' as any } : c));
+                        setSelectedChat(null);
+                      }}
+                      className="p-1.5 bg-gray-700/50 hover:bg-gray-600 text-gray-400 hover:text-white rounded-lg transition-colors"
+                      title="Archive — hides from inbox, accessible via Archived link"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
                     </button>
                     <a
                       href={`https://wa.me/${selectedChat.phone}`}
@@ -1642,7 +1681,14 @@ export default function WhatsApp() {
                         if (item._type === 'message') {
                           const msg = item as any;
                           return (
-                            <div key={msg.id} className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
+                            <div key={msg.id} className={`flex items-end gap-1 group ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
+                              {/* Hover actions — left side for incoming */}
+                              {!msg.fromMe && (
+                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mb-1 flex-shrink-0">
+                                  {msg.text && <button onClick={() => navigator.clipboard?.writeText(msg.text)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Copy"><Copy className="w-3 h-3" /></button>}
+                                  <button onClick={() => setForwardMsg(msg)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Forward"><Share2 className="w-3 h-3" /></button>
+                                </div>
+                              )}
                         <div className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl ${
                           msg.fromMe
                             ? 'bg-green-600 text-white rounded-br-sm'
@@ -1726,7 +1772,14 @@ export default function WhatsApp() {
                             )}
                           </div>
                         </div>
-                      </div>
+                              {/* Hover actions — right side for outgoing */}
+                              {msg.fromMe && (
+                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mb-1 flex-shrink-0">
+                                  {msg.text && <button onClick={() => navigator.clipboard?.writeText(msg.text)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Copy"><Copy className="w-3 h-3" /></button>}
+                                  <button onClick={() => setForwardMsg(msg)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Forward"><Share2 className="w-3 h-3" /></button>
+                                </div>
+                              )}
+                            </div>
                             );
                         } else if (item._type === 'call') {
                           const call = item as any;
@@ -2241,6 +2294,45 @@ export default function WhatsApp() {
             >
               Speaker Off
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Forward Message Modal */}
+      {forwardMsg && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setForwardMsg(null)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+              <div className="flex items-center gap-2">
+                <Share2 className="w-4 h-4 text-green-400" />
+                <h3 className="text-white font-semibold">Forward to...</h3>
+              </div>
+              <button onClick={() => setForwardMsg(null)} className="text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+            {forwardMsg.text && (
+              <div className="mx-4 mt-3 px-3 py-2 bg-gray-800 rounded-lg border-l-2 border-green-500">
+                <p className="text-gray-300 text-xs truncate">{forwardMsg.text}</p>
+              </div>
+            )}
+            <div className="max-h-72 overflow-y-auto py-2">
+              {chats.filter(c => (c as any).status !== 'archived' && c.id !== selectedChat?.id).map(chat => (
+                <button
+                  key={chat.id}
+                  onClick={() => forwardMessage(chat.id)}
+                  disabled={forwardingTo === chat.id}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-800 transition-colors disabled:opacity-60"
+                >
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {chat.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="text-white text-sm font-medium truncate">{chat.name}</p>
+                    <p className="text-gray-500 text-[11px] truncate">{chat.lastMessage}</p>
+                  </div>
+                  {forwardingTo === chat.id && <Loader2 className="w-4 h-4 text-green-400 animate-spin flex-shrink-0" />}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

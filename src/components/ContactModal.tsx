@@ -35,9 +35,9 @@ const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose }) => {
               <div className="flex items-center gap-3">
                 <Phone className="w-4 h-4 text-gray-500" />
                 <span className="text-sm text-gray-300">{contact.phone}</span>
-                <a href={`https://wa.me/${waNumber}`} target="_blank" rel="noopener noreferrer" className="ml-auto flex items-center gap-1 text-xs text-green-400 hover:text-green-300">
+                <button onClick={() => { localStorage.setItem('wa_open_contact', JSON.stringify({ phone: waNumber, name: contact.name || contact.contactName || '' })); window.location.hash = '#/whatsapp'; }} className="ml-auto flex items-center gap-1 text-xs text-green-400 hover:text-green-300">
                   <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
-                </a>
+                </button>
               </div>
             )}
             {contact.email && (
@@ -63,9 +63,9 @@ const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose }) => {
             <a href={`tel:${contact.phone}`} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
               <Phone className="w-4 h-4" /> Call
             </a>
-            <a href={`https://wa.me/${waNumber}`} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
+            <button onClick={() => { localStorage.setItem('wa_open_contact', JSON.stringify({ phone: waNumber, name: contact.name || contact.contactName || '' })); window.location.hash = '#/whatsapp'; }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
               <MessageSquare className="w-4 h-4" /> WhatsApp
-            </a>
+            </button>
           </div>
         </div>
       </div>
