@@ -100,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Send invite email via Resend with temporary credentials
         if (RESEND_API_KEY) {
           try {
-            await fetch('https://api.resend.com/emails', {
+            const emailRes = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -126,10 +126,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 `
               })
             });
+
+            if (!emailRes.ok) {
+              const emailErr = await emailRes.json().catch(() => ({}));
+              console.error('[api/users] Resend error:', emailErr);
+              return res.json({ success: true, userId: authData.user.id, tempPassword, warning: `Account created but email failed (${emailRes.status}). Share these credentials manually — Email: ${email} / Password: ${tempPassword}` });
+            }
           } catch (emailErr: any) {
-            // User created but email failed — still return success with a warning
-            return res.json({ success: true, userId: authData.user.id, warning: 'Account created but invite email failed to send. Share credentials manually.' });
+            console.error('[api/users] Resend network error:', emailErr.message);
+            return res.json({ success: true, userId: authData.user.id, tempPassword, warning: `Account created but email failed to send. Share these credentials manually — Email: ${email} / Password: ${tempPassword}` });
           }
+        } else {
+          // No Resend key — return credentials for manual sharing
+          return res.json({ success: true, userId: authData.user.id, tempPassword, warning: `No email provider configured. Share these credentials manually — Email: ${email} / Password: ${tempPassword}` });
         }
 
         return res.json({ success: true, userId: authData.user.id });

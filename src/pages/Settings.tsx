@@ -376,7 +376,7 @@ const Settings: React.FC = () => {
       const data = await r.json();
       if (data.success) {
         const msg = data.warning
-          ? `Account created — but invite email failed to send. Share these credentials with ${inviteName} manually.`
+          ? data.warning
           : `Invite sent to ${inviteEmail}`;
         setTeamMessage({ type: data.warning ? 'error' : 'success', text: msg });
         setInviteName(''); setInviteEmail(''); setInviteRole('sales_rep');
