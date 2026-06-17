@@ -67,7 +67,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
   }, []);
 
   const filteredItems = NAV_ITEMS.filter(item => {
-    if (item.role === 'manager' && user?.role !== 'manager') return false;
+    if (item.role === 'manager' && !['manager', 'owner'].includes(user?.role || '')) return false;
     return true;
   });
 
@@ -176,7 +176,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-white truncate">{user?.name || 'User'}</p>
               <p className="text-[10px] text-gray-500 capitalize">
-                {user?.role === 'manager' ? '👑 Manager' : '💼 Sales Rep'}
+                {user?.role === 'owner' ? '👑 Owner' : user?.role === 'manager' ? '🏆 Manager' : '💼 Sales Rep'}
               </p>
             </div>
             <button

@@ -286,8 +286,8 @@ const AppInner: React.FC = () => {
                   <div className="p-4 border-b border-gray-800">
                     <p className="font-semibold text-white">{state.user?.name}</p>
                     <p className="text-sm text-gray-400">{state.user?.email}</p>
-                    <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${state.user?.role === 'manager' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                      {state.user?.role === 'manager' ? '👑 Manager' : '💼 Sales Rep'}
+                    <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${state.user?.role === 'owner' ? 'bg-amber-500/20 text-amber-400' : state.user?.role === 'manager' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                      {state.user?.role === 'owner' ? '👑 Owner' : state.user?.role === 'manager' ? '🏆 Manager' : '💼 Sales Rep'}
                     </span>
                   </div>
                   <div className="p-2">

@@ -375,7 +375,10 @@ const Settings: React.FC = () => {
       });
       const data = await r.json();
       if (data.success) {
-        setTeamMessage({ type: 'success', text: `Invite sent to ${inviteEmail}` });
+        const msg = data.warning
+          ? `Account created — but invite email failed to send. Share these credentials with ${inviteName} manually.`
+          : `Invite sent to ${inviteEmail}`;
+        setTeamMessage({ type: data.warning ? 'error' : 'success', text: msg });
         setInviteName(''); setInviteEmail(''); setInviteRole('sales_rep');
         setShowInviteForm(false);
         loadTeam();
