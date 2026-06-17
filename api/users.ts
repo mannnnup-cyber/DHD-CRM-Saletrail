@@ -150,18 +150,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true });
       }
 
-      // DELETE /api/users?action=remove — deactivate (soft delete)
+      // DELETE /api/users?action=remove — hard delete from profile + auth
       case 'remove': {
         if (req.method !== 'DELETE') return res.status(405).json({ error: 'DELETE required' });
         const { id } = req.body;
         if (!id) return res.status(400).json({ success: false, error: 'id is required' });
 
-        const { error } = await supabaseAdmin
+        // Delete profile row first
+        const { error: profileError } = await supabaseAdmin
           .from('user_profiles')
-          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .delete()
           .eq('id', id);
 
-        if (error) return res.json({ success: false, error: error.message });
+        if (profileError) return res.json({ success: false, error: profileError.message });
+
+        // Delete from Supabase Auth so the email can be re-used in future invites
+        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
+        if (authError) return res.json({ success: false, error: authError.message });
+
         return res.json({ success: true });
       }
 
