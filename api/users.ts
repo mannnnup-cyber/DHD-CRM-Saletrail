@@ -316,7 +316,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'listDevices': {
         const { data, error } = await supabaseAdmin
           .from('devices')
-          .select('device_id, phone_number, device_name, device_model, device_label, user_id, is_active, last_heartbeat')
+          .select('device_id, phone_number, device_name, device_model, app_version, user_id, is_active, last_heartbeat')
           .order('created_at', { ascending: true });
         if (error) return res.json({ success: false, error: error.message });
         return res.json({ success: true, devices: data || [] });
@@ -324,13 +324,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'linkDevice': {
         if (req.method !== 'PUT') return res.status(405).json({ error: 'PUT required' });
-        const { deviceId, userId, deviceLabel } = req.body;
+        const { deviceId, userId, deviceName } = req.body;
         if (!deviceId) return res.status(400).json({ success: false, error: 'deviceId required' });
 
         const { error } = await supabaseAdmin.from('devices')
-          .update({ user_id: userId || null, device_label: deviceLabel || null, updated_at: new Date().toISOString() })
+          .update({ user_id: userId || null, device_name: deviceName || null, updated_at: new Date().toISOString() })
           .eq('device_id', deviceId);
         if (error) return res.json({ success: false, error: error.message });
+
+        // Backfill rep_name on existing cellular_calls for this device
+        if (deviceName !== undefined) {
+          const { data: dev } = await supabaseAdmin.from('devices').select('phone_number').eq('device_id', deviceId).maybeSingle();
+          if (dev?.phone_number) {
+            await supabaseAdmin.from('cellular_calls')
+              .update({ rep_name: deviceName || null })
+              .eq('rep_phone', dev.phone_number);
+          }
+        }
+
+        // Mark linked rep as companion_installed
+        if (userId) {
+          await supabaseAdmin.from('user_profiles').update({ companion_installed: true }).eq('id', userId);
+        }
+
         return res.json({ success: true });
       }
 

@@ -3,7 +3,7 @@ import {
   Smartphone, Download, QrCode, CheckCircle2, Phone, Mic,
   RefreshCw, BarChart3, ChevronDown, ChevronUp, ExternalLink,
   Shield, Wifi, Clock, Copy, Check, Users, Pencil, Save, X,
-  Circle, Activity
+  Circle, Activity, ArrowUpCircle
 } from 'lucide-react';
 
 const REPO = 'mannnnup-cyber/DHD-CRM-Companion';
@@ -216,18 +216,27 @@ interface Device {
   phone_number: string;
   device_name: string | null;
   device_model: string | null;
+  app_version: string | null;
   is_active: boolean;
   last_heartbeat: string | null;
   created_at: string;
 }
 
+interface LatestRelease {
+  version: string | null;
+  downloadUrl: string;
+  publishedAt: string | null;
+}
+
 function DeviceAdmin() {
-  const [devices, setDevices]     = useState<Device[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName]   = useState('');
-  const [saving, setSaving]       = useState(false);
-  const [error, setError]         = useState('');
+  const [devices, setDevices]           = useState<Device[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [editingId, setEditingId]       = useState<string | null>(null);
+  const [editName, setEditName]         = useState('');
+  const [saving, setSaving]             = useState(false);
+  const [error, setError]               = useState('');
+  const [latestRelease, setLatestRelease] = useState<LatestRelease | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   async function loadDevices() {
     setLoading(true);
@@ -243,7 +252,23 @@ function DeviceAdmin() {
     }
   }
 
-  useEffect(() => { loadDevices(); }, []);
+  async function checkLatestRelease() {
+    setCheckingUpdate(true);
+    try {
+      const res = await fetch('/api/whatsapp?action=getLatestRelease');
+      const data = await res.json();
+      if (data.success) setLatestRelease({ version: data.version, downloadUrl: data.downloadUrl, publishedAt: data.publishedAt });
+    } catch {}
+    setCheckingUpdate(false);
+  }
+
+  useEffect(() => { loadDevices(); checkLatestRelease(); }, []);
+
+  function versionStatus(deviceVersion: string | null): 'up-to-date' | 'update-available' | 'unknown' {
+    if (!deviceVersion) return 'unknown';
+    if (!latestRelease?.version) return 'unknown';
+    return deviceVersion === latestRelease.version ? 'up-to-date' : 'update-available';
+  }
 
   async function saveName(phone_number: string) {
     setSaving(true);
@@ -299,13 +324,27 @@ function DeviceAdmin() {
             <div className="text-[#656d76] text-xs">Manage rep phones and assign names to each device</div>
           </div>
         </div>
-        <button
-          onClick={loadDevices}
-          className="p-2 text-[#656d76] hover:text-white hover:bg-[#161b22] rounded-lg transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw size={14} />
-        </button>
+        <div className="flex items-center gap-2">
+          {latestRelease?.version && (
+            <a
+              href={latestRelease.downloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 text-xs bg-[#00c89622] text-[#00c896] border border-[#00c89633] px-2.5 py-1 rounded-lg hover:bg-[#00c89633] transition-colors"
+            >
+              <ArrowUpCircle size={12} />
+              Latest v{latestRelease.version}
+            </a>
+          )}
+          <button
+            onClick={() => { loadDevices(); checkLatestRelease(); }}
+            disabled={checkingUpdate}
+            className="p-2 text-[#656d76] hover:text-white hover:bg-[#161b22] rounded-lg transition-colors disabled:opacity-50"
+            title="Check for updates"
+          >
+            <RefreshCw size={14} className={checkingUpdate ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
 
       <div className="p-5">
@@ -385,6 +424,40 @@ function DeviceAdmin() {
                         {device.device_model && (
                           <div className="text-xs text-[#656d76] mt-0.5">{device.device_model}</div>
                         )}
+
+                        {/* App version + update status */}
+                        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                          {device.app_version ? (
+                            <span className="text-[10px] bg-[#0090ff22] text-[#4da6ff] border border-[#4da6ff33] px-1.5 py-0.5 rounded-full font-mono">
+                              v{device.app_version}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-[#30363d] text-[#656d76] border border-[#30363d] px-1.5 py-0.5 rounded-full">
+                              version unknown
+                            </span>
+                          )}
+                          {versionStatus(device.app_version) === 'update-available' && (
+                            <a
+                              href={latestRelease?.downloadUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] bg-[#f0883322] text-[#f08833] border border-[#f0883333] px-1.5 py-0.5 rounded-full flex items-center gap-1 hover:bg-[#f0883344] transition-colors"
+                            >
+                              <ArrowUpCircle size={9} />
+                              Update to v{latestRelease?.version}
+                            </a>
+                          )}
+                          {versionStatus(device.app_version) === 'up-to-date' && (
+                            <span className="text-[10px] bg-[#00c89622] text-[#00c896] border border-[#00c89633] px-1.5 py-0.5 rounded-full">
+                              Up to date
+                            </span>
+                          )}
+                          {versionStatus(device.app_version) === 'unknown' && !device.app_version && (
+                            <span className="text-[10px] bg-[#f0883322] text-[#f08833] border border-[#f0883333] px-1.5 py-0.5 rounded-full">
+                              App update required to report version
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -412,7 +485,7 @@ function DeviceAdmin() {
         )}
 
         <p className="text-xs text-[#656d76] mt-4 leading-relaxed">
-          Devices register automatically on first sync. Set a rep name here — it will appear in Call Logs and Coaching Dashboard to identify whose calls are whose.
+          Devices register automatically on first sync. Set a rep name here — it will appear in Call Logs and Coaching Dashboard. To assign a device to a team member account and enable full call attribution, go to <strong className="text-[#8b949e]">Settings → Team → Companion App Devices</strong>. The "Update app to report version" badge disappears once the companion APK is updated to send its version number.
         </p>
       </div>
     </div>

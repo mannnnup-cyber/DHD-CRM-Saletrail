@@ -51,7 +51,7 @@ const Settings: React.FC = () => {
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [savingDevice, setSavingDevice] = useState<string | null>(null);
   const [deviceAssignments, setDeviceAssignments] = useState<Record<string, string>>({});
-  const [deviceLabels, setDeviceLabels] = useState<Record<string, string>>({});
+  const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
 
   // First-time owner setup state
   const [showOwnerSetup, setShowOwnerSetup] = useState(false);
@@ -388,13 +388,13 @@ const Settings: React.FC = () => {
         setDevices(data.devices || []);
         // Initialise local state from saved DB values
         const assignments: Record<string, string> = {};
-        const labels: Record<string, string> = {};
+        const names: Record<string, string> = {};
         (data.devices || []).forEach((d: any) => {
           assignments[d.device_id] = d.user_id || '';
-          labels[d.device_id] = d.device_label || '';
+          names[d.device_id] = d.device_name || '';
         });
         setDeviceAssignments(assignments);
-        setDeviceLabels(labels);
+        setDeviceNames(names);
       }
     } catch {}
     setDevicesLoading(false);
@@ -409,7 +409,7 @@ const Settings: React.FC = () => {
         body: JSON.stringify({
           deviceId,
           userId: deviceAssignments[deviceId] || null,
-          deviceLabel: deviceLabels[deviceId] || null
+          deviceName: deviceNames[deviceId] || null
         })
       });
       const data = await r.json();
@@ -1362,20 +1362,25 @@ const Settings: React.FC = () => {
                             <Smartphone className="w-4 h-4 text-gray-400" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                               <p className="text-xs text-gray-400 font-mono truncate">{device.phone_number}</p>
                               <span className="text-xs text-gray-600">{device.device_model}</span>
                               {device.is_active && (
                                 <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full">Active</span>
                               )}
+                              {device.app_version ? (
+                                <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full">v{device.app_version}</span>
+                              ) : (
+                                <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">App update needed</span>
+                              )}
                             </div>
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                               <div>
-                                <label className="block text-[10px] text-gray-500 mb-1">Label (optional)</label>
+                                <label className="block text-[10px] text-gray-500 mb-1">Device Name</label>
                                 <input
                                   type="text"
-                                  value={deviceLabels[device.device_id] || ''}
-                                  onChange={e => setDeviceLabels(prev => ({ ...prev, [device.device_id]: e.target.value }))}
+                                  value={deviceNames[device.device_id] || ''}
+                                  onChange={e => setDeviceNames(prev => ({ ...prev, [device.device_id]: e.target.value }))}
                                   placeholder="e.g. John's Work Phone"
                                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
                               </div>

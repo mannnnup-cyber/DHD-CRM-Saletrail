@@ -18,6 +18,32 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; sou
 const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// 1-hour in-memory cache for GitHub release info — avoids rate limiting
+let _releaseCache: { fetchedAt: number; version: string | null; downloadUrl: string; publishedAt: string | null } | null = null;
+
+async function fetchLatestRelease(): Promise<{ version: string | null; downloadUrl: string; publishedAt: string | null }> {
+  if (_releaseCache && Date.now() - _releaseCache.fetchedAt < 60 * 60 * 1000) {
+    return _releaseCache;
+  }
+  try {
+    const r = await fetch('https://api.github.com/repos/mannnnup-cyber/DHD-CRM-Companion/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DHD-CRM-Server' }
+    });
+    if (!r.ok) throw new Error(`GitHub API ${r.status}`);
+    const rel = await r.json();
+    const version = (rel.tag_name as string | undefined)?.replace(/^v/, '') ?? null;
+    const apkAsset = (rel.assets as any[] | undefined)?.find((a: any) => a.name?.endsWith('.apk'));
+    const downloadUrl = apkAsset?.browser_download_url ?? rel.html_url ?? `https://github.com/mannnnup-cyber/DHD-CRM-Companion/releases/latest`;
+    const result = { version, downloadUrl, publishedAt: rel.published_at ?? null };
+    _releaseCache = { fetchedAt: Date.now(), ...result };
+    return result;
+  } catch {
+    // Return cached stale data if available, otherwise fallback
+    if (_releaseCache) return _releaseCache;
+    return { version: null, downloadUrl: 'https://github.com/mannnnup-cyber/DHD-CRM-Companion/releases/latest', publishedAt: null };
+  }
+}
+
 let supabase: any = null;
 try {
   if (_supabaseUrl && _supabaseKey) {
@@ -2085,7 +2111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.json({ success: false, error: 'Supabase not configured' });
         }
 
-        const { calls: gsmCalls, device: deviceModel, phone: repPhone } = req.body;
+        const { calls: gsmCalls, device: deviceModel, phone: repPhone, app_version: appVersion } = req.body;
 
         if (!gsmCalls || !Array.isArray(gsmCalls) || gsmCalls.length === 0) {
           return res.status(400).json({ success: false, error: 'calls array required' });
@@ -2096,15 +2122,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           let skipped = 0;
 
           // ── Auto-register / heartbeat device ────────────────────────────────
-          // Upserts on phone_number so the same rep never creates duplicate rows.
-          // rep_name starts NULL; manager sets it in the Device Admin page.
+          let deviceUserId: string | null = null;
+          let deviceRepName: string | null = null;
           if (repPhone) {
             await supabase.from('devices').upsert({
               phone_number:   repPhone,
               device_model:   deviceModel || null,
               is_active:      true,
               last_heartbeat: new Date().toISOString(),
+              ...(appVersion ? { app_version: appVersion } : {}),
             }, { onConflict: 'phone_number' }).select();
+
+            // Fetch the linked user_id and device_name so we can attribute calls
+            const { data: deviceRow } = await supabase
+              .from('devices')
+              .select('user_id, device_name')
+              .eq('phone_number', repPhone)
+              .maybeSingle();
+            if (deviceRow) {
+              deviceUserId = deviceRow.user_id || null;
+              deviceRepName = deviceRow.device_name || null;
+            }
+
+            // Mark the linked rep as having the companion app installed
+            if (deviceUserId) {
+              await supabase
+                .from('user_profiles')
+                .update({ companion_installed: true })
+                .eq('id', deviceUserId);
+            }
           }
 
           for (const call of gsmCalls) {
@@ -2143,6 +2189,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 contact_name: contactName,
                 device_model: deviceModel || null,
                 rep_phone: repPhone || null,
+                rep_id: deviceUserId || null,
+                rep_name: deviceRepName || null,
               }, { onConflict: 'phone_normalized,called_at', ignoreDuplicates: true });
 
             if (!upsertErr) {
@@ -2172,7 +2220,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
 
-          return res.json({ success: true, inserted, skipped, total: gsmCalls.length });
+          // Include latest release version so the app learns about updates on every sync
+          const release = await fetchLatestRelease().catch(() => ({ version: null, downloadUrl: '', publishedAt: null }));
+          return res.json({ success: true, inserted, skipped, total: gsmCalls.length, latestVersion: release.version, updateAvailable: release.version && appVersion ? release.version !== appVersion : false, downloadUrl: release.downloadUrl });
         } catch (err: any) {
           console.error('[addGSMCall] Error:', err?.message || err);
           return res.json({ success: false, error: err?.message || 'Failed to store GSM calls' });
@@ -2193,6 +2243,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (err: any) {
           return res.json({ success: false, error: err.message });
         }
+      }
+
+      case 'getLatestRelease': {
+        // GET /api/whatsapp?action=getLatestRelease
+        // Returns latest GitHub release version for the companion app
+        const release = await fetchLatestRelease();
+        return res.json({ success: true, ...release });
+      }
+
+      case 'checkVersion': {
+        // GET /api/whatsapp?action=checkVersion&current=1.2.3
+        // Called by the Android app on startup to check if an update is available
+        const currentVersion = req.query.current as string | undefined;
+        const release = await fetchLatestRelease();
+        let updateAvailable = false;
+        if (currentVersion && release.version) {
+          // Simple semver comparison: split by "." and compare numeric parts
+          const cur = currentVersion.split('.').map(Number);
+          const lat = release.version.split('.').map(Number);
+          for (let i = 0; i < Math.max(cur.length, lat.length); i++) {
+            const c = cur[i] ?? 0;
+            const l = lat[i] ?? 0;
+            if (l > c) { updateAvailable = true; break; }
+            if (c > l) break;
+          }
+        }
+        return res.json({ success: true, updateAvailable, latestVersion: release.version, downloadUrl: release.downloadUrl, publishedAt: release.publishedAt });
       }
 
       case 'updateDeviceName': {
