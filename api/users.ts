@@ -159,23 +159,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true });
       }
 
-      // DELETE /api/users?action=remove — hard delete from profile + auth
+      // DELETE /api/users?action=remove — soft delete: block login, keep history, clear open assignments
       case 'remove': {
         if (req.method !== 'DELETE') return res.status(405).json({ error: 'DELETE required' });
         const { id } = req.body;
         if (!id) return res.status(400).json({ success: false, error: 'id is required' });
 
-        // Delete profile row first
+        // 1. Soft-delete profile (keeps historical attribution on calls, deals, messages)
         const { error: profileError } = await supabaseAdmin
           .from('user_profiles')
-          .delete()
+          .update({ is_active: false, updated_at: new Date().toISOString() })
           .eq('id', id);
-
         if (profileError) return res.json({ success: false, error: profileError.message });
 
-        // Delete from Supabase Auth so the email can be re-used in future invites
+        // 2. Delete from Supabase Auth so they cannot log in
         const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
         if (authError) return res.json({ success: false, error: authError.message });
+
+        // 3. Clear open assignments so work moves to unassigned pool
+        await supabaseAdmin.from('contacts').update({ assigned_to: null }).eq('assigned_to', id);
+        await supabaseAdmin.from('whatsapp_chats').update({ assigned_to_user_id: null }).eq('assigned_to_user_id', id);
+        await supabaseAdmin.from('tasks').update({ assigned_to: null }).eq('assigned_to', id);
+        await supabaseAdmin.from('leads').update({ assigned_to: null }).eq('assigned_to', id);
+        await supabaseAdmin.from('deals').update({ assigned_to: null }).eq('assigned_to', id);
 
         return res.json({ success: true });
       }
