@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Phone, CheckCircle2, ChartPie, FilePenLine,
   UserPlus, ShoppingCart, RefreshCw, MessageSquare, Users,
   Calendar, Receipt, Settings, BookOpen, LogOut, X,
-  BarChart3, MessageCircle, Mail, ContactRound, Smartphone, Mic, BrainCircuit
+  BarChart3, MessageCircle, Mail, ContactRound, Smartphone, Mic, BrainCircuit,
+  KeyRound, Loader2, CheckCircle, AlertCircle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -43,6 +44,40 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
   const getPath = () => window.location.hash.replace('#', '') || '/dashboard';
   const [currentPath, setCurrentPath] = useState(getPath);
   const [waUnread, setWaUnread] = useState(0);
+
+  // Change password modal state
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [cpCurrent, setCpCurrent] = useState('');
+  const [cpNew, setCpNew] = useState('');
+  const [cpConfirm, setCpConfirm] = useState('');
+  const [cpLoading, setCpLoading] = useState(false);
+  const [cpError, setCpError] = useState('');
+  const [cpSuccess, setCpSuccess] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCpError('');
+    if (cpNew !== cpConfirm) { setCpError('New passwords do not match'); return; }
+    if (cpNew.length < 8) { setCpError('New password must be at least 8 characters'); return; }
+    setCpLoading(true);
+    try {
+      const r = await fetch('/api/users?action=changePassword', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user?.id, email: user?.email, currentPassword: cpCurrent, newPassword: cpNew })
+      });
+      const data = await r.json();
+      if (data.success) {
+        setCpSuccess(true);
+        setTimeout(() => { setShowChangePw(false); setCpSuccess(false); setCpCurrent(''); setCpNew(''); setCpConfirm(''); }, 2000);
+      } else {
+        setCpError(data.error || 'Failed to change password');
+      }
+    } catch {
+      setCpError('Network error');
+    }
+    setCpLoading(false);
+  };
 
   useEffect(() => {
     const onHashChange = () => setCurrentPath(getPath());
@@ -180,6 +215,13 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
               </p>
             </div>
             <button
+              onClick={() => { setShowChangePw(true); setCpError(''); setCpSuccess(false); }}
+              className="p-1.5 text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors flex-shrink-0"
+              title="Change Password"
+            >
+              <KeyRound className="w-4 h-4" />
+            </button>
+            <button
               onClick={handleLogout}
               className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
               title="Sign Out"
@@ -189,6 +231,61 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
           </div>
         </div>
       </aside>
+
+      {/* Change Password Modal */}
+      {showChangePw && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-semibold text-white">Change Password</h3>
+              </div>
+              <button onClick={() => setShowChangePw(false)} className="p-1 text-gray-500 hover:text-white rounded-lg transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5">
+              {cpSuccess ? (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <CheckCircle className="w-10 h-10 text-green-400" />
+                  <p className="text-green-400 font-medium text-sm">Password changed successfully</p>
+                </div>
+              ) : (
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Current Password</label>
+                    <input type="password" value={cpCurrent} onChange={e => setCpCurrent(e.target.value)} required
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl py-2.5 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">New Password</label>
+                    <input type="password" value={cpNew} onChange={e => setCpNew(e.target.value)} required
+                      placeholder="Min. 8 characters"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl py-2.5 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Confirm New Password</label>
+                    <input type="password" value={cpConfirm} onChange={e => setCpConfirm(e.target.value)} required
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl py-2.5 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                  {cpError && (
+                    <div className="flex items-center gap-2 text-red-400 text-xs">
+                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {cpError}
+                    </div>
+                  )}
+                  <button type="submit" disabled={cpLoading}
+                    className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm">
+                    {cpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {cpLoading ? 'Updating…' : 'Update Password'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

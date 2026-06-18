@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 
 interface AuthUser {
   id: string;
@@ -19,6 +19,18 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleExpiry = (expiresAt: number) => {
+    if (expiryTimer.current) clearTimeout(expiryTimer.current);
+    const msUntilExpiry = expiresAt * 1000 - Date.now();
+    if (msUntilExpiry <= 0) return;
+    expiryTimer.current = setTimeout(() => {
+      setUser(null);
+      localStorage.removeItem(SESSION_KEY);
+      window.location.hash = '#/login';
+    }, msUntilExpiry);
+  };
 
   // Restore session on mount
   useEffect(() => {
@@ -26,9 +38,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
         const { user: stored, expiresAt } = JSON.parse(raw);
-        // Accept session if it hasn't expired (or no expiry set)
         if (!expiresAt || new Date(expiresAt * 1000) > new Date()) {
           setUser(stored);
+          if (expiresAt) scheduleExpiry(expiresAt);
         } else {
           localStorage.removeItem(SESSION_KEY);
         }
@@ -36,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       localStorage.removeItem(SESSION_KEY);
     }
+    return () => { if (expiryTimer.current) clearTimeout(expiryTimer.current); };
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -49,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!data.success) return false;
       setUser(data.user);
       localStorage.setItem(SESSION_KEY, JSON.stringify({ user: data.user, expiresAt: data.expiresAt }));
+      if (data.expiresAt) scheduleExpiry(data.expiresAt);
       return true;
     } catch {
       return false;
@@ -56,6 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    if (expiryTimer.current) clearTimeout(expiryTimer.current);
     setUser(null);
     localStorage.removeItem(SESSION_KEY);
   };

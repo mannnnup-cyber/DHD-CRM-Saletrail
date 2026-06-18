@@ -180,6 +180,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true });
       }
 
+      // POST /api/users?action=changePassword — change own password
+      case 'changePassword': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id, email, currentPassword, newPassword } = req.body;
+        if (!id || !email || !currentPassword || !newPassword) {
+          return res.status(400).json({ success: false, error: 'All fields required' });
+        }
+        if (newPassword.length < 8) {
+          return res.json({ success: false, error: 'New password must be at least 8 characters' });
+        }
+
+        // Verify current password is correct before allowing change
+        const { error: verifyError } = await supabaseAuth.auth.signInWithPassword({ email, password: currentPassword });
+        if (verifyError) return res.json({ success: false, error: 'Current password is incorrect' });
+
+        // Update to new password via admin API
+        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(id, { password: newPassword });
+        if (updateError) return res.json({ success: false, error: updateError.message });
+
+        return res.json({ success: true });
+      }
+
       // POST /api/users?action=createOwner — one-time setup of owner account
       case 'createOwner': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
