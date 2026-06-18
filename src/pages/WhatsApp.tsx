@@ -92,6 +92,7 @@ interface Chat {
   rawTimestamp: number;
   unread: number;
   assignedTo: string;
+  assignedToUserId?: string;
   phone: string;
   status: 'active' | 'resolved' | 'pending';
 }
@@ -657,12 +658,12 @@ export default function WhatsApp() {
   };
 
   // Persist chat status change to DB so it survives refresh
-  const updateChatStatus = async (chatId: string, status: 'active' | 'resolved' | 'pending', assignedTo?: string) => {
+  const updateChatStatus = async (chatId: string, status: 'active' | 'resolved' | 'pending', assignedTo?: string, assignedToUserId?: string) => {
     try {
       await fetch('/api/whatsapp?action=updateChatStatus', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, status, assignedTo })
+        body: JSON.stringify({ chatId, status, assignedTo, assignedToUserId })
       });
     } catch (err) {
       console.error('[updateChatStatus] failed:', err);
@@ -1529,15 +1530,22 @@ export default function WhatsApp() {
                         <ChevronDown className="w-3.5 h-3.5" />
                       </button>
                       {assignDropdown && (
-                        <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-10 min-w-[140px]">
-                          {TEAM_MEMBERS.map(member => (
+                        <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-10 min-w-[160px]">
+                          {teamMembers.map(member => (
                             <button
                               key={member.id}
                               onClick={() => {
+                                const userId = member.id === 'all' ? undefined : member.id;
                                 setChats(prev => prev.map(c =>
-                                  c.id === selectedChat.id ? { ...c, assignedTo: member.name } : c
+                                  c.id === selectedChat.id
+                                    ? { ...c, assignedTo: member.name, assignedToUserId: userId }
+                                    : c
                                 ));
-                                setSelectedChat(prev => prev ? { ...prev, assignedTo: member.name } : null);
+                                setSelectedChat(prev => prev
+                                  ? { ...prev, assignedTo: member.name, assignedToUserId: userId }
+                                  : null
+                                );
+                                updateChatStatus(selectedChat.id, selectedChat.status, member.name, userId);
                                 setAssignDropdown(false);
                               }}
                               className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"

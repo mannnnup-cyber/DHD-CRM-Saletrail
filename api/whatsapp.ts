@@ -532,7 +532,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // Load persisted chat metadata (status, assignedTo, contact_name for @lid resolution)
           const { data: chatMeta } = await supabase
             .from('whatsapp_chats')
-            .select('chat_id, status, assigned_to, contact_name');
+            .select('chat_id, status, assigned_to, assigned_to_user_id, contact_name');
           const metaMap: Record<string, any> = {};
           (chatMeta || []).forEach((row: any) => { metaMap[row.chat_id] = row; });
 
@@ -569,7 +569,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 unread: 0,
                 phone,
                 status: meta?.status || 'active',
-                assignedTo: meta?.assigned_to || 'Unassigned'
+                assignedTo: meta?.assigned_to || 'Unassigned',
+                assignedToUserId: meta?.assigned_to_user_id || null
               };
             } else {
               // Update name if we now have a better one
@@ -1201,6 +1202,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 name: chat.contact_name || chat.chat_id,
                 status: chat.status || 'active',
                 assignedTo: chat.assigned_to || 'Unassigned',
+                assignedToUserId: chat.assigned_to_user_id || null,
                 phone: chat.chat_id.replace(/@[a-z.]+$/, '') // Extract phone from JID
               });
               seenChatIds.add(chat.chat_id);
@@ -1869,14 +1871,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // ── Chat status persistence ──────────────────────────────────────────
       case 'updateChatStatus': {
         // Save/update a chat's status (active | resolved | pending) in DB
-        const { chatId, status, assignedTo } = req.body;
+        const { chatId, status, assignedTo, assignedToUserId } = req.body;
         if (!supabase || !chatId || !status) {
           return res.status(400).json({ success: false, error: 'Missing chatId or status' });
         }
-        const { error } = await supabase.from('whatsapp_chats').upsert(
-          { chat_id: chatId, status, assigned_to: assignedTo || 'Unassigned', updated_at: new Date().toISOString() },
-          { onConflict: 'chat_id' }
-        );
+        const upsertData: any = {
+          chat_id: chatId,
+          status,
+          assigned_to: assignedTo || 'Unassigned',
+          updated_at: new Date().toISOString()
+        };
+        if (assignedToUserId !== undefined) {
+          upsertData.assigned_to_user_id = assignedToUserId || null;
+        }
+        const { error } = await supabase.from('whatsapp_chats').upsert(upsertData, { onConflict: 'chat_id' });
         if (error) return res.status(500).json({ success: false, error: error.message });
         return res.json({ success: true, chatId, status });
       }
@@ -1886,12 +1894,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!supabase) return res.json({ success: true, statuses: {} });
         const { data, error: _error } = await supabase
           .from('whatsapp_chats')
-          .select('chat_id, status, assigned_to, contact_name');
+          .select('chat_id, status, assigned_to, assigned_to_user_id, contact_name');
         if (error) return res.status(500).json({ success: false, error: error.message });
-        // Return as a map: { [chatId]: { status, assignedTo, contactName } }
         const statuses: Record<string, any> = {};
         (data || []).forEach((row: any) => {
-          statuses[row.chat_id] = { status: row.status, assignedTo: row.assigned_to, contactName: row.contact_name };
+          statuses[row.chat_id] = {
+            status: row.status,
+            assignedTo: row.assigned_to,
+            assignedToUserId: row.assigned_to_user_id,
+            contactName: row.contact_name
+          };
         });
         return res.json({ success: true, statuses });
       }
