@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Save, Shield, Smartphone, Globe, Mail, Bot, Link2, CheckCircle, XCircle, Loader2, Eye, EyeOff, MessageCircle,
-  Users, UserPlus, Trash2, Crown, UserCheck
+  Users, UserPlus, Trash2, Crown, UserCheck, KeyRound, X, Copy, AlertCircle
 } from 'lucide-react';
 
 interface SettingItem {
@@ -36,6 +36,10 @@ const Settings: React.FC = () => {
   const [inviteRole, setInviteRole] = useState<'manager' | 'sales_rep'>('sales_rep');
   const [inviting, setInviting] = useState(false);
   const [teamMessage, setTeamMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Reset password state
+  const [resetingPwId, setResetingPwId] = useState<string | null>(null);
+  const [resetPwResult, setResetPwResult] = useState<{ email: string; name: string; tempPassword: string; warning?: string } | null>(null);
 
   // First-time owner setup state
   const [showOwnerSetup, setShowOwnerSetup] = useState(false);
@@ -403,6 +407,27 @@ const Settings: React.FC = () => {
       if (data.success) { setTeamMessage({ type: 'success', text: `${name} removed` }); loadTeam(); }
       else setTeamMessage({ type: 'error', text: data.error || 'Failed to remove' });
     } catch {}
+  };
+
+  const handleResetPassword = async (member: { id: string; name: string; email: string }) => {
+    if (!confirm(`Reset ${member.name}'s password? They will need new credentials to log in.`)) return;
+    setResetingPwId(member.id);
+    try {
+      const r = await fetch('/api/users?action=resetPassword', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: member.id })
+      });
+      const data = await r.json();
+      if (data.success) {
+        setResetPwResult({ email: member.email, name: member.name, tempPassword: data.tempPassword, warning: data.warning });
+      } else {
+        setTeamMessage({ type: 'error', text: data.error || 'Failed to reset password' });
+      }
+    } catch {
+      setTeamMessage({ type: 'error', text: 'Network error' });
+    }
+    setResetingPwId(null);
   };
 
   const handleCreateOwner = async (e: React.FormEvent) => {
@@ -1178,11 +1203,22 @@ const Settings: React.FC = () => {
                             {member.role === 'sales_rep' ? 'Sales Rep' : member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                           </span>
                           {member.role !== 'owner' && (
-                            <button onClick={() => handleRemoveMember(member.id, member.name)}
-                              className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
-                              title="Remove member">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button
+                                onClick={() => handleResetPassword(member)}
+                                disabled={resetingPwId === member.id}
+                                className="p-1.5 text-gray-600 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                                title="Reset password">
+                                {resetingPwId === member.id
+                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  : <KeyRound className="w-3.5 h-3.5" />}
+                              </button>
+                              <button onClick={() => handleRemoveMember(member.id, member.name)}
+                                className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                title="Remove member">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           )}
                         </div>
                       );
@@ -1211,6 +1247,64 @@ const Settings: React.FC = () => {
             </button>
           </div>
         </>
+      )}
+
+
+      {/* Reset Password Result Modal */}
+      {resetPwResult && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-semibold text-white">Password Reset — {resetPwResult.name}</h3>
+              </div>
+              <button onClick={() => setResetPwResult(null)} className="p-1 text-gray-500 hover:text-white rounded-lg transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {resetPwResult.warning ? (
+                <div className="flex items-start gap-2 text-amber-400 text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>{resetPwResult.warning}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-green-400 text-xs">
+                  <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  Password reset email sent to {resetPwResult.email}
+                </div>
+              )}
+              <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-2">
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Temporary Credentials</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-400">Email</p>
+                    <p className="text-sm text-white font-mono truncate">{resetPwResult.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-400">New Password</p>
+                    <p className="text-sm text-amber-400 font-mono">{resetPwResult.tempPassword}</p>
+                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(resetPwResult.tempPassword)}
+                    className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+                    title="Copy password">
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">Share these credentials with {resetPwResult.name}. They should change their password after logging in.</p>
+              <button
+                onClick={() => setResetPwResult(null)}
+                className="w-full bg-gray-800 hover:bg-gray-700 text-white font-medium py-2.5 rounded-xl transition-all text-sm">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

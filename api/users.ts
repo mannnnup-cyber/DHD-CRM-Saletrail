@@ -17,6 +17,85 @@ const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
 
+const generateTempPassword = () =>
+  Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '!';
+
+const sendInviteEmail = async (to: string, name: string, role: string, tempPassword: string) => {
+  if (!RESEND_API_KEY) return { sent: false, reason: 'no_key' };
+  try {
+    const emailRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'DHD SalesTrail <support@dirtyhanddesigns.com>',
+        to: [to],
+        subject: "You've been invited to DHD SalesTrail",
+        html: `
+          <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px;background:#fff;">
+            <div style="background:#f59e0b;width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:24px;">
+              <span style="color:#000;font-weight:900;font-size:16px;">DH</span>
+            </div>
+            <h2 style="color:#111;margin:0 0 8px 0;">You've been invited to DHD SalesTrail</h2>
+            <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, you've been added as a <strong>${role.replace('_', ' ')}</strong>.</p>
+            <div style="background:#f9f9f9;border:1px solid #eee;border-radius:12px;padding:20px;margin:0 0 24px 0;">
+              <p style="margin:0 0 8px 0;color:#333;font-weight:600;">Your login details:</p>
+              <p style="margin:0 0 4px 0;color:#555;">Email: <strong>${to}</strong></p>
+              <p style="margin:0 0 16px 0;color:#555;">Temporary password: <strong style="font-family:monospace;background:#eee;padding:2px 6px;border-radius:4px;">${tempPassword}</strong></p>
+              <p style="margin:0;color:#888;font-size:13px;">Please change your password after first login.</p>
+            </div>
+            <a href="${APP_URL}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">Log In Now</a>
+            <p style="color:#aaa;font-size:12px;margin:24px 0 0 0;">If you weren't expecting this invite, you can ignore this email.</p>
+          </div>
+        `
+      })
+    });
+    if (!emailRes.ok) {
+      const err = await emailRes.json().catch(() => ({}));
+      console.error('[api/users] Resend error:', err);
+      return { sent: false, reason: 'api_error', status: emailRes.status };
+    }
+    return { sent: true };
+  } catch (e: any) {
+    console.error('[api/users] Resend network error:', e.message);
+    return { sent: false, reason: 'network_error' };
+  }
+};
+
+const sendResetEmail = async (to: string, name: string, tempPassword: string) => {
+  if (!RESEND_API_KEY) return { sent: false, reason: 'no_key' };
+  try {
+    const emailRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'DHD SalesTrail <support@dirtyhanddesigns.com>',
+        to: [to],
+        subject: 'Your DHD SalesTrail password has been reset',
+        html: `
+          <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px;background:#fff;">
+            <div style="background:#f59e0b;width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:24px;">
+              <span style="color:#000;font-weight:900;font-size:16px;">DH</span>
+            </div>
+            <h2 style="color:#111;margin:0 0 8px 0;">Password Reset</h2>
+            <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, your password has been reset by an administrator.</p>
+            <div style="background:#f9f9f9;border:1px solid #eee;border-radius:12px;padding:20px;margin:0 0 24px 0;">
+              <p style="margin:0 0 8px 0;color:#333;font-weight:600;">Your new temporary password:</p>
+              <p style="margin:0 0 4px 0;color:#555;">Email: <strong>${to}</strong></p>
+              <p style="margin:0 0 16px 0;color:#555;">Password: <strong style="font-family:monospace;background:#eee;padding:2px 6px;border-radius:4px;">${tempPassword}</strong></p>
+              <p style="margin:0;color:#888;font-size:13px;">Please change your password after logging in.</p>
+            </div>
+            <a href="${APP_URL}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">Log In Now</a>
+          </div>
+        `
+      })
+    });
+    if (!emailRes.ok) return { sent: false, reason: 'api_error', status: emailRes.status };
+    return { sent: true };
+  } catch (e: any) {
+    return { sent: false, reason: 'network_error' };
+  }
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -68,80 +147,82 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, users: data || [] });
       }
 
-      // POST /api/users?action=invite — invite a new team member
+      // POST /api/users?action=invite — invite a new team member (or reactivate a disabled one)
       case 'invite': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         const { name, email, role } = req.body;
         if (!name || !email || !role) return res.status(400).json({ success: false, error: 'name, email and role are required' });
 
-        // Generate a temporary password they must change on first login
-        const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '!';
+        const tempPassword = generateTempPassword();
 
-        // Create confirmed user directly — no Supabase SMTP needed
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email,
-          password: tempPassword,
-          email_confirm: true,
-          user_metadata: { name, role }
-        });
-
-        if (authError) return res.json({ success: false, error: authError.message });
-
-        // Create profile record
-        const { error: profileError } = await supabaseAdmin
+        // Check for an existing profile (active or soft-deleted)
+        const { data: existingProfile } = await supabaseAdmin
           .from('user_profiles')
-          .insert({ id: authData.user.id, name, email, role, is_active: true });
+          .select('id, is_active')
+          .eq('email', email)
+          .maybeSingle();
 
-        if (profileError) {
-          await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-          return res.json({ success: false, error: profileError.message });
-        }
+        let invitedUserId: string;
 
-        // Send invite email via Resend with temporary credentials
-        if (RESEND_API_KEY) {
-          try {
-            const emailRes = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                from: 'DHD SalesTrail <support@dirtyhanddesigns.com>',
-                to: [email],
-                subject: "You've been invited to DHD SalesTrail",
-                html: `
-                  <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px;background:#fff;">
-                    <div style="background:#f59e0b;width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:24px;">
-                      <span style="color:#000;font-weight:900;font-size:16px;">DH</span>
-                    </div>
-                    <h2 style="color:#111;margin:0 0 8px 0;">You've been invited to DHD SalesTrail</h2>
-                    <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, you've been added as a <strong>${role.replace('_', ' ')}</strong>.</p>
-                    <div style="background:#f9f9f9;border:1px solid #eee;border-radius:12px;padding:20px;margin:0 0 24px 0;">
-                      <p style="margin:0 0 8px 0;color:#333;font-weight:600;">Your login details:</p>
-                      <p style="margin:0 0 4px 0;color:#555;">Email: <strong>${email}</strong></p>
-                      <p style="margin:0 0 16px 0;color:#555;">Temporary password: <strong style="font-family:monospace;background:#eee;padding:2px 6px;border-radius:4px;">${tempPassword}</strong></p>
-                      <p style="margin:0;color:#888;font-size:13px;">Please change your password after first login.</p>
-                    </div>
-                    <a href="${APP_URL}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">Log In Now</a>
-                    <p style="color:#aaa;font-size:12px;margin:24px 0 0 0;">If you weren't expecting this invite, you can ignore this email.</p>
-                  </div>
-                `
-              })
-            });
-
-            if (!emailRes.ok) {
-              const emailErr = await emailRes.json().catch(() => ({}));
-              console.error('[api/users] Resend error:', emailErr);
-              return res.json({ success: true, userId: authData.user.id, tempPassword, warning: `Account created but email failed (${emailRes.status}). Share these credentials manually — Email: ${email} / Password: ${tempPassword}` });
-            }
-          } catch (emailErr: any) {
-            console.error('[api/users] Resend network error:', emailErr.message);
-            return res.json({ success: true, userId: authData.user.id, tempPassword, warning: `Account created but email failed to send. Share these credentials manually — Email: ${email} / Password: ${tempPassword}` });
+        if (existingProfile) {
+          if (existingProfile.is_active) {
+            return res.json({ success: false, error: 'A team member with this email is already active.' });
           }
+
+          // Reactivate: recreate auth account with the same UUID so all historical data links stay intact
+          const { error: authError } = await supabaseAdmin.auth.admin.createUser({
+            id: existingProfile.id,
+            email,
+            password: tempPassword,
+            email_confirm: true,
+            user_metadata: { name, role }
+          });
+          if (authError) return res.json({ success: false, error: authError.message });
+
+          const { error: updateError } = await supabaseAdmin
+            .from('user_profiles')
+            .update({ name, role, is_active: true, updated_at: new Date().toISOString() })
+            .eq('id', existingProfile.id);
+          if (updateError) return res.json({ success: false, error: updateError.message });
+
+          invitedUserId = existingProfile.id;
         } else {
-          // No Resend key — return credentials for manual sharing
-          return res.json({ success: true, userId: authData.user.id, tempPassword, warning: `No email provider configured. Share these credentials manually — Email: ${email} / Password: ${tempPassword}` });
+          // Brand new user
+          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email,
+            password: tempPassword,
+            email_confirm: true,
+            user_metadata: { name, role }
+          });
+          if (authError) return res.json({ success: false, error: authError.message });
+
+          const { error: profileError } = await supabaseAdmin
+            .from('user_profiles')
+            .insert({ id: authData.user.id, name, email, role, is_active: true });
+
+          if (profileError) {
+            await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+            return res.json({ success: false, error: profileError.message });
+          }
+
+          invitedUserId = authData.user.id;
         }
 
-        return res.json({ success: true, userId: authData.user.id });
+        // Send invite email
+        const emailResult = await sendInviteEmail(email, name, role, tempPassword);
+        if (!emailResult.sent) {
+          const reason = emailResult.reason === 'no_key'
+            ? 'No email provider configured'
+            : `Email failed (${(emailResult as any).status || emailResult.reason})`;
+          return res.json({
+            success: true,
+            userId: invitedUserId,
+            tempPassword,
+            warning: `${reason}. Share these credentials manually — Email: ${email} / Password: ${tempPassword}`
+          });
+        }
+
+        return res.json({ success: true, userId: invitedUserId });
       }
 
       // PUT /api/users?action=update — update name or role
@@ -186,7 +267,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true });
       }
 
-      // POST /api/users?action=changePassword — change own password
+      // POST /api/users?action=resetPassword — admin sets a new temp password for a team member
+      case 'resetPassword': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id } = req.body;
+        if (!id) return res.status(400).json({ success: false, error: 'id is required' });
+
+        const { data: profile } = await supabaseAdmin
+          .from('user_profiles')
+          .select('email, name')
+          .eq('id', id)
+          .single();
+
+        if (!profile) return res.json({ success: false, error: 'User not found' });
+
+        const tempPassword = generateTempPassword();
+
+        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(id, { password: tempPassword });
+        if (updateError) return res.json({ success: false, error: updateError.message });
+
+        const emailResult = await sendResetEmail(profile.email, profile.name, tempPassword);
+
+        if (!emailResult.sent) {
+          return res.json({
+            success: true,
+            tempPassword,
+            warning: `Password reset but email failed. Share manually — Email: ${profile.email} / New Password: ${tempPassword}`
+          });
+        }
+
+        return res.json({ success: true, tempPassword });
+      }
+
+      // POST /api/users?action=changePassword — change own password (requires current password)
       case 'changePassword': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         const { id, email, currentPassword, newPassword } = req.body;
