@@ -767,7 +767,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'send': {
-        const { chatId, message } = req.body;
+        const { chatId, message, userId, contactId } = req.body;
         if (!chatId || !message) {
           return res.status(400).json({ success: false, error: 'chatId and message are required' });
         }
@@ -818,9 +818,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               chat_id: chatId,
               direction: 'outbound',
               body: message,
+              contact_id: contactId || null,
               raw: rawData,
               created_at: new Date().toISOString()
             });
+
+            // Log to unified interactions timeline so contact history is complete
+            if (contactId) {
+              await supabase.from('interactions').insert({
+                contact_id: contactId,
+                user_id: userId || null,
+                type: 'WHATSAPP',
+                direction: 'OUTBOUND',
+                content: message,
+                metadata: { chat_id: chatId, message_id: messageId, provider: 'evolution' },
+                timestamp: new Date().toISOString()
+              });
+            }
           } catch (err: any) {
             console.error('Message persistence error:', err.message);
           }

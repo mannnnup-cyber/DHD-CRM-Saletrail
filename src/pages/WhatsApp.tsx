@@ -120,6 +120,9 @@ export default function WhatsApp() {
   const { state, addCall } = useApp();
   const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
   const [chatFilter, setChatFilter] = useState<'all' | 'individual' | 'groups'>('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'mine' | 'unassigned'>(() =>
+    state.user?.role === 'sales_rep' ? 'mine' : 'all'
+  );
   const [allCalls, setAllCalls] = useState<any[]>([]);
   const [callingChatId, setCallingChatId] = useState<string | null>(null);
   const [callTimer, setCallTimer] = useState(0);
@@ -547,6 +550,8 @@ export default function WhatsApp() {
         body: JSON.stringify({
           chatId: selectedChat.id,
           message: text,
+          userId: state.user?.id,
+          contactId: selectedChat.contactId || null,
           ...(quotedMsg ? { quotedMessageId: quotedMsg.id, quotedText: quotedMsg.text } : {})
         })
       });
@@ -1078,6 +1083,9 @@ export default function WhatsApp() {
     // Show archived chats only in archive view; hide them in main inbox
     if (showArchived && (c as any).status !== 'archived') return false;
     if (!showArchived && (c as any).status === 'archived') return false;
+    // Assignment filter
+    if (assignmentFilter === 'mine' && c.assignedToUserId !== state.user?.id) return false;
+    if (assignmentFilter === 'unassigned' && c.assignedToUserId != null) return false;
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase().replace(/\D/g, '');
     const nameMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1350,6 +1358,30 @@ export default function WhatsApp() {
                 >
                   {f === 'all' ? 'All' : f === 'individual' ? '👤 People' : '👥 Groups'}
                 </button>
+              ))}
+            </div>
+
+            {/* Assignment filter: All / Mine / Unassigned */}
+            <div className="flex border-b border-gray-700/50">
+              {([
+                { key: 'all', label: 'Everyone' },
+                { key: 'mine', label: '👤 Mine' },
+                { key: 'unassigned', label: '📥 Unassigned' },
+              ] as const).map(f => (
+                // Hide 'all' for sales_rep — they should only see their own + unassigned
+                (f.key === 'all' && state.user?.role === 'sales_rep') ? null : (
+                <button
+                  key={f.key}
+                  onClick={() => setAssignmentFilter(f.key)}
+                  className={`flex-1 py-1.5 text-[11px] font-medium transition-colors ${
+                    assignmentFilter === f.key
+                      ? 'text-amber-400 border-b-2 border-amber-400 bg-amber-500/5'
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {f.label}
+                </button>
+                )
               ))}
             </div>
 
