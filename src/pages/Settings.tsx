@@ -41,6 +41,18 @@ const Settings: React.FC = () => {
   const [resetingPwId, setResetingPwId] = useState<string | null>(null);
   const [resetPwResult, setResetPwResult] = useState<{ email: string; name: string; tempPassword: string; warning?: string } | null>(null);
 
+  // Role editing state
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [editRoleValue, setEditRoleValue] = useState<'manager' | 'sales_rep'>('sales_rep');
+  const [savingRole, setSavingRole] = useState(false);
+
+  // Device linking state
+  const [devices, setDevices] = useState<any[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [savingDevice, setSavingDevice] = useState<string | null>(null);
+  const [deviceAssignments, setDeviceAssignments] = useState<Record<string, string>>({});
+  const [deviceLabels, setDeviceLabels] = useState<Record<string, string>>({});
+
   // First-time owner setup state
   const [showOwnerSetup, setShowOwnerSetup] = useState(false);
   const [ownerName, setOwnerName] = useState('');
@@ -367,6 +379,70 @@ const Settings: React.FC = () => {
     setTeamLoading(false);
   };
 
+  const loadDevices = async () => {
+    setDevicesLoading(true);
+    try {
+      const r = await fetch('/api/users?action=listDevices');
+      const data = await r.json();
+      if (data.success) {
+        setDevices(data.devices || []);
+        // Initialise local state from saved DB values
+        const assignments: Record<string, string> = {};
+        const labels: Record<string, string> = {};
+        (data.devices || []).forEach((d: any) => {
+          assignments[d.device_id] = d.user_id || '';
+          labels[d.device_id] = d.device_label || '';
+        });
+        setDeviceAssignments(assignments);
+        setDeviceLabels(labels);
+      }
+    } catch {}
+    setDevicesLoading(false);
+  };
+
+  const handleSaveDevice = async (deviceId: string) => {
+    setSavingDevice(deviceId);
+    try {
+      const r = await fetch('/api/users?action=linkDevice', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId,
+          userId: deviceAssignments[deviceId] || null,
+          deviceLabel: deviceLabels[deviceId] || null
+        })
+      });
+      const data = await r.json();
+      if (!data.success) setTeamMessage({ type: 'error', text: data.error || 'Failed to save device' });
+      else setTeamMessage({ type: 'success', text: 'Device saved' });
+    } catch {
+      setTeamMessage({ type: 'error', text: 'Network error' });
+    }
+    setSavingDevice(null);
+  };
+
+  const handleSaveRole = async (memberId: string) => {
+    setSavingRole(true);
+    try {
+      const r = await fetch('/api/users?action=update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: memberId, role: editRoleValue })
+      });
+      const data = await r.json();
+      if (data.success) {
+        setTeamMessage({ type: 'success', text: 'Role updated' });
+        setEditingRoleId(null);
+        loadTeam();
+      } else {
+        setTeamMessage({ type: 'error', text: data.error || 'Failed to update role' });
+      }
+    } catch {
+      setTeamMessage({ type: 'error', text: 'Network error' });
+    }
+    setSavingRole(false);
+  };
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     setInviting(true);
@@ -455,7 +531,7 @@ const Settings: React.FC = () => {
   };
 
   useEffect(() => {
-    if (activeTab === 'team') loadTeam();
+    if (activeTab === 'team') { loadTeam(); loadDevices(); }
   }, [activeTab]);
 
   return (
@@ -1198,10 +1274,37 @@ const Settings: React.FC = () => {
                             <p className="text-sm font-medium text-white truncate">{member.name}</p>
                             <p className="text-xs text-gray-500 truncate">{member.email}</p>
                           </div>
-                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[member.role] || 'bg-gray-700 text-gray-400'}`}>
-                            <RoleIcon className="w-3 h-3" />
-                            {member.role === 'sales_rep' ? 'Sales Rep' : member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-                          </span>
+                          {/* Role — click to edit (owner only, non-owner members) */}
+                          {member.role !== 'owner' && editingRoleId === member.id ? (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <select
+                                value={editRoleValue}
+                                onChange={e => setEditRoleValue(e.target.value as any)}
+                                className="bg-gray-800 border border-gray-600 rounded-lg text-xs text-white px-2 py-1 focus:outline-none focus:border-amber-500/50">
+                                <option value="sales_rep">Sales Rep</option>
+                                <option value="manager">Manager</option>
+                              </select>
+                              <button
+                                onClick={() => handleSaveRole(member.id)}
+                                disabled={savingRole}
+                                className="p-1 text-green-400 hover:bg-green-500/10 rounded-lg transition-colors">
+                                {savingRole ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                              </button>
+                              <button
+                                onClick={() => setEditingRoleId(null)}
+                                className="p-1 text-gray-500 hover:text-white rounded-lg transition-colors">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { if (member.role !== 'owner') { setEditingRoleId(member.id); setEditRoleValue(member.role); } }}
+                              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${roleColors[member.role] || 'bg-gray-700 text-gray-400'} ${member.role !== 'owner' ? 'hover:ring-1 hover:ring-white/20 cursor-pointer' : 'cursor-default'}`}
+                              title={member.role !== 'owner' ? 'Click to change role' : undefined}>
+                              <RoleIcon className="w-3 h-3" />
+                              {member.role === 'sales_rep' ? 'Sales Rep' : member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                            </button>
+                          )}
                           {member.role !== 'owner' && (
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <button
@@ -1223,6 +1326,88 @@ const Settings: React.FC = () => {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+
+              {/* Device → User Linking */}
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-white flex items-center gap-2">
+                    <Smartphone className="w-5 h-5 text-amber-500" />
+                    Companion App Devices
+                    {devices.length > 0 && (
+                      <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{devices.length}</span>
+                    )}
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-500 mb-4">Link each registered device to a team member so call logs can be attributed correctly.</p>
+
+                {devicesLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />
+                  </div>
+                ) : devices.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Smartphone className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No devices registered yet</p>
+                    <p className="text-xs mt-1">Install the Companion App on a sales rep's phone to register it here.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {devices.map(device => (
+                      <div key={device.device_id} className="p-3 bg-gray-800/40 rounded-xl border border-gray-700/50">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <Smartphone className="w-4 h-4 text-gray-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <p className="text-xs text-gray-400 font-mono truncate">{device.phone_number}</p>
+                              <span className="text-xs text-gray-600">{device.device_model}</span>
+                              {device.is_active && (
+                                <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full">Active</span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <div>
+                                <label className="block text-[10px] text-gray-500 mb-1">Label (optional)</label>
+                                <input
+                                  type="text"
+                                  value={deviceLabels[device.device_id] || ''}
+                                  onChange={e => setDeviceLabels(prev => ({ ...prev, [device.device_id]: e.target.value }))}
+                                  placeholder="e.g. John's Work Phone"
+                                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-gray-500 mb-1">Assigned to</label>
+                                <select
+                                  value={deviceAssignments[device.device_id] || ''}
+                                  onChange={e => setDeviceAssignments(prev => ({ ...prev, [device.device_id]: e.target.value }))}
+                                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500/50">
+                                  <option value="">— Unassigned —</option>
+                                  {teamMembers.map(m => (
+                                    <option key={m.id} value={m.id}>{m.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleSaveDevice(device.device_id)}
+                            disabled={savingDevice === device.device_id}
+                            className="flex items-center gap-1.5 text-xs bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 mt-0.5">
+                            {savingDevice === device.device_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                            Save
+                          </button>
+                        </div>
+                        {device.last_heartbeat && (
+                          <p className="text-[10px] text-gray-600 mt-2 pl-11">
+                            Last seen {new Date(device.last_heartbeat).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

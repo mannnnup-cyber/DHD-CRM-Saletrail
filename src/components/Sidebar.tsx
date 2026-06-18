@@ -39,6 +39,7 @@ const NAV_ITEMS = [
 
 const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
   const { state, logout } = useApp();
+  const { mustChangePassword, clearMustChangePassword } = useApp() as any;
   const user = state.user;
 
   const getPath = () => window.location.hash.replace('#', '') || '/dashboard';
@@ -53,6 +54,12 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
   const [cpLoading, setCpLoading] = useState(false);
   const [cpError, setCpError] = useState('');
   const [cpSuccess, setCpSuccess] = useState(false);
+
+  // Force modal open when user has a temp password they must change
+  const isForced = mustChangePassword === true;
+  useEffect(() => {
+    if (isForced) { setShowChangePw(true); setCpError(''); setCpSuccess(false); }
+  }, [isForced]);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
       const data = await r.json();
       if (data.success) {
         setCpSuccess(true);
+        if (isForced && clearMustChangePassword) clearMustChangePassword();
         setTimeout(() => { setShowChangePw(false); setCpSuccess(false); setCpCurrent(''); setCpNew(''); setCpConfirm(''); }, 2000);
       } else {
         setCpError(data.error || 'Failed to change password');
@@ -239,13 +247,24 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
             <div className="flex items-center justify-between p-5 border-b border-gray-800">
               <div className="flex items-center gap-2">
                 <KeyRound className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-semibold text-white">Change Password</h3>
+                <h3 className="text-sm font-semibold text-white">
+                  {isForced ? 'Set Your Password' : 'Change Password'}
+                </h3>
               </div>
-              <button onClick={() => setShowChangePw(false)} className="p-1 text-gray-500 hover:text-white rounded-lg transition-colors">
-                <X className="w-4 h-4" />
-              </button>
+              {/* Hide X when forced — user must change before continuing */}
+              {!isForced && (
+                <button onClick={() => setShowChangePw(false)} className="p-1 text-gray-500 hover:text-white rounded-lg transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
             <div className="p-5">
+              {isForced && !cpSuccess && (
+                <div className="flex items-start gap-2 text-amber-400 text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-4">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>You're using a temporary password. Please set a new one before continuing — enter the temporary password in the "Current Password" field.</span>
+                </div>
+              )}
               {cpSuccess ? (
                 <div className="flex flex-col items-center gap-3 py-4">
                   <CheckCircle className="w-10 h-10 text-green-400" />
@@ -254,7 +273,9 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
               ) : (
                 <form onSubmit={handleChangePassword} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Current Password</label>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                      {isForced ? 'Temporary Password' : 'Current Password'}
+                    </label>
                     <input type="password" value={cpCurrent} onChange={e => setCpCurrent(e.target.value)} required
                       className="w-full bg-gray-800 border border-gray-700 rounded-xl py-2.5 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
                   </div>
@@ -278,7 +299,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
                   <button type="submit" disabled={cpLoading}
                     className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm">
                     {cpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    {cpLoading ? 'Updating…' : 'Update Password'}
+                    {cpLoading ? 'Updating…' : isForced ? 'Set Password & Continue' : 'Update Password'}
                   </button>
                 </form>
               )}
