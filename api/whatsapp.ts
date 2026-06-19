@@ -928,9 +928,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      case 'sendFile':
+      case 'sendFile': {
         req.body.mediaBase64 = req.body.fileBase64;
         req.body.mediaType = req.body.mimeType || 'application/octet-stream';
+      }
         // falls through to sendMedia
       case 'sendMedia': {
         // Send images, videos, or documents via Evolution API
@@ -1935,7 +1936,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { data, error: _error } = await supabase
           .from('whatsapp_chats')
           .select('chat_id, status, assigned_to, assigned_to_user_id, contact_name');
-        if (error) return res.status(500).json({ success: false, error: error.message });
+        if (_error) return res.status(500).json({ success: false, error: _error.message });
         const statuses: Record<string, any> = {};
         (data || []).forEach((row: any) => {
           statuses[row.chat_id] = {

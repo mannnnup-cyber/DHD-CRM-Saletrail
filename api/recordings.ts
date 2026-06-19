@@ -32,7 +32,7 @@ export const config = {
  */
 async function shouldSkipRecording(
   phoneNumber: string,
-  _org_id: string
+  org_id: string
 ): Promise<boolean> {
   try {
     // Get org recording settings
