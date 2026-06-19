@@ -18,30 +18,31 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; sou
 const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// 1-hour in-memory cache for GitHub release info — avoids rate limiting
+// 5-minute in-memory cache for release info
 let _releaseCache: { fetchedAt: number; version: string | null; downloadUrl: string; publishedAt: string | null } | null = null;
 
 async function fetchLatestRelease(): Promise<{ version: string | null; downloadUrl: string; publishedAt: string | null }> {
-  if (_releaseCache && Date.now() - _releaseCache.fetchedAt < 60 * 60 * 1000) {
+  if (_releaseCache && Date.now() - _releaseCache.fetchedAt < 5 * 60 * 1000) {
     return _releaseCache;
   }
-  try {
-    const r = await fetch('https://api.github.com/repos/mannnnup-cyber/DHD-CRM-Companion/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DHD-CRM-Server' }
-    });
-    if (!r.ok) throw new Error(`GitHub API ${r.status}`);
-    const rel = await r.json();
-    const version = (rel.tag_name as string | undefined)?.replace(/^v/, '') ?? null;
-    const apkAsset = (rel.assets as any[] | undefined)?.find((a: any) => a.name?.endsWith('.apk'));
-    const downloadUrl = apkAsset?.browser_download_url ?? rel.html_url ?? `https://github.com/mannnnup-cyber/DHD-CRM-Companion/releases/latest`;
-    const result = { version, downloadUrl, publishedAt: rel.published_at ?? null };
-    _releaseCache = { fetchedAt: Date.now(), ...result };
-    return result;
-  } catch {
-    // Return cached stale data if available, otherwise fallback
-    if (_releaseCache) return _releaseCache;
-    return { version: null, downloadUrl: 'https://github.com/mannnnup-cyber/DHD-CRM-Companion/releases/latest', publishedAt: null };
+  // Primary: read from Supabase app_settings (written by CI on each release)
+  if (supabase) {
+    try {
+      const [vRow, uRow] = await Promise.all([
+        supabase.from('app_settings').select('setting_value').eq('setting_key', 'COMPANION_APP_VERSION').maybeSingle(),
+        supabase.from('app_settings').select('setting_value').eq('setting_key', 'COMPANION_APP_DOWNLOAD_URL').maybeSingle(),
+      ]);
+      const version = vRow?.data?.setting_value ?? null;
+      const downloadUrl = uRow?.data?.setting_value ?? 'https://github.com/mannnnup-cyber/DHD-CRM-Companion/releases/latest';
+      if (version) {
+        const result = { version, downloadUrl, publishedAt: null };
+        _releaseCache = { fetchedAt: Date.now(), ...result };
+        return result;
+      }
+    } catch { /* fall through to hardcoded fallback */ }
   }
+  if (_releaseCache) return _releaseCache;
+  return { version: null, downloadUrl: 'https://github.com/mannnnup-cyber/DHD-CRM-Companion/releases/latest', publishedAt: null };
 }
 
 let supabase: any = null;
@@ -2271,6 +2272,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
         return res.json({ success: true, updateAvailable, latestVersion: release.version, downloadUrl: release.downloadUrl, publishedAt: release.publishedAt });
+      }
+
+      case 'publishVersion': {
+        // POST /api/whatsapp?action=publishVersion
+        // Called by CI after a new release is published
+        // Body: { version: "1.0.3", downloadUrl: "https://..." }
+        if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
+        const { version: pubVersion, downloadUrl: pubUrl } = req.body;
+        if (!pubVersion) return res.status(400).json({ success: false, error: 'version required' });
+        try {
+          await supabase.from('app_settings').upsert([
+            { setting_key: 'COMPANION_APP_VERSION',     setting_value: pubVersion, setting_type: 'text', category: 'app', description: 'Latest companion app version' },
+            { setting_key: 'COMPANION_APP_DOWNLOAD_URL', setting_value: pubUrl || 'https://github.com/mannnnup-cyber/DHD-CRM-Companion/releases/latest', setting_type: 'text', category: 'app', description: 'Latest companion app APK download URL' },
+          ], { onConflict: 'setting_key' });
+          _releaseCache = null; // invalidate cache
+          return res.json({ success: true, version: pubVersion });
+        } catch (err: any) {
+          return res.status(500).json({ success: false, error: err.message });
+        }
       }
 
       case 'updateDeviceName': {
