@@ -2114,7 +2114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const { calls: gsmCalls, device: deviceModel, phone: repPhone, app_version: appVersion } = req.body;
 
-        if (!gsmCalls || !Array.isArray(gsmCalls) || gsmCalls.length === 0) {
+        if (!gsmCalls || !Array.isArray(gsmCalls)) {
           return res.status(400).json({ success: false, error: 'calls array required' });
         }
 
