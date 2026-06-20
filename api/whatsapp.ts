@@ -2293,6 +2293,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'getInsights': {
+        // GET /api/whatsapp?action=getInsights&phone=18768412776
+        // Returns real call analytics for the companion app Insights tab (last 30 days)
+        if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
+        const rawPhone = req.query.phone as string | undefined;
+        if (!rawPhone) return res.status(400).json({ success: false, error: 'phone required' });
+        const last10 = rawPhone.replace(/[^\d]/g, '').slice(-10);
+        try {
+          const since = new Date();
+          since.setDate(since.getDate() - 30);
+          const { data: calls, error } = await supabase
+            .from('cellular_calls')
+            .select('call_type, duration_seconds, called_at')
+            .ilike('rep_phone', `%${last10}%`)
+            .gte('called_at', since.toISOString());
+          if (error) throw error;
+          const all = (calls || []) as any[];
+          const answered = all.filter(c => (c.duration_seconds || 0) > 0);
+          const missed   = all.filter(c => c.call_type === 'MISSED');
+          const incoming = all.filter(c => c.call_type === 'INCOMING');
+          const outgoing = all.filter(c => c.call_type === 'OUTGOING');
+          const avgDurationSec = answered.length
+            ? Math.round(answered.reduce((s, c) => s + (c.duration_seconds || 0), 0) / answered.length)
+            : 0;
+          const answerRate = all.length ? Math.round((answered.length / all.length) * 100) : 0;
+          // Heuristic sentiment derived from call duration distribution
+          const positive = answered.filter(c => c.duration_seconds >= 180).length;
+          const neutral  = answered.filter(c => c.duration_seconds >= 60 && c.duration_seconds < 180).length;
+          const negative = answered.filter(c => c.duration_seconds < 60).length + missed.length;
+          const sentTotal = (positive + neutral + negative) || 1;
+          // Derive coaching topics from real call patterns
+          const topics: { key: string; label: string; level: string }[] = [];
+          if (answerRate >= 75) topics.push({ key: 'answer',   label: 'High Answer Rate',      level: 'high'   });
+          if (missed.length > 3) topics.push({ key: 'missed',  label: 'Missed Call Follow-up', level: 'high'   });
+          if (outgoing.length > incoming.length) topics.push({ key: 'outbound', label: 'Outbound Focus', level: 'medium' });
+          if (avgDurationSec >= 180) topics.push({ key: 'engage', label: 'Strong Engagement',  level: 'high'   });
+          if (avgDurationSec > 0 && avgDurationSec < 60) topics.push({ key: 'short', label: 'Short Call Duration', level: 'high' });
+          if (incoming.length > 0) topics.push({ key: 'inbound', label: 'Inbound Response',   level: 'medium' });
+          if (all.length >= 20)    topics.push({ key: 'volume',  label: 'High Call Volume',    level: 'medium' });
+          if (!topics.length)      topics.push({ key: 'sync',    label: 'Sync More Calls',      level: 'low'    });
+          return res.json({
+            success: true, period: '30d',
+            totalCalls: all.length, answered: answered.length,
+            missed: missed.length, incoming: incoming.length, outgoing: outgoing.length,
+            avgDurationSeconds: avgDurationSec, answerRate,
+            sentiment: {
+              positive: Math.round((positive / sentTotal) * 100),
+              neutral:  Math.round((neutral  / sentTotal) * 100),
+              negative: Math.round((negative / sentTotal) * 100),
+            },
+            topics,
+          });
+        } catch (err: any) {
+          return res.status(500).json({ success: false, error: err.message });
+        }
+      }
+
       case 'updateDeviceName': {
         // POST /api/whatsapp?action=updateDeviceName
         // Body: { phone_number, device_name }
