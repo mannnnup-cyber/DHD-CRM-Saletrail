@@ -2461,7 +2461,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'getGSMCalls': {
-        // GET /api/whatsapp?action=getGSMCalls&limit=100&offset=0&type=MISSED
+        // GET /api/whatsapp?action=getGSMCalls&limit=100&offset=0&type=MISSED&rep=phone&date=today
         if (supabase === null) {
           return res.json({ success: false, error: 'Supabase not configured' });
         }
@@ -2470,27 +2470,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const offset = parseInt(req.query.offset as string) || 0;
         const typeFilter = req.query.type as string | undefined;
         const repFilter  = req.query.rep  as string | undefined;
+        const dateFilter = req.query.date as string | undefined; // 'today' | 'week' | 'month' | 'all'
+
+        // Build date range
+        const now = new Date();
+        let dateFrom: string | null = null;
+        if (dateFilter === 'today') {
+          const d = new Date(now); d.setHours(0,0,0,0);
+          dateFrom = d.toISOString();
+        } else if (dateFilter === 'week') {
+          const d = new Date(now); d.setDate(d.getDate() - 7);
+          dateFrom = d.toISOString();
+        } else if (dateFilter === 'month') {
+          const d = new Date(now); d.setDate(1); d.setHours(0,0,0,0);
+          dateFrom = d.toISOString();
+        }
 
         try {
+          // Build paginated data query
           let query = supabase
             .from('cellular_calls')
             .select('*', { count: 'exact' })
             .order('called_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
-          if (typeFilter && typeFilter !== 'All') {
-            query = query.eq('call_type', typeFilter.toUpperCase());
-          }
-          if (repFilter && repFilter !== 'all') {
-            query = query.eq('rep_phone', repFilter);
-          }
+          if (typeFilter && typeFilter !== 'All') query = query.eq('call_type', typeFilter.toUpperCase());
+          if (repFilter  && repFilter  !== 'all')  query = query.eq('rep_phone', repFilter);
+          if (dateFrom) query = query.gte('called_at', dateFrom);
 
           const { data: calls, error, count } = await query;
-
           if (error) {
             console.error('[getGSMCalls] DB error:', error);
             return res.json({ success: false, error: error.message });
           }
+
+          // Accurate stats — separate count queries unaffected by pagination
+          let statsBase = supabase.from('cellular_calls').select('call_type, duration_seconds', { count: 'exact' });
+          if (repFilter && repFilter !== 'all') statsBase = statsBase.eq('rep_phone', repFilter);
+          if (dateFrom) statsBase = statsBase.gte('called_at', dateFrom);
+          const { data: statsRows } = await statsBase;
+
+          const statsData = statsRows || [];
+          const statsTotal    = statsData.length;
+          const statsIncoming = statsData.filter((r: any) => r.call_type === 'INCOMING').length;
+          const statsOutgoing = statsData.filter((r: any) => r.call_type === 'OUTGOING').length;
+          const statsMissed   = statsData.filter((r: any) => r.call_type === 'MISSED').length;
+          const answered      = statsData.filter((r: any) => (r.duration_seconds || 0) > 0);
+          const totalDuration = answered.reduce((s: number, r: any) => s + (r.duration_seconds || 0), 0);
+          const avgDuration   = answered.length > 0 ? Math.round(totalDuration / answered.length) : 0;
+          const missedRate    = statsTotal > 0 ? Math.round((statsMissed / statsTotal) * 100) : 0;
 
           return res.json({
             success: true,
@@ -2503,9 +2531,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               calledAt: c.called_at,
               contactId: c.contact_id,
               contactName: c.contact_name,
-              deviceModel: c.device_model
+              deviceModel: c.device_model,
+              rep_phone: c.rep_phone || null,
+              rep_name: c.rep_name  || null,
             })),
             total: count || 0,
+            stats: {
+              total: statsTotal,
+              incoming: statsIncoming,
+              outgoing: statsOutgoing,
+              missed: statsMissed,
+              avgDuration,
+              totalDuration,
+              missedRate,
+            },
             offset,
             limit
           });
