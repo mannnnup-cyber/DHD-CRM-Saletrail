@@ -2554,6 +2554,94 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      // ── Call Forwarding Command Queue ────────────────────────────────────────
+
+      case 'getDeviceCommands': {
+        // Companion app polls this — GET ?action=getDeviceCommands&phone=<number>
+        const devicePhone = String(req.query.phone || '').replace(/[^0-9+]/g, '');
+        if (!devicePhone) return res.status(400).json({ success: false, error: 'phone required' });
+        if (!supabase) return res.status(500).json({ success: false, error: 'DB not configured' });
+
+        const { data: commands } = await supabase
+          .from('device_commands')
+          .select('*')
+          .eq('device_phone', devicePhone)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: true })
+          .limit(10);
+
+        return res.json({ success: true, commands: commands || [] });
+      }
+
+      case 'ackCommand': {
+        // Companion app calls this after executing — POST ?action=ackCommand
+        const { commandId, status: cmdStatus, resultMessage } = req.body;
+        if (!commandId) return res.status(400).json({ success: false, error: 'commandId required' });
+        if (!supabase) return res.status(500).json({ success: false, error: 'DB not configured' });
+
+        await supabase
+          .from('device_commands')
+          .update({
+            status: cmdStatus || 'done',
+            executed_at: new Date().toISOString(),
+            result_message: resultMessage || null,
+          })
+          .eq('id', commandId);
+
+        return res.json({ success: true });
+      }
+
+      case 'sendForwardCommand': {
+        // CRM website creates a forwarding command — POST ?action=sendForwardCommand
+        const { devicePhone: fwdPhone, command: fwdCmd, targetNumber, simSlot } = req.body;
+        if (!fwdPhone || !fwdCmd) return res.status(400).json({ success: false, error: 'devicePhone and command required' });
+        if (fwdCmd === 'forward_enable' && !targetNumber) return res.status(400).json({ success: false, error: 'targetNumber required for forward_enable' });
+        if (!supabase) return res.status(500).json({ success: false, error: 'DB not configured' });
+
+        // Cancel any existing pending commands for this device so they don't stack
+        await supabase
+          .from('device_commands')
+          .update({ status: 'cancelled' })
+          .eq('device_phone', fwdPhone)
+          .eq('status', 'pending');
+
+        const { data: newCmd, error: cmdErr } = await supabase
+          .from('device_commands')
+          .insert({
+            device_phone: fwdPhone,
+            command: fwdCmd,
+            target_number: targetNumber || null,
+            sim_slot: simSlot ?? 0,
+            created_by: String(req.headers['x-user-email'] || 'admin'),
+            status: 'pending',
+          })
+          .select()
+          .single();
+
+        if (cmdErr) return res.status(500).json({ success: false, error: cmdErr.message });
+        return res.json({ success: true, command: newCmd });
+      }
+
+      case 'getForwardStatus': {
+        // Returns latest command per device so the UI knows each device's forwarding state
+        if (!supabase) return res.status(500).json({ success: false, error: 'DB not configured' });
+
+        const { data: recentCmds } = await supabase
+          .from('device_commands')
+          .select('*')
+          .neq('status', 'cancelled')
+          .order('created_at', { ascending: false })
+          .limit(200);
+
+        // Keep only the latest command per device
+        const byDevice: Record<string, any> = {};
+        for (const cmd of (recentCmds || [])) {
+          if (!byDevice[cmd.device_phone]) byDevice[cmd.device_phone] = cmd;
+        }
+
+        return res.json({ success: true, forwardStatus: byDevice });
+      }
+
       default:
         return res.status(400).json({
           success: false,
@@ -2567,6 +2655,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             'getCalls', 'getAllCalls', 'bulkUpdateChats',
             // GSM companion app
             'addGSMCall', 'getGSMCalls',
+            // Call forwarding
+            'getDeviceCommands', 'ackCommand', 'sendForwardCommand', 'getForwardStatus',
             // Instance management
             'createInstance', 'getQRCode', 'getInstanceStatus', 'disconnect', 'webhookConfig', 'setWebhook', 'syncEvolutionMessages',
             // Utilities

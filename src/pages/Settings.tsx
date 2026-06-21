@@ -53,6 +53,13 @@ const Settings: React.FC = () => {
   const [deviceAssignments, setDeviceAssignments] = useState<Record<string, string>>({});
   const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
 
+  // Call forwarding state
+  const [forwardStatus, setForwardStatus] = useState<Record<string, any>>({});
+  const [forwardTarget, setForwardTarget] = useState<Record<string, string>>({});
+  const [forwardSim, setForwardSim] = useState<Record<string, number>>({});
+  const [showForwardForm, setShowForwardForm] = useState<Record<string, boolean>>({});
+  const [sendingForward, setSendingForward] = useState<string | null>(null);
+
   // First-time owner setup state
   const [showOwnerSetup, setShowOwnerSetup] = useState(false);
   const [ownerName, setOwnerName] = useState('');
@@ -382,22 +389,61 @@ const Settings: React.FC = () => {
   const loadDevices = async () => {
     setDevicesLoading(true);
     try {
-      const r = await fetch('/api/users?action=listDevices');
-      const data = await r.json();
-      if (data.success) {
-        setDevices(data.devices || []);
-        // Initialise local state from saved DB values
+      const [devR, fwdR] = await Promise.all([
+        fetch('/api/users?action=listDevices'),
+        fetch('/api/whatsapp?action=getForwardStatus'),
+      ]);
+      const devData = await devR.json();
+      const fwdData = await fwdR.json();
+      if (devData.success) {
+        setDevices(devData.devices || []);
         const assignments: Record<string, string> = {};
         const names: Record<string, string> = {};
-        (data.devices || []).forEach((d: any) => {
+        (devData.devices || []).forEach((d: any) => {
           assignments[d.device_id] = d.user_id || '';
           names[d.device_id] = d.device_name || '';
         });
         setDeviceAssignments(assignments);
         setDeviceNames(names);
       }
+      if (fwdData.success) setForwardStatus(fwdData.forwardStatus || {});
     } catch {}
     setDevicesLoading(false);
+  };
+
+  const handleSendForwardCommand = async (
+    devicePhone: string,
+    command: 'forward_enable' | 'forward_disable'
+  ) => {
+    setSendingForward(devicePhone);
+    try {
+      const r = await fetch('/api/whatsapp?action=sendForwardCommand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          devicePhone,
+          command,
+          targetNumber: command === 'forward_enable' ? (forwardTarget[devicePhone] || '') : undefined,
+          simSlot: forwardSim[devicePhone] ?? 0,
+        }),
+      });
+      const data = await r.json();
+      if (data.success) {
+        setForwardStatus(prev => ({ ...prev, [devicePhone]: data.command }));
+        setShowForwardForm(prev => ({ ...prev, [devicePhone]: false }));
+        setTeamMessage({
+          type: 'success',
+          text: command === 'forward_enable'
+            ? `Forwarding command queued — device will activate within 15 min`
+            : `Disable forwarding command queued — device will cancel within 15 min`,
+        });
+      } else {
+        setTeamMessage({ type: 'error', text: data.error || 'Failed to send command' });
+      }
+    } catch {
+      setTeamMessage({ type: 'error', text: 'Network error sending forwarding command' });
+    }
+    setSendingForward(null);
   };
 
   const handleSaveDevice = async (deviceId: string) => {
@@ -1406,6 +1452,112 @@ const Settings: React.FC = () => {
                             Save
                           </button>
                         </div>
+
+                        {/* Call Forwarding Control */}
+                        {(() => {
+                          const phone = device.phone_number;
+                          const fwd = forwardStatus[phone];
+                          const isForwarding = fwd && fwd.command === 'forward_enable' && (fwd.status === 'done' || fwd.status === 'pending');
+                          const isPending = fwd && fwd.status === 'pending';
+                          const showForm = showForwardForm[phone];
+
+                          return (
+                            <div className="mt-3 pt-3 border-t border-gray-700/50">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Call Forwarding</span>
+                                  {isForwarding && (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isPending ? 'bg-amber-500/20 text-amber-400' : 'bg-green-500/20 text-green-400'}`}>
+                                      {isPending ? '⏳ Pending…' : `→ ${fwd.target_number}`}
+                                    </span>
+                                  )}
+                                  {fwd && fwd.command === 'forward_disable' && fwd.status === 'pending' && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-gray-600/40 text-gray-400">⏳ Disabling…</span>
+                                  )}
+                                  {fwd && fwd.status === 'failed' && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-red-500/20 text-red-400" title={fwd.result_message}>Failed</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  {isForwarding && fwd.status === 'done' && (
+                                    <button
+                                      onClick={() => handleSendForwardCommand(phone, 'forward_disable')}
+                                      disabled={sendingForward === phone}
+                                      className="text-[10px] px-2 py-1 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors disabled:opacity-50">
+                                      {sendingForward === phone ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Disable'}
+                                    </button>
+                                  )}
+                                  {!showForm && (
+                                    <button
+                                      onClick={() => setShowForwardForm(prev => ({ ...prev, [phone]: true }))}
+                                      className="text-[10px] px-2 py-1 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors">
+                                      {isForwarding ? 'Change' : 'Enable'}
+                                    </button>
+                                  )}
+                                  {showForm && (
+                                    <button
+                                      onClick={() => setShowForwardForm(prev => ({ ...prev, [phone]: false }))}
+                                      className="text-[10px] px-2 py-1 rounded-lg bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors">
+                                      Cancel
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {showForm && (
+                                <div className="mt-2 p-3 bg-gray-800/60 rounded-xl border border-gray-700/50 space-y-2">
+                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <div>
+                                      <label className="block text-[10px] text-gray-500 mb-1">Forward to number</label>
+                                      <select
+                                        value={forwardTarget[phone] || ''}
+                                        onChange={e => setForwardTarget(prev => ({ ...prev, [phone]: e.target.value }))}
+                                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500/50">
+                                        <option value="">— Pick a device or type below —</option>
+                                        {devices.filter(d => d.phone_number && d.phone_number !== phone).map(d => (
+                                          <option key={d.device_id} value={d.phone_number}>
+                                            {deviceNames[d.device_id] || d.phone_number} ({d.phone_number})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-gray-500 mb-1">Or enter number</label>
+                                      <input
+                                        type="tel"
+                                        value={forwardTarget[phone] || ''}
+                                        onChange={e => setForwardTarget(prev => ({ ...prev, [phone]: e.target.value }))}
+                                        placeholder="+18761234567"
+                                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50" />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">SIM slot</label>
+                                    <div className="flex gap-1.5">
+                                      {[0, 1].map(slot => (
+                                        <button
+                                          key={slot}
+                                          onClick={() => setForwardSim(prev => ({ ...prev, [phone]: slot }))}
+                                          className={`text-[10px] px-3 py-1 rounded-lg border transition-colors ${(forwardSim[phone] ?? 0) === slot ? 'bg-blue-500/20 border-blue-500/40 text-blue-300' : 'bg-gray-800 border-gray-700 text-gray-500 hover:border-gray-600'}`}>
+                                          SIM {slot + 1}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => handleSendForwardCommand(phone, 'forward_enable')}
+                                    disabled={sendingForward === phone || !forwardTarget[phone]}
+                                    className="w-full flex items-center justify-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold px-3 py-2 rounded-lg transition-colors">
+                                    {sendingForward === phone ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                    Send Forwarding Command
+                                  </button>
+                                  <p className="text-[10px] text-gray-600 text-center">Device will execute within ~15 minutes when online</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
                         {device.last_heartbeat && (
                           <p className="text-[10px] text-gray-600 mt-2 pl-11">
                             Last seen {new Date(device.last_heartbeat).toLocaleString()}
