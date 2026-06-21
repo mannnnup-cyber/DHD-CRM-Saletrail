@@ -147,6 +147,7 @@ export default function WhatsApp() {
     state.user?.role === 'sales_rep' ? 'mine' : 'all'
   );
   const [allCalls, setAllCalls] = useState<any[]>([]);
+  const [callFilter, setCallFilter] = useState<'all' | 'mine' | 'missed' | 'today'>('all');
   const [callingChatId, setCallingChatId] = useState<string | null>(null);
   const [callTimer, setCallTimer] = useState(0);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1152,13 +1153,26 @@ export default function WhatsApp() {
   const activeChats = chats.filter(c => c.status === 'active').length;
   const resolvedChats = chats.filter(c => c.status === 'resolved').length;
 
-  // Calculate call metrics
-  const totalCalls = allCalls.length;
-  const missedCalls = allCalls.filter(c => c.status === 'missed').length;
+  // Filter calls by selected filter
+  const filteredCalls = allCalls.filter(call => {
+    const today = new Date().toDateString();
+    const callDate = new Date(call.timestamp).toDateString();
+    const isToday = callDate === today;
+    const isMine = call.assignedTo === state.user?.name || call.assignedTo === (state.user?.email?.split('@')[0]);
+
+    if (callFilter === 'mine') return isMine;
+    if (callFilter === 'missed') return call.status === 'missed';
+    if (callFilter === 'today') return isToday;
+    return true; // 'all'
+  });
+
+  // Calculate call metrics (from filtered calls)
+  const totalCalls = filteredCalls.length;
+  const missedCalls = filteredCalls.filter(c => c.status === 'missed').length;
   const missedCallRate = totalCalls > 0 ? Math.round((missedCalls / totalCalls) * 100) : 0;
-  const totalDuration = allCalls.reduce((sum, c) => sum + (c.duration || 0), 0);
+  const totalDuration = filteredCalls.reduce((sum, c) => sum + (c.duration || 0), 0);
   const avgCallDuration = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0;
-  const todaysCalls = allCalls.filter(c => new Date(c.timestamp).toDateString() === new Date().toDateString());
+  const todaysCalls = filteredCalls.filter(c => new Date(c.timestamp).toDateString() === new Date().toDateString());
   const todaysMissedCalls = todaysCalls.filter(c => c.status === 'missed').length;
 
   // Determine if using real or mock data
@@ -2148,8 +2162,38 @@ export default function WhatsApp() {
       {/* CALLS TAB */}
       {activeTab === 'calls' && (
         <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto">
+          {/* Call Filters */}
+          {allCalls.length > 0 && (
+            <div className="flex gap-2 flex-wrap sticky top-0 bg-gray-950/80 backdrop-blur z-10 pb-2">
+              {[
+                { key: 'all', label: 'All Calls' },
+                { key: 'mine', label: '👤 Your Calls' },
+                { key: 'missed', label: '📵 Missed' },
+                { key: 'today', label: '📅 Today' }
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setCallFilter(f.key as any)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    callFilter === f.key
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-2">
-            {allCalls.length === 0 ? (
+            {filteredCalls.length === 0 && allCalls.length > 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center px-6">
+                <Phone className="w-12 h-12 mb-3 opacity-30" />
+                <p className="text-white font-medium mb-1">No calls found</p>
+                <p className="text-sm text-gray-500">Try adjusting your filters</p>
+              </div>
+            ) : allCalls.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center px-6">
                 <Phone className="w-12 h-12 mb-3 opacity-30" />
                 <p className="text-white font-medium mb-1">No call logs yet</p>
@@ -2172,7 +2216,7 @@ export default function WhatsApp() {
                 </button>
               </div>
             ) : (
-              allCalls.map((call, idx) => (
+              filteredCalls.map((call, idx) => (
                 <div
                   key={idx}
                   onClick={() => {
@@ -2199,15 +2243,24 @@ export default function WhatsApp() {
 
                       {/* Contact info */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-white truncate">{call.contactName}</p>
-                        <div className="flex items-center gap-2 text-xs text-gray-400">
-                          <span>{call.callType === 'video' ? '🎥 Video' : '📞 Voice'}</span>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="font-medium text-white truncate">{call.contactName}</p>
+                          {call.company && <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 flex-shrink-0">{call.company}</span>}
+                        </div>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-xs text-gray-400">{call.callType === 'video' ? '🎥 Video' : '📞 Voice'}</span>
                           {call.status === 'missed' ? (
-                            <span className="text-red-400">Missed</span>
+                            <span className="text-xs text-red-400 font-medium">Missed</span>
                           ) : (
-                            <span>{call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'Incoming'}</span>
+                            <span className="text-xs text-gray-400">{call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'Incoming'}</span>
+                          )}
+                          {call.tags && call.tags.length > 0 && (
+                            <span className="text-[10px] text-gray-500">Tags: {call.tags.join(', ')}</span>
                           )}
                         </div>
+                        {call.assignedTo && call.assignedTo !== 'Unassigned' && (
+                          <p className="text-[11px] text-gray-500">Assigned: {call.assignedTo}</p>
+                        )}
                       </div>
 
                       {/* Time */}

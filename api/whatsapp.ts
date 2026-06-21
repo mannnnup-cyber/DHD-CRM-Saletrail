@@ -1173,16 +1173,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.json({ success: false, error: error.message });
           }
 
-          // Get contact names for each call
+          // Get chat metadata and contact details for each call
           const chatIds = [...new Set((calls || []).map((c: any) => c.chat_id))];
           const { data: chatMeta } = await supabase
             .from('whatsapp_chats')
-            .select('chat_id, contact_name')
+            .select('chat_id, contact_name, assigned_to, assigned_to_user_id')
             .in('chat_id', chatIds);
 
-          const contactMap: Record<string, string> = {};
+          const contactMap: Record<string, any> = {};
           (chatMeta || []).forEach((row: any) => {
-            contactMap[row.chat_id] = row.contact_name || '';
+            contactMap[row.chat_id] = {
+              name: row.contact_name || '',
+              assignedTo: row.assigned_to || 'Unassigned',
+              assignedToUserId: row.assigned_to_user_id || null
+            };
+          });
+
+          // Also get contact records (by phone) for company/tags
+          const phones = chatIds.map((id: string) => id.replace(/@[a-z.]+$/, ''));
+          const { data: contacts } = await supabase
+            .from('contacts')
+            .select('phone_normalized, company, tags, status')
+            .in('phone_normalized', phones);
+
+          const contactDetailsMap: Record<string, any> = {};
+          (contacts || []).forEach((c: any) => {
+            contactDetailsMap[c.phone_normalized] = {
+              company: c.company || null,
+              tags: c.tags || [],
+              status: c.status || null
+            };
           });
 
           // Sort: missed calls first, then by timestamp
@@ -1195,15 +1215,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           return res.json({
             success: true,
-            calls: sorted.map((call: any) => ({
-              id: call.id,
-              chatId: call.chat_id,
-              contactName: contactMap[call.chat_id] || call.chat_id.replace(/@[a-z.]+$/, ''),
-              callType: call.call_type, // 'voice' or 'video'
-              status: call.status, // 'answered', 'missed', 'rejected'
-              duration: call.duration_seconds,
-              timestamp: call.started_at
-            }))
+            calls: sorted.map((call: any) => {
+              const phone = call.chat_id.replace(/@[a-z.]+$/, '');
+              const chatData = contactMap[call.chat_id] || {};
+              const contactDetails = contactDetailsMap[phone] || {};
+              return {
+                id: call.id,
+                chatId: call.chat_id,
+                contactName: chatData.name || call.chat_id,
+                assignedTo: chatData.assignedTo || 'Unassigned',
+                assignedToUserId: chatData.assignedToUserId || null,
+                company: contactDetails.company || null,
+                tags: contactDetails.tags || [],
+                callType: call.call_type,
+                status: call.status,
+                duration: call.duration_seconds,
+                timestamp: call.started_at
+              };
+            })
           });
         } catch (err: any) {
           console.error('[getAllCalls] Error:', err?.message || err);
