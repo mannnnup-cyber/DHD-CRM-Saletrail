@@ -388,6 +388,11 @@ export default async function handler(
       case 'getTranscript':
         return await handleGetTranscript(req, res);
 
+      // Transcription actions (merged from transcribe.ts)
+      case 'processTranscriptions':
+      case 'transcribe':
+        return await handleProcessTranscriptions(req, res);
+
       default:
         return res.status(400).json({
           success: false,
@@ -401,4 +406,73 @@ export default async function handler(
       error: err.message || 'Internal server error',
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Transcription helpers (merged from transcribe.ts)
+// ---------------------------------------------------------------------------
+import FormData from 'form-data';
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const WHISPER_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
+
+async function downloadAudio(filePath: string): Promise<Buffer> {
+  const { data, error } = await supabase.storage.from('call-recordings').download(filePath);
+  if (error) throw new Error(`Download failed: ${error.message}`);
+  return Buffer.from(await (data as Blob).arrayBuffer());
+}
+
+async function transcribeWithWhisper(audioBuffer: Buffer, filename: string): Promise<string> {
+  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
+  const form = new FormData();
+  form.append('file', audioBuffer, filename);
+  form.append('model', 'whisper-1');
+  form.append('language', 'en');
+  form.append('response_format', 'json');
+  const response = await fetch(WHISPER_API_URL, { method: 'POST', headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, ...form.getHeaders() }, body: form as any });
+  if (!response.ok) { const err = await response.text(); throw new Error(`Whisper API failed: ${response.status} ${err.substring(0, 100)}`); }
+  const result = await response.json() as any;
+  if (!result.text) throw new Error('No transcript returned from Whisper');
+  return result.text;
+}
+
+async function processTranscriptionJob(jobId: string, recordingId: string): Promise<boolean> {
+  try {
+    await supabase.from('transcription_jobs').update({ status: 'IN_PROGRESS' }).eq('job_id', jobId);
+    const { data: recording, error: re } = await supabase.from('audio_recordings').select('*').eq('recording_id', recordingId).single();
+    if (re || !recording) throw new Error(`Recording not found: ${re?.message}`);
+    const audioBuffer = await downloadAudio(recording.file_path);
+    if (audioBuffer.length === 0) throw new Error('Downloaded audio is empty');
+    const transcriptText = await transcribeWithWhisper(audioBuffer, recording.filename || 'recording.m4a');
+    if (!transcriptText.trim()) throw new Error('Transcription returned empty text');
+    await supabase.from('call_transcripts').insert({ call_id: recording.call_id, org_id: recording.org_id, text: transcriptText, provider: 'openai', model_used: 'whisper-1', duration_seconds: recording.duration_seconds, generated_at: new Date().toISOString() });
+    await supabase.from('audio_recordings').update({ transcription_status: 'COMPLETE', transcription_error: null }).eq('recording_id', recordingId);
+    await supabase.from('transcription_jobs').update({ status: 'COMPLETE', completed_at: new Date().toISOString() }).eq('job_id', jobId);
+    return true;
+  } catch (err: any) {
+    const { data: job } = await supabase.from('transcription_jobs').select('attempts, max_attempts').eq('job_id', jobId).single();
+    const attempts = (job?.attempts || 0) + 1;
+    const maxAttempts = job?.max_attempts || 3;
+    if (attempts >= maxAttempts) {
+      await supabase.from('transcription_jobs').update({ status: 'FAILED', error_message: err.message, attempts, completed_at: new Date().toISOString() }).eq('job_id', jobId);
+      await supabase.from('audio_recordings').update({ transcription_status: 'FAILED', transcription_error: err.message }).eq('recording_id', recordingId);
+    } else {
+      await supabase.from('transcription_jobs').update({ status: 'QUEUED', error_message: err.message, attempts }).eq('job_id', jobId);
+    }
+    return false;
+  }
+}
+
+async function handleProcessTranscriptions(req: VercelRequest, res: VercelResponse) {
+  if (req.method === 'POST' && req.body?.recording_id) {
+    const { recording_id, job_id } = req.body;
+    const success = await processTranscriptionJob(job_id || recording_id, recording_id);
+    return res.json({ success, message: success ? 'Transcription complete' : 'Transcription failed' });
+  }
+  const { data: jobs, error } = await supabase.from('transcription_jobs').select('job_id, recording_id').eq('status', 'QUEUED').order('created_at', { ascending: true }).limit(10);
+  if (error) return res.status(500).json({ success: false, error: error.message });
+  if (!jobs || jobs.length === 0) return res.json({ success: true, processed: 0, message: 'No pending transcription jobs' });
+  let processed = 0, failed = 0;
+  for (const job of jobs) { if (await processTranscriptionJob(job.job_id, job.recording_id)) processed++; else failed++; }
+  return res.json({ success: true, processed, failed, message: `Processed ${processed} jobs${failed > 0 ? `, ${failed} failed` : ''}` });
 }

@@ -23,6 +23,9 @@ interface Contact {
   first_order_date: string | null;
   last_order_date: string | null;
   created_at: string;
+  contact_preference: 'call' | 'whatsapp' | 'email' | 'sms' | null;
+  timezone: string | null;
+  linkedin_url: string | null;
 }
 
 interface Interaction {
@@ -72,6 +75,9 @@ const ContactProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAllInteractions, setShowAllInteractions] = useState(false);
+  const [editingFields, setEditingFields] = useState(false);
+  const [fieldDraft, setFieldDraft] = useState<{ contact_preference: string; timezone: string; linkedin_url: string }>({ contact_preference: '', timezone: '', linkedin_url: '' });
+  const [fieldSaving, setFieldSaving] = useState(false);
   const [showEnrichModal, setShowEnrichModal] = useState(false);
   const [enrichUrl, setEnrichUrl] = useState('');
   const [enrichAutoDetect, setEnrichAutoDetect] = useState(false);
@@ -161,7 +167,7 @@ const ContactProfile: React.FC = () => {
         requestBody.companyUrl = enrichUrl.trim();
       }
 
-      const response = await fetch('/api/enrichment?action=enrichLead', {
+      const response = await fetch('/api/contacts?action=enrichLead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
@@ -227,6 +233,24 @@ const ContactProfile: React.FC = () => {
     } finally {
       setEnrichLoading(false);
     }
+  };
+
+  const saveContactFields = async () => {
+    if (!id) return;
+    setFieldSaving(true);
+    try {
+      const body: Record<string, string> = {};
+      if (fieldDraft.contact_preference) body.contact_preference = fieldDraft.contact_preference;
+      if (fieldDraft.timezone) body.timezone = fieldDraft.timezone;
+      if (fieldDraft.linkedin_url) body.linkedin_url = fieldDraft.linkedin_url;
+      const r = await fetch(`/api/contacts?action=update&id=${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) { await load(); setEditingFields(false); }
+    } catch (_) {}
+    finally { setFieldSaving(false); }
   };
 
   const handleMergeDuplicate = async () => {
@@ -493,6 +517,28 @@ const ContactProfile: React.FC = () => {
                   <ExternalLink className="w-3 h-3 text-gray-600" />
                 </a>
               )}
+              {contact.linkedin_url && (
+                <a
+                  href={contact.linkedin_url.startsWith('http') ? contact.linkedin_url : `https://${contact.linkedin_url}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-blue-400 transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                  LinkedIn
+                </a>
+              )}
+              {contact.contact_preference && (
+                <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  Prefers {contact.contact_preference === 'whatsapp' ? 'WhatsApp' : contact.contact_preference === 'call' ? 'Call' : contact.contact_preference === 'email' ? 'Email' : 'SMS'}
+                </span>
+              )}
+              {contact.timezone && (
+                <span className="flex items-center gap-1 text-xs text-gray-500">
+                  <Clock className="w-3.5 h-3.5" />
+                  {contact.timezone}
+                </span>
+              )}
             </div>
 
             {/* Action buttons */}
@@ -561,6 +607,81 @@ const ContactProfile: React.FC = () => {
             <p className="text-sm text-gray-300">{contact.notes}</p>
           </div>
         )}
+
+        {/* Editable contact detail fields */}
+        <div className="mt-4 pt-4 border-t border-gray-800">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-gray-500">Contact Details</p>
+            {!editingFields ? (
+              <button
+                onClick={() => { setFieldDraft({ contact_preference: contact.contact_preference || '', timezone: contact.timezone || '', linkedin_url: contact.linkedin_url || '' }); setEditingFields(true); }}
+                className="text-xs text-gray-500 hover:text-white transition-colors"
+              >
+                Edit
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={() => setEditingFields(false)} className="text-xs text-gray-500 hover:text-white transition-colors">Cancel</button>
+                <button onClick={saveContactFields} disabled={fieldSaving} className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50">
+                  {fieldSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            )}
+          </div>
+          {editingFields ? (
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Preferred Contact Method</label>
+                <select
+                  value={fieldDraft.contact_preference}
+                  onChange={e => setFieldDraft(d => ({ ...d, contact_preference: e.target.value }))}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                >
+                  <option value="">Not set</option>
+                  <option value="call">📞 Call</option>
+                  <option value="whatsapp">💬 WhatsApp</option>
+                  <option value="email">✉️ Email</option>
+                  <option value="sms">📱 SMS</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Timezone</label>
+                <input
+                  type="text"
+                  value={fieldDraft.timezone}
+                  onChange={e => setFieldDraft(d => ({ ...d, timezone: e.target.value }))}
+                  placeholder="e.g. America/New_York, EST, UTC-5"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500 placeholder-gray-600"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">LinkedIn URL</label>
+                <input
+                  type="url"
+                  value={fieldDraft.linkedin_url}
+                  onChange={e => setFieldDraft(d => ({ ...d, linkedin_url: e.target.value }))}
+                  placeholder="https://linkedin.com/in/..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500 placeholder-gray-600"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div>
+                <p className="text-gray-500 mb-0.5">Preferred Channel</p>
+                <p className="text-gray-300">{contact.contact_preference ? (contact.contact_preference === 'whatsapp' ? '💬 WhatsApp' : contact.contact_preference === 'call' ? '📞 Call' : contact.contact_preference === 'email' ? '✉️ Email' : '📱 SMS') : '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-0.5">Timezone</p>
+                <p className="text-gray-300">{contact.timezone || '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-0.5">LinkedIn</p>
+                {contact.linkedin_url ? <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate block">View Profile</a> : <p className="text-gray-300">—</p>}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Stats row */}

@@ -646,5 +646,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).json({ error: 'Action not found' });
   }
 
+  // Analyze actions (merged from analyze.ts)
+  if (target === 'analyze') {
+    if (action === 'analyzeCall') return handleAnalyzeCall(req, res);
+    if (action === 'batchAnalyze') return handleBatchAnalyze(req, res);
+    if (action === 'getMetrics') return handleGetMetrics(req, res);
+    return res.status(404).json({ error: 'Action not found' });
+  }
+
   return res.status(400).json({ error: 'Unknown target' });
+}
+
+// ---------------------------------------------------------------------------
+// Analyze helpers (merged from analyze.ts)
+// Uses service role key for call_insights write access
+// ---------------------------------------------------------------------------
+const _adminUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || '';
+const _adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabaseAdmin = _adminUrl && _adminKey ? createClient(_adminUrl, _adminKey) : null;
+
+function analyzeBasicSentiment(text: string): { sentiment: string; score: number } {
+  if (!text?.trim()) return { sentiment: 'NEUTRAL', score: 0.5 };
+  const positivePatterns = [/\b(love|great|amazing|excellent|perfect|fantastic|wonderful|awesome|best)\b/gi, /\b(definitely|absolutely|for sure|agreed)\b/gi, /\b(move forward|let's proceed|next step|sign up|excited)\b/gi, /\b(thanks|thank you|appreciate)\b/gi];
+  const negativePatterns = [/\b(no|don't|doesn't|won't|can't|not|never|hate|bad|terrible|awful)\b/gi, /\b(problem|issue|concern|worried|hesitant|doubt|unsure)\b/gi, /\b(expensive|too much|too costly|over budget)\b/gi, /\b(competitor|alternative|other option|elsewhere)\b/gi];
+  let pos = 0, neg = 0;
+  positivePatterns.forEach(p => { const m = text.match(p); if (m) pos += m.length; });
+  negativePatterns.forEach(p => { const m = text.match(p); if (m) neg += m.length; });
+  const total = pos + neg;
+  if (total === 0) return { sentiment: 'NEUTRAL', score: 0.5 };
+  if (pos > neg) return { sentiment: 'POSITIVE', score: Math.min(pos / total, 1.0) };
+  if (neg > pos) return { sentiment: 'NEGATIVE', score: Math.min(neg / total, 1.0) };
+  return { sentiment: 'NEUTRAL', score: 0.5 };
+}
+
+function extractKeywords(text: string): string[] {
+  const kw: string[] = [];
+  if (/\b(concern|worried|hesitant|not sure|but what about|problem|issue|doubt)\b/i.test(text)) kw.push('objection_handling');
+  if (/\b(let's move forward|let's proceed|when can we start|ready to go|sign me up|excited to start)\b/i.test(text)) kw.push('closing_signal');
+  if (/\b(price|cost|budget|invest|investment|expensive|value|roi|affordable|payment|pricing)\b/i.test(text)) kw.push('price_discussion');
+  if (/\b(challenge|problem|pain|biggest issue|what's important|tell me about|help me understand|need|requirement)\b/i.test(text)) kw.push('needs_discovery');
+  if (/\b(follow up|next step|next time|schedule|calendar|meeting|call|demo|email|send you)\b/i.test(text)) kw.push('next_steps_set');
+  if (/\b(call now|sign up|register|apply|book|purchase|buy|order|claim|get started)\b/i.test(text)) kw.push('call_to_action');
+  if (/\b(trust|confident|partnership|working together|collaboration|team|together)\b/i.test(text)) kw.push('relationship_building');
+  if (/\b(competitor|alternative|other|different|similar|elsewhere|other company)\b/i.test(text)) kw.push('competitor_mention');
+  return kw;
+}
+
+async function handleAnalyzeCall(req: VercelRequest, res: VercelResponse) {
+  const db = supabaseAdmin;
+  if (!db) return res.status(503).json({ error: 'Supabase admin not configured' });
+  const { call_id, user_id, org_id } = req.body;
+  if (!call_id || !user_id || !org_id) return res.status(400).json({ success: false, error: 'Missing call_id, user_id, or org_id' });
+  const { data: transcript, error: te } = await db.from('call_transcripts').select('text').eq('call_id', call_id).single();
+  if (te || !transcript) return res.status(400).json({ success: false, error: 'No transcript found' });
+  const { sentiment, score } = analyzeBasicSentiment(transcript.text);
+  const topics = extractKeywords(transcript.text);
+  const { data: insight, error: ie } = await db.from('call_insights').upsert({ call_id, user_id, org_id, sentiment, sentiment_score: score, topics, ai_model: 'rule-based', generated_at: new Date().toISOString() }).select().single();
+  if (ie) return res.status(500).json({ success: false, error: ie.message });
+  return res.json({ success: true, call_id, sentiment, sentiment_score: score, topics, insight_id: insight.insight_id });
+}
+
+async function handleBatchAnalyze(req: VercelRequest, res: VercelResponse) {
+  const db = supabaseAdmin;
+  if (!db) return res.status(503).json({ error: 'Supabase admin not configured' });
+  const { data: transcripts } = await db.from('call_transcripts').select('call_id, text, org_id').limit(20);
+  if (!transcripts || transcripts.length === 0) return res.json({ success: true, processed: 0, message: 'No pending transcripts' });
+  let processed = 0;
+  for (const t of transcripts) {
+    try {
+      const { sentiment, score } = analyzeBasicSentiment(t.text);
+      const topics = extractKeywords(t.text);
+      await db.from('call_insights').upsert({ call_id: t.call_id, org_id: t.org_id, sentiment, sentiment_score: score, topics, ai_model: 'rule-based', generated_at: new Date().toISOString() });
+      processed++;
+    } catch (_) {}
+  }
+  return res.json({ success: true, processed, message: `Analyzed ${processed} calls` });
+}
+
+async function handleGetMetrics(req: VercelRequest, res: VercelResponse) {
+  const db = supabaseAdmin;
+  if (!db) return res.status(503).json({ error: 'Supabase admin not configured' });
+  const { user_id, org_id } = req.body;
+  if (!user_id || !org_id) return res.status(400).json({ success: false, error: 'Missing user_id or org_id' });
+  const { data: calls } = await db.from('call_insights').select('sentiment, sentiment_score, topics, created_at').eq('user_id', user_id).eq('org_id', org_id).order('created_at', { ascending: false }).limit(20);
+  if (!calls || calls.length === 0) return res.json({ success: true, metrics: null });
+  const sentiments = calls.map((c: any) => c.sentiment);
+  const pos = sentiments.filter((s: string) => s === 'POSITIVE').length;
+  const neg = sentiments.filter((s: string) => s === 'NEGATIVE').length;
+  const allTopics: string[] = calls.flatMap((c: any) => c.topics || []);
+  const freq: Record<string, number> = {};
+  allTopics.forEach(t => { freq[t] = (freq[t] || 0) + 1; });
+  const topicsRanked = Object.entries(freq).sort(([, a], [, b]) => b - a).slice(0, 5).map(([t]) => t);
+  return res.json({ success: true, metrics: { total_calls: calls.length, sentiment_distribution: { positive: pos, negative: neg, neutral: calls.length - pos - neg, positive_rate: Math.round((pos / calls.length) * 100) }, top_topics: topicsRanked, areas_of_strength: topicsRanked.filter(t => ['closing_signal', 'call_to_action', 'needs_discovery'].includes(t)), areas_for_improvement: topicsRanked.filter(t => ['objection_handling', 'competitor_mention'].includes(t)) } });
 }

@@ -12,12 +12,9 @@
       "maxDuration": 60
     },
     "api/recordings.ts": {
-      "maxDuration": 120
-    },
-    "api/transcribe.ts": {
       "maxDuration": 300
     },
-    "api/analyze.ts": {
+    "api/crm.ts": {
       "maxDuration": 120
     }
   }
