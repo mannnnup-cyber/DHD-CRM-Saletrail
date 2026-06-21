@@ -162,7 +162,10 @@ export default function WhatsApp() {
   const [unifiedSearchResults, setUnifiedSearchResults] = useState<any[]>([]);
   const [unifiedSearching, setUnifiedSearching] = useState(false);
   const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const [bulkActionInProgress, setBulkActionInProgress] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachCaption, setAttachCaption] = useState('');
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
@@ -892,9 +895,10 @@ export default function WhatsApp() {
     return () => clearTimeout(t);
   }, [unifiedSearchQuery, searchUnified]);
 
-  // Toggle chat selection for bulk actions
+  // Toggle chat selection for bulk actions — entering selection mode automatically
   const toggleChatSelection = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!selectionMode) setSelectionMode(true);
     const newSelection = new Set(selectedChatIds);
     if (newSelection.has(chatId)) {
       newSelection.delete(chatId);
@@ -911,6 +915,23 @@ export default function WhatsApp() {
     } else {
       setSelectedChatIds(new Set(filteredChats.map(c => c.id)));
     }
+  };
+
+  // Exit selection mode and clear selection
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedChatIds(new Set());
+  };
+
+  // Long-press to enter selection mode
+  const handleLongPressStart = (chatId: string) => {
+    longPressTimer.current = setTimeout(() => {
+      setSelectionMode(true);
+      setSelectedChatIds(new Set([chatId]));
+    }, 500);
+  };
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
   };
 
   // Bulk update chats (resolve, assign, etc.)
@@ -1092,6 +1113,16 @@ export default function WhatsApp() {
     const phoneMatch = q.length > 0 && (c.phone || '').replace(/\D/g, '').includes(q);
     return nameMatch || phoneMatch;
   });
+
+  // Sync indeterminate state on the select-all checkbox (must be after filteredChats)
+  useEffect(() => {
+    if (selectAllRef.current) {
+      const all = filteredChats.length > 0 && selectedChatIds.size === filteredChats.length;
+      const some = selectedChatIds.size > 0 && selectedChatIds.size < filteredChats.length;
+      selectAllRef.current.checked = all;
+      selectAllRef.current.indeterminate = some;
+    }
+  }, [selectedChatIds, filteredChats]);
 
   const totalUnread = chats.reduce((sum, c) => sum + c.unread, 0);
   const totalChats = chats.length;
@@ -1344,105 +1375,100 @@ export default function WhatsApp() {
               )}
             </div>
 
-            {/* Chat type filter: All / Individual / Groups */}
-            <div className="flex border-b border-gray-700/50">
-              {(['all', 'individual', 'groups'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setChatFilter(f)}
-                  className={`flex-1 py-2 text-xs font-medium transition-colors ${
-                    chatFilter === f
-                      ? 'text-green-400 border-b-2 border-green-400 bg-green-500/5'
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  {f === 'all' ? 'All' : f === 'individual' ? '👤 People' : '👥 Groups'}
-                </button>
-              ))}
-            </div>
-
-            {/* Assignment filter: All / Mine / Unassigned */}
-            <div className="flex border-b border-gray-700/50">
-              {([
-                { key: 'all', label: 'Everyone' },
-                { key: 'mine', label: '👤 Mine' },
-                { key: 'unassigned', label: '📥 Unassigned' },
-              ] as const).map(f => (
-                // Hide 'all' for sales_rep — they should only see their own + unassigned
-                (f.key === 'all' && state.user?.role === 'sales_rep') ? null : (
-                <button
-                  key={f.key}
-                  onClick={() => setAssignmentFilter(f.key)}
-                  className={`flex-1 py-1.5 text-[11px] font-medium transition-colors ${
-                    assignmentFilter === f.key
-                      ? 'text-amber-400 border-b-2 border-amber-400 bg-amber-500/5'
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  {f.label}
-                </button>
-                )
-              ))}
-            </div>
-
-            {/* Bulk Actions Toolbar */}
-            {selectedChatIds.size > 0 && (
-              <div className="p-2 bg-blue-900/30 border-t border-blue-700/50 space-y-2">
-                <div className="flex items-center justify-between px-2">
-                  <span className="text-xs text-blue-400 font-semibold">
-                    {selectedChatIds.size} selected
+            {selectionMode ? (
+              /* Selection mode header — replaces both filter rows */
+              <div className="border-b border-green-700/40">
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-900/20">
+                  <button onClick={exitSelectionMode} className="text-gray-400 hover:text-white transition-colors flex-shrink-0">
+                    <X size={15} />
+                  </button>
+                  <span className="text-sm text-green-400 font-medium flex-1">
+                    {selectedChatIds.size > 0 ? `${selectedChatIds.size} selected` : 'Select chats'}
                   </span>
-                  <button
-                    onClick={() => setSelectedChatIds(new Set())}
-                    className="text-xs px-2 py-1 text-gray-400 hover:text-white transition-colors"
-                  >
-                    Clear
-                  </button>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      onChange={selectAllChats}
+                      className="w-4 h-4 cursor-pointer rounded accent-green-500"
+                    />
+                    <span className="text-xs text-gray-400">All</span>
+                  </label>
                 </div>
-                <div className="flex gap-1 flex-wrap">
-                  <button
-                    onClick={() => bulkUpdateChats({ status: 'resolved' })}
-                    disabled={bulkActionInProgress}
-                    className="flex-1 text-xs px-2 py-1.5 bg-green-600/50 hover:bg-green-600 text-green-100 rounded transition-colors disabled:opacity-50"
-                  >
-                    Mark Resolved
-                  </button>
-                  <button
-                    onClick={() => bulkUpdateChats({ status: 'pending' })}
-                    disabled={bulkActionInProgress}
-                    className="flex-1 text-xs px-2 py-1.5 bg-yellow-600/50 hover:bg-yellow-600 text-yellow-100 rounded transition-colors disabled:opacity-50"
-                  >
-                    Mark Pending
-                  </button>
-                  <button
-                    onClick={() => {
-                      const assignTo = prompt('Assign to (team member name):', 'Sarah');
-                      if (assignTo) bulkUpdateChats({ assignedTo: assignTo });
-                    }}
-                    disabled={bulkActionInProgress}
-                    className="flex-1 text-xs px-2 py-1.5 bg-blue-600/50 hover:bg-blue-600 text-blue-100 rounded transition-colors disabled:opacity-50"
-                  >
-                    Assign to...
-                  </button>
-                </div>
+                {selectedChatIds.size > 0 && (
+                  <div className="flex gap-1 p-2 bg-gray-800/60">
+                    <button
+                      onClick={() => bulkUpdateChats({ status: 'resolved' })}
+                      disabled={bulkActionInProgress}
+                      className="flex-1 text-xs px-2 py-1.5 bg-green-600/50 hover:bg-green-600 text-green-100 rounded transition-colors disabled:opacity-50"
+                    >
+                      ✓ Resolved
+                    </button>
+                    <button
+                      onClick={() => bulkUpdateChats({ status: 'pending' })}
+                      disabled={bulkActionInProgress}
+                      className="flex-1 text-xs px-2 py-1.5 bg-yellow-600/50 hover:bg-yellow-600 text-yellow-100 rounded transition-colors disabled:opacity-50"
+                    >
+                      ⚠ Pending
+                    </button>
+                    <button
+                      onClick={() => {
+                        const assignTo = prompt('Assign to (team member name):', 'Sarah');
+                        if (assignTo) bulkUpdateChats({ assignedTo: assignTo });
+                      }}
+                      disabled={bulkActionInProgress}
+                      className="flex-1 text-xs px-2 py-1.5 bg-blue-600/50 hover:bg-blue-600 text-blue-100 rounded transition-colors disabled:opacity-50"
+                    >
+                      👤 Assign
+                    </button>
+                  </div>
+                )}
               </div>
+            ) : (
+              <>
+                {/* Chat type filter: All / Individual / Groups */}
+                <div className="flex border-b border-gray-700/50">
+                  {(['all', 'individual', 'groups'] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setChatFilter(f)}
+                      className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                        chatFilter === f
+                          ? 'text-green-400 border-b-2 border-green-400 bg-green-500/5'
+                          : 'text-gray-500 hover:text-gray-300'
+                      }`}
+                    >
+                      {f === 'all' ? 'All' : f === 'individual' ? '👤 People' : '👥 Groups'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Assignment filter: Everyone / Mine / Unassigned */}
+                <div className="flex border-b border-gray-700/50">
+                  {([
+                    { key: 'all', label: 'Everyone' },
+                    { key: 'mine', label: '👤 Mine' },
+                    { key: 'unassigned', label: '📥 Unassigned' },
+                  ] as const).map(f => (
+                    (f.key === 'all' && state.user?.role === 'sales_rep') ? null : (
+                      <button
+                        key={f.key}
+                        onClick={() => setAssignmentFilter(f.key)}
+                        className={`flex-1 py-1.5 text-[11px] font-medium transition-colors ${
+                          assignmentFilter === f.key
+                            ? 'text-amber-400 border-b-2 border-amber-400 bg-amber-500/5'
+                            : 'text-gray-500 hover:text-gray-300'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    )
+                  ))}
+                </div>
+              </>
             )}
 
             <div className="flex-1 overflow-y-auto">
-              {/* Select All / Bulk Selection Header */}
-              {filteredChats.length > 1 && (
-                <div className="p-2 border-b border-gray-700/30 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedChatIds.size === filteredChats.length && filteredChats.length > 0}
-                    onChange={selectAllChats}
-                    className="w-4 h-4 rounded cursor-pointer"
-                  />
-                  <span className="text-xs text-gray-500">
-                    {selectedChatIds.size > 0 ? `${selectedChatIds.size} selected` : 'Select all'}
-                  </span>
-                </div>
-              )}
 
               {filteredChats.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">
@@ -1452,11 +1478,20 @@ export default function WhatsApp() {
                 filteredChats.map(chat => (
                   <button
                     key={chat.id}
+                    onMouseDown={() => handleLongPressStart(chat.id)}
+                    onMouseUp={handleLongPressEnd}
+                    onMouseLeave={handleLongPressEnd}
+                    onTouchStart={() => handleLongPressStart(chat.id)}
+                    onTouchEnd={handleLongPressEnd}
                     onClick={() => {
+                      if (selectionMode) {
+                        const newSel = new Set(selectedChatIds);
+                        if (newSel.has(chat.id)) newSel.delete(chat.id); else newSel.add(chat.id);
+                        setSelectedChatIds(newSel);
+                        return;
+                      }
                       setSelectedChat(chat);
-                      // Clear unread badge locally
                       setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unread: 0 } : c));
-                      // Mark as read on the phone
                       fetch('/api/whatsapp?action=readChat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1464,18 +1499,20 @@ export default function WhatsApp() {
                       }).catch(() => {});
                     }}
                     className={`w-full p-3 text-left hover:bg-gray-700/40 transition-colors border-b border-gray-700/30 ${
-                      selectedChat?.id === chat.id ? 'bg-green-600/20 border-l-2 border-l-green-500' : ''
-                    }`}
+                      selectedChat?.id === chat.id && !selectionMode ? 'bg-green-600/20 border-l-2 border-l-green-500' : ''
+                    } ${selectionMode && selectedChatIds.has(chat.id) ? 'bg-green-900/20 border-l-2 border-l-green-500' : ''}`}
                   >
                     <div className="flex items-start gap-3">
-                      {/* Checkbox for bulk selection */}
-                      <input
-                        type="checkbox"
-                        checked={selectedChatIds.has(chat.id)}
-                        onChange={(e) => toggleChatSelection(chat.id, e as any)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-4 h-4 rounded cursor-pointer mt-1 flex-shrink-0"
-                      />
+                      {/* Checkbox — only visible in selection mode */}
+                      {selectionMode && (
+                        <input
+                          type="checkbox"
+                          checked={selectedChatIds.has(chat.id)}
+                          onChange={(e) => toggleChatSelection(chat.id, e as any)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 rounded cursor-pointer mt-1 flex-shrink-0 accent-green-500"
+                        />
+                      )}
                       <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm">
                         {avatars[chat.id]
                           ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[chat.id])}`} alt="" className="w-full h-full object-cover" />
