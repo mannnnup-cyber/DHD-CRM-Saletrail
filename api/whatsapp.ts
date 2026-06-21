@@ -679,13 +679,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           // Load the raw message from DB (we need the full Baileys message object for decryption)
-          const { data: msgRow } = await supabase
+          // Try provider_message_id first; fall back to row UUID id
+          let { data: msgRow } = await supabase
             .from('whatsapp_messages')
-            .select('raw')
+            .select('raw, media_url')
             .eq('provider_message_id', msgId)
             .maybeSingle();
 
+          if (!msgRow) {
+            // msgId might be the Supabase row UUID
+            const { data: fallback } = await supabase
+              .from('whatsapp_messages')
+              .select('raw, media_url')
+              .eq('id', msgId)
+              .maybeSingle();
+            msgRow = fallback;
+          }
+
           if (!msgRow?.raw) {
+            // Last resort: try direct URL proxy with stored media_url
+            if (msgRow?.media_url) {
+              return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+            }
             console.error('[mediaProxy/msgId] Message not found in DB:', msgId);
             return res.status(404).json({ error: 'Message not found' });
           }

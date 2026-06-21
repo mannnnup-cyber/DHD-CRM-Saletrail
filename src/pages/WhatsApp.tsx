@@ -74,6 +74,29 @@ const formatMessageTime = (ts: number | string): string => {
   return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${timeStr}`;
 };
 
+// Image bubble with loading spinner and error fallback
+const MediaImage = ({ src, onClick }: { src: string; onClick?: () => void }) => {
+  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
+  return (
+    <div className="max-w-[240px] min-h-[80px] rounded-lg mb-1 overflow-hidden bg-gray-700/50 flex items-center justify-center cursor-pointer relative" onClick={onClick}>
+      {status === 'loading' && <Loader2 className="w-6 h-6 animate-spin text-gray-400 absolute" />}
+      {status === 'error' && (
+        <div className="flex flex-col items-center gap-1 p-3 text-gray-400">
+          <Image className="w-6 h-6" />
+          <span className="text-xs">Photo unavailable</span>
+        </div>
+      )}
+      <img
+        src={src}
+        alt="Photo"
+        className={`max-w-full rounded-lg ${status === 'ok' ? 'block' : 'hidden'}`}
+        onLoad={() => setStatus('ok')}
+        onError={() => setStatus('error')}
+      />
+    </div>
+  );
+};
+
 const UNASSIGNED = { id: 'all', name: 'Unassigned' };
 
 const MESSAGE_TEMPLATES = [
@@ -1884,14 +1907,12 @@ export default function WhatsApp() {
                               ['imageMessage','videoMessage','audioMessage','pttMessage','documentMessage','stickerMessage']
                                 .some(m => t === m || t?.includes(m.replace('Message','')));
                             if (!isMediaType(msg.type || '')) return null;
-                            // blob: URLs are local object URLs — use directly (server can't fetch them)
-                            // http URLs from Evolution API need the server-side proxy for auth headers
-                            // Fallback to msgId-based fetch for messages without a mediaUrl
+                            // Evolution API media URLs are encrypted WhatsApp CDN links.
+                            // Always use msgId route so Evolution API can decrypt via getBase64FromMediaMessage.
+                            // Only fall back to direct url proxy for blob: (local file preview).
                             const proxyUrl = msg.mediaUrl?.startsWith('blob:')
                               ? msg.mediaUrl
-                              : msg.mediaUrl?.startsWith('http')
-                                ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msg.mediaUrl)}`
-                                : `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(msg.id)}`;
+                              : `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(msg.id)}`;
                             const isImage = msg.type === 'imageMessage' || msg.type?.includes('image');
                             const isAudio = msg.type === 'audioMessage' || msg.type === 'pttMessage' || msg.type?.includes('audio');
                             const isVideo = msg.type === 'videoMessage' || msg.type?.includes('video');
@@ -1899,12 +1920,9 @@ export default function WhatsApp() {
                             return (
                               <>
                                 {isImage && (
-                                  <img
+                                  <MediaImage
                                     src={proxyUrl}
-                                    alt="Image"
-                                    className="max-w-full rounded-lg mb-1 cursor-pointer"
                                     onClick={() => setLightboxUrl(proxyUrl)}
-                                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                   />
                                 )}
                                 {isAudio && (
@@ -1931,11 +1949,13 @@ export default function WhatsApp() {
                               </>
                             );
                           })()}
-                          {/* Text / caption — hide raw type placeholders and [File: ...] when media is shown */}
+                          {/* Text / caption — hide raw type placeholders when media widget handles display */}
                           {(() => {
-                            const hasMedia = msg.mediaUrl && ['imageMessage','videoMessage','audioMessage','pttMessage','documentMessage','stickerMessage'].some(t => msg.type === t || msg.type?.includes(t.replace('Message','')));
+                            const MEDIA_TYPES = ['imageMessage','videoMessage','audioMessage','pttMessage','documentMessage','stickerMessage'];
+                            const hasMediaType = MEDIA_TYPES.some(t => msg.type === t || msg.type?.includes(t.replace('Message','')));
                             const isPlaceholder = !msg.text || msg.text.match(/^\[.+Message\]$|^\[conversation\]$|^\[File:.+\]$|^\[.+\]$/);
-                            if (isPlaceholder && hasMedia) return null;
+                            // If type is a media type, the MediaImage/audio/video widget is already rendered above
+                            if (isPlaceholder && hasMediaType) return null;
                             if (isPlaceholder) return (
                               <p className="text-sm leading-relaxed italic opacity-60">
                                 {friendlyLastMessage(msg.text || '') || 'Media message'}
