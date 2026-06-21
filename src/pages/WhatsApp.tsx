@@ -1310,53 +1310,116 @@ export default function WhatsApp() {
                   )}
                   {!unifiedSearching && unifiedSearchResults.length > 0 && (
                     <div className="space-y-0">
-                      {/* Group by type */}
-                      {unifiedSearchResults.filter((r: any) => r.type === 'chat').length > 0 && (
-                        <>
-                          <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase bg-gray-800/50 sticky top-0">Chats</div>
-                          {unifiedSearchResults.filter((r: any) => r.type === 'chat').map((r: any) => (
-                            <button
-                              key={r.id}
-                              onClick={() => selectUnifiedResult(r)}
-                              className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/30 transition-colors text-sm"
-                            >
-                              <p className="text-gray-200 font-medium">{r.name}</p>
-                              <p className="text-gray-500 text-[11px]">{r.status} • {r.assignedTo}</p>
-                            </button>
-                          ))}
-                        </>
-                      )}
-                      {unifiedSearchResults.filter((r: any) => r.type === 'message').length > 0 && (
-                        <>
-                          <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase bg-gray-800/50 sticky top-0">Messages</div>
-                          {unifiedSearchResults.filter((r: any) => r.type === 'message').slice(0, 5).map((r: any) => (
-                            <button
-                              key={r.id}
-                              onClick={() => selectUnifiedResult(r)}
-                              className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/30 transition-colors text-sm"
-                            >
-                              <p className="text-gray-300 text-xs font-medium">{r.chatName}</p>
-                              <p className="text-gray-500 text-[11px] truncate">{r.text}</p>
-                              <p className="text-gray-600 text-[10px]">{r.timestamp}</p>
-                            </button>
-                          ))}
-                        </>
-                      )}
-                      {unifiedSearchResults.filter((r: any) => r.type === 'contact').length > 0 && (
-                        <>
-                          <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase bg-gray-800/50 sticky top-0">Contacts</div>
-                          {unifiedSearchResults.filter((r: any) => r.type === 'contact').slice(0, 3).map((r: any) => (
-                            <button
-                              key={r.id}
-                              onClick={() => selectUnifiedResult(r)}
-                              className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/30 transition-colors text-sm"
-                            >
-                              <p className="text-gray-200 font-medium">{r.name}</p>
-                              <p className="text-gray-500 text-[11px]">{r.company || r.phone}</p>
-                            </button>
-                          ))}
-                        </>
-                      )}
+                      {/* Helper: avatar initials circle */}
+                      {(() => {
+                        const avatarColors = [
+                          'from-green-500 to-emerald-600',
+                          'from-blue-500 to-cyan-600',
+                          'from-purple-500 to-violet-600',
+                          'from-orange-500 to-amber-600',
+                          'from-pink-500 to-rose-600',
+                          'from-teal-500 to-cyan-600',
+                        ];
+                        const getColor = (name: string) => avatarColors[(name?.charCodeAt(0) || 0) % avatarColors.length];
+                        const fmtTime = (ts: string | number | null) => {
+                          if (!ts) return '';
+                          const d = new Date(typeof ts === 'number' && ts < 1e12 ? ts * 1000 : ts);
+                          const now = new Date();
+                          const isToday = d.toDateString() === now.toDateString();
+                          return isToday
+                            ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                        };
+
+                        return (
+                          <>
+                            {/* ── Chats ── */}
+                            {unifiedSearchResults.filter((r: any) => r.type === 'chat').length > 0 && (
+                              <>
+                                <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-850/80 border-b border-gray-700/30">Chats</div>
+                                {unifiedSearchResults.filter((r: any) => r.type === 'chat').map((r: any) => (
+                                  <button
+                                    key={r.id}
+                                    onClick={() => selectUnifiedResult(r)}
+                                    className="w-full text-left px-3 py-2.5 hover:bg-gray-700/60 border-b border-gray-700/20 transition-colors flex items-center gap-3"
+                                  >
+                                    <div className={`w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br ${getColor(r.name)} flex items-center justify-center text-white font-bold text-sm`}>
+                                      {r.name?.charAt(0)?.toUpperCase() || '#'}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <span className="text-white text-sm font-medium truncate">{r.name}</span>
+                                        <span className="text-gray-500 text-[10px] flex-shrink-0 ml-2">{fmtTime(r.lastMessageAt)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between gap-1">
+                                        <p className="text-gray-400 text-xs truncate">
+                                          {r.lastMessageFromMe && <span className="text-gray-500">You: </span>}
+                                          {r.lastMessage || r.phone}
+                                        </p>
+                                        <span className={`flex-shrink-0 text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                                          r.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                                          r.status === 'resolved' ? 'bg-gray-500/20 text-gray-400' :
+                                          'bg-yellow-500/20 text-yellow-400'
+                                        }`}>{r.status}</span>
+                                      </div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+
+                            {/* ── Messages ── */}
+                            {unifiedSearchResults.filter((r: any) => r.type === 'message').length > 0 && (
+                              <>
+                                <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-850/80 border-b border-gray-700/30">Messages</div>
+                                {unifiedSearchResults.filter((r: any) => r.type === 'message').slice(0, 5).map((r: any) => (
+                                  <button
+                                    key={r.id}
+                                    onClick={() => selectUnifiedResult(r)}
+                                    className="w-full text-left px-3 py-2.5 hover:bg-gray-700/60 border-b border-gray-700/20 transition-colors flex items-center gap-3"
+                                  >
+                                    <div className={`w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br ${getColor(r.chatName)} flex items-center justify-center text-white font-bold text-sm`}>
+                                      {r.chatName?.charAt(0)?.toUpperCase() || '#'}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <span className="text-gray-300 text-xs font-semibold truncate">{r.chatName}</span>
+                                        <span className="text-gray-500 text-[10px] flex-shrink-0 ml-2">{fmtTime(r.timestamp)}</span>
+                                      </div>
+                                      <p className="text-gray-400 text-xs truncate">{r.text}</p>
+                                    </div>
+                                    {r.direction === 'inbound' && (
+                                      <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-green-500 self-start mt-2" />
+                                    )}
+                                  </button>
+                                ))}
+                              </>
+                            )}
+
+                            {/* ── Contacts ── */}
+                            {unifiedSearchResults.filter((r: any) => r.type === 'contact').length > 0 && (
+                              <>
+                                <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-850/80 border-b border-gray-700/30">Contacts</div>
+                                {unifiedSearchResults.filter((r: any) => r.type === 'contact').slice(0, 3).map((r: any) => (
+                                  <button
+                                    key={r.id}
+                                    onClick={() => selectUnifiedResult(r)}
+                                    className="w-full text-left px-3 py-2.5 hover:bg-gray-700/60 border-b border-gray-700/20 transition-colors flex items-center gap-3"
+                                  >
+                                    <div className={`w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br ${getColor(r.name)} flex items-center justify-center text-white font-bold text-sm`}>
+                                      {r.name?.charAt(0)?.toUpperCase() || '?'}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-sm font-medium truncate">{r.name}</p>
+                                      <p className="text-gray-400 text-xs truncate">{r.company ? `${r.company} · ` : ''}{r.phone}</p>
+                                    </div>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -1713,11 +1776,16 @@ export default function WhatsApp() {
                       return (
                         <div className="grid grid-cols-4 gap-1 p-2 max-h-48 overflow-y-auto">
                           {mediaMessages.map((m: any) => {
+                            // Evolution API media URLs are encrypted CDN links — always use msgId path
+                            // which calls Evolution API's getBase64FromMediaMessage for proper decryption
                             const proxyUrl = m.mediaUrl?.startsWith('blob:')
                               ? m.mediaUrl
-                              : m.mediaUrl?.startsWith('http')
-                                ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(m.mediaUrl)}`
-                                : `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(m.id)}`;
+                              : m.id
+                                ? `/api/whatsapp?action=mediaProxy&msgId=${encodeURIComponent(m.id)}`
+                                : m.mediaUrl
+                                  ? `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(m.mediaUrl)}`
+                                  : null;
+                            if (!proxyUrl) return null;
                             return (
                               <button
                                 key={m.id}

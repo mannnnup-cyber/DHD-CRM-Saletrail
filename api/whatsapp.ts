@@ -1216,12 +1216,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .order('created_at', { ascending: false })
             .limit(20);
 
-          // 2. Search chats by contact name or phone
-          const { data: chats } = await supabase
+          // 2. Search chats by contact name or phone — search sender_name in messages
+          // (whatsapp_chats only has metadata for chats that have been manually updated)
+          const { data: chatMsgRows } = await supabase
+            .from('whatsapp_messages')
+            .select('chat_id, sender_name, created_at, direction, body')
+            .ilike('sender_name', searchPattern)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+          // Deduplicate to one result per chat_id (keep newest)
+          const seenChatMap: Record<string, any> = {};
+          (chatMsgRows || []).forEach((m: any) => {
+            if (!seenChatMap[m.chat_id]) seenChatMap[m.chat_id] = m;
+          });
+
+          // Also search whatsapp_chats (for chats with manually set contact_name)
+          const { data: chatMetaRows } = await supabase
             .from('whatsapp_chats')
             .select('*')
             .or(`contact_name.ilike.${searchPattern},chat_id.ilike.${searchPattern}`)
             .limit(10);
+
+          // Merge: chatMetaRows overrides message-based results for same chat_id
+          const chatMetaMap: Record<string, any> = {};
+          (chatMetaRows || []).forEach((r: any) => { chatMetaMap[r.chat_id] = r; });
+
+          // Combined unique chats from both sources
+          const allChatIds = new Set([
+            ...Object.keys(seenChatMap),
+            ...Object.keys(chatMetaMap)
+          ]);
+          const chats = Array.from(allChatIds).slice(0, 10).map(chatId => {
+            const meta = chatMetaMap[chatId];
+            const msg = seenChatMap[chatId];
+            return {
+              chat_id: chatId,
+              contact_name: meta?.contact_name || msg?.sender_name || null,
+              status: meta?.status || 'active',
+              assigned_to: meta?.assigned_to || 'Unassigned',
+              assigned_to_user_id: meta?.assigned_to_user_id || null,
+              last_message: msg?.body?.substring(0, 60) || '',
+              last_message_at: msg?.created_at || null,
+              last_message_from_me: msg?.direction === 'outbound'
+            };
+          });
 
           // 3. Search contacts by name, company, or phone (linked to WhatsApp)
           const { data: contacts } = await supabase
@@ -1245,7 +1284,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 status: chat.status || 'active',
                 assignedTo: chat.assigned_to || 'Unassigned',
                 assignedToUserId: chat.assigned_to_user_id || null,
-                phone: chat.chat_id.replace(/@[a-z.]+$/, '') // Extract phone from JID
+                phone: chat.chat_id.replace(/@[a-z.]+$/, ''),
+                lastMessage: chat.last_message || '',
+                lastMessageAt: chat.last_message_at || null,
+                lastMessageFromMe: chat.last_message_from_me || false
               });
               seenChatIds.add(chat.chat_id);
             }
