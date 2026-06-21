@@ -420,6 +420,33 @@ const Settings: React.FC = () => {
     setDevicesLoading(false);
   };
 
+  const handleVerifyForwardStatus = async (devicePhone: string, simSlot: number) => {
+    setSendingForward(devicePhone);
+    try {
+      const r = await fetch('/api/whatsapp?action=sendForwardCommand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          devicePhone,
+          command: 'verify_status',
+          simSlot,
+        }),
+      });
+      const data = await r.json();
+      if (data.success) {
+        setTeamMessage({
+          type: 'success',
+          text: `Verify command sent. Device will dial *#21# and report status within 15 minutes.`,
+        });
+      } else {
+        setTeamMessage({ type: 'error', text: data.error || 'Failed to send verify command' });
+      }
+    } catch (e) {
+      setTeamMessage({ type: 'error', text: `Network error: ${e instanceof Error ? e.message : 'Unknown error'}` });
+    }
+    setSendingForward(null);
+  };
+
   const handleSendForwardCommand = async (
     devicePhone: string,
     command: 'forward_enable' | 'forward_disable'
@@ -1516,14 +1543,22 @@ const Settings: React.FC = () => {
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-red-500/20 text-red-400" title={fwd.result_message}>Failed</span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   {isForwarding && fwd.status === 'done' && (
-                                    <button
-                                      onClick={() => handleSendForwardCommand(phone, 'forward_disable')}
-                                      disabled={sendingForward === phone}
-                                      className="text-[10px] px-2 py-1 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors disabled:opacity-50">
-                                      {sendingForward === phone ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Disable'}
-                                    </button>
+                                    <>
+                                      <button
+                                        onClick={() => handleVerifyForwardStatus(phone, forwardSim[phone] ?? 0)}
+                                        disabled={sendingForward === phone}
+                                        className="text-[10px] px-2 py-1 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 border border-green-500/20 transition-colors disabled:opacity-50">
+                                        {sendingForward === phone ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Verify'}
+                                      </button>
+                                      <button
+                                        onClick={() => handleSendForwardCommand(phone, 'forward_disable')}
+                                        disabled={sendingForward === phone}
+                                        className="text-[10px] px-2 py-1 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors disabled:opacity-50">
+                                        {sendingForward === phone ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Disable'}
+                                      </button>
+                                    </>
                                   )}
                                   {!showForm && (
                                     <button
@@ -1570,16 +1605,28 @@ const Settings: React.FC = () => {
                                     </div>
                                   </div>
                                   <div>
-                                    <label className="block text-[10px] text-gray-500 mb-1">SIM slot</label>
+                                    <label className="block text-[10px] text-gray-500 mb-1">
+                                      SIM slot {device.sim_count && device.sim_count < 2 ? `(device has 1 SIM)` : ''}
+                                    </label>
                                     <div className="flex gap-1.5">
-                                      {[0, 1].map(slot => (
-                                        <button
-                                          key={slot}
-                                          onClick={() => setForwardSim(prev => ({ ...prev, [phone]: slot }))}
-                                          className={`text-[10px] px-3 py-1 rounded-lg border transition-colors ${(forwardSim[phone] ?? 0) === slot ? 'bg-blue-500/20 border-blue-500/40 text-blue-300' : 'bg-gray-800 border-gray-700 text-gray-500 hover:border-gray-600'}`}>
-                                          SIM {slot + 1}
-                                        </button>
-                                      ))}
+                                      {[0, 1].map(slot => {
+                                        const hasSim = !device.sim_count || device.sim_count > slot;
+                                        return (
+                                          <button
+                                            key={slot}
+                                            onClick={() => hasSim && setForwardSim(prev => ({ ...prev, [phone]: slot }))}
+                                            disabled={!hasSim}
+                                            className={`text-[10px] px-3 py-1 rounded-lg border transition-colors ${
+                                              !hasSim
+                                                ? 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed'
+                                                : (forwardSim[phone] ?? 0) === slot
+                                                ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
+                                                : 'bg-gray-800 border-gray-700 text-gray-500 hover:border-gray-600'
+                                            }`}>
+                                            SIM {slot + 1}
+                                          </button>
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                   {!isValidTarget && targetNum && (

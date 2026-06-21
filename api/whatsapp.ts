@@ -2199,7 +2199,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.json({ success: false, error: 'Supabase not configured' });
         }
 
-        const { calls: gsmCalls, device: deviceModel, phone: repPhone, app_version: appVersion } = req.body;
+        const { calls: gsmCalls, device: deviceModel, phone: repPhone, app_version: appVersion, sim_count: simCount } = req.body;
 
         if (!gsmCalls || !Array.isArray(gsmCalls)) {
           return res.status(400).json({ success: false, error: 'calls array required' });
@@ -2219,6 +2219,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               is_active:      true,
               last_heartbeat: new Date().toISOString(),
               ...(appVersion ? { app_version: appVersion } : {}),
+              ...(simCount ? { sim_count: simCount } : {}),
             }, { onConflict: 'phone_number' }).select();
 
             // Fetch the linked user_id and device_name so we can attribute calls
@@ -2606,7 +2607,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Validate command
-        if (!['forward_enable', 'forward_disable'].includes(fwdCmd)) {
+        if (!['forward_enable', 'forward_disable', 'verify_status'].includes(fwdCmd)) {
           return res.status(400).json({ success: false, error: 'Invalid command' });
         }
 
