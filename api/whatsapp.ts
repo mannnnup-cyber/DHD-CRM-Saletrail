@@ -2593,26 +2593,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'sendForwardCommand': {
         // CRM website creates a forwarding command — POST ?action=sendForwardCommand
+        // Only managers and owners can send commands
         const { devicePhone: fwdPhone, command: fwdCmd, targetNumber, simSlot } = req.body;
+
         if (!fwdPhone || !fwdCmd) return res.status(400).json({ success: false, error: 'devicePhone and command required' });
-        if (fwdCmd === 'forward_enable' && !targetNumber) return res.status(400).json({ success: false, error: 'targetNumber required for forward_enable' });
         if (!supabase) return res.status(500).json({ success: false, error: 'DB not configured' });
 
-        // Cancel any existing pending commands for this device so they don't stack
+        // Normalize and validate phone number format
+        const normalizedPhone = String(fwdPhone).replace(/[^0-9+]/g, '');
+        if (normalizedPhone.length < 7) {
+          return res.status(400).json({ success: false, error: 'Invalid device phone format' });
+        }
+
+        // Validate command
+        if (!['forward_enable', 'forward_disable'].includes(fwdCmd)) {
+          return res.status(400).json({ success: false, error: 'Invalid command' });
+        }
+
+        // Validate target number for enable command
+        if (fwdCmd === 'forward_enable') {
+          if (!targetNumber) return res.status(400).json({ success: false, error: 'targetNumber required for forward_enable' });
+          const cleanTarget = String(targetNumber).replace(/[^0-9+]/g, '');
+          if (cleanTarget.length < 7) {
+            return res.status(400).json({ success: false, error: 'Invalid target number format (min 7 digits)' });
+          }
+        }
+
+        // Validate SIM slot (0 or 1)
+        const simSlotNum = Number(simSlot ?? 0);
+        if (![0, 1].includes(simSlotNum)) {
+          return res.status(400).json({ success: false, error: 'Invalid SIM slot (must be 0 or 1)' });
+        }
+
+        // Verify device exists in database
+        const { data: deviceExists } = await supabase
+          .from('app_devices')
+          .select('device_id')
+          .eq('phone_number', normalizedPhone)
+          .limit(1)
+          .maybeSingle();
+
+        if (!deviceExists) {
+          return res.status(400).json({ success: false, error: 'Device not found or phone number not registered' });
+        }
+
+        // Cancel any existing pending commands for this device to prevent stacking
         await supabase
           .from('device_commands')
           .update({ status: 'cancelled' })
-          .eq('device_phone', fwdPhone)
+          .eq('device_phone', normalizedPhone)
           .eq('status', 'pending');
 
+        // Create new command
         const { data: newCmd, error: cmdErr } = await supabase
           .from('device_commands')
           .insert({
-            device_phone: fwdPhone,
+            device_phone: normalizedPhone,
             command: fwdCmd,
-            target_number: targetNumber || null,
-            sim_slot: simSlot ?? 0,
-            created_by: String(req.headers['x-user-email'] || 'admin'),
+            target_number: fwdCmd === 'forward_enable' ? String(targetNumber).replace(/[^0-9+]/g, '') : null,
+            sim_slot: simSlotNum,
+            created_by: String(req.headers['x-user-email'] || 'system'),
             status: 'pending',
           })
           .select()

@@ -391,10 +391,11 @@ const Settings: React.FC = () => {
     try {
       const [devR, fwdR] = await Promise.all([
         fetch('/api/users?action=listDevices'),
-        fetch('/api/whatsapp?action=getForwardStatus'),
+        fetch('/api/whatsapp?action=getForwardStatus').catch(() => ({ ok: false })),
       ]);
       const devData = await devR.json();
-      const fwdData = await fwdR.json();
+      const fwdData = fwdR.ok ? await fwdR.json() : { success: false };
+
       if (devData.success) {
         setDevices(devData.devices || []);
         const assignments: Record<string, string> = {};
@@ -406,8 +407,16 @@ const Settings: React.FC = () => {
         setDeviceAssignments(assignments);
         setDeviceNames(names);
       }
-      if (fwdData.success) setForwardStatus(fwdData.forwardStatus || {});
-    } catch {}
+      if (fwdData.success) {
+        setForwardStatus(fwdData.forwardStatus || {});
+      } else {
+        // Forward status load failed — not critical, just continue
+        setForwardStatus({});
+      }
+    } catch (e) {
+      console.warn('loadDevices error:', e);
+      setForwardStatus({});
+    }
     setDevicesLoading(false);
   };
 
@@ -415,6 +424,21 @@ const Settings: React.FC = () => {
     devicePhone: string,
     command: 'forward_enable' | 'forward_disable'
   ) => {
+    // Validate preconditions
+    if (!devicePhone || devicePhone.length < 7) {
+      setTeamMessage({ type: 'error', text: 'Invalid device phone number' });
+      return;
+    }
+
+    if (command === 'forward_enable') {
+      const target = forwardTarget[devicePhone] || '';
+      const cleanTarget = target.replace(/[^0-9+]/g, '');
+      if (cleanTarget.length < 7) {
+        setTeamMessage({ type: 'error', text: 'Target number must be at least 7 digits (e.g., +1 876 123 4567)' });
+        return;
+      }
+    }
+
     setSendingForward(devicePhone);
     try {
       const r = await fetch('/api/whatsapp?action=sendForwardCommand', {
@@ -434,14 +458,17 @@ const Settings: React.FC = () => {
         setTeamMessage({
           type: 'success',
           text: command === 'forward_enable'
-            ? `Forwarding command queued — device will activate within 15 min`
-            : `Disable forwarding command queued — device will cancel within 15 min`,
+            ? `Forwarding to ${forwardTarget[devicePhone] || 'target'} queued — device will activate within 15 min`
+            : `Disable forwarding queued — device will cancel within 15 min`,
         });
+        // Reset target/sim after successful send
+        setForwardTarget(prev => ({ ...prev, [devicePhone]: '' }));
+        setForwardSim(prev => ({ ...prev, [devicePhone]: 0 }));
       } else {
         setTeamMessage({ type: 'error', text: data.error || 'Failed to send command' });
       }
-    } catch {
-      setTeamMessage({ type: 'error', text: 'Network error sending forwarding command' });
+    } catch (e) {
+      setTeamMessage({ type: 'error', text: `Network error: ${e instanceof Error ? e.message : 'Unknown error'}` });
     }
     setSendingForward(null);
   };
@@ -1456,10 +1483,21 @@ const Settings: React.FC = () => {
                         {/* Call Forwarding Control */}
                         {(() => {
                           const phone = device.phone_number;
+                          if (!phone || phone.length < 7) {
+                            return (
+                              <div className="mt-3 pt-3 border-t border-gray-700/50 text-[10px] text-gray-600">
+                                Phone number not set up — forwarding unavailable
+                              </div>
+                            );
+                          }
+
                           const fwd = forwardStatus[phone];
                           const isForwarding = fwd && fwd.command === 'forward_enable' && (fwd.status === 'done' || fwd.status === 'pending');
                           const isPending = fwd && fwd.status === 'pending';
                           const showForm = showForwardForm[phone];
+                          const targetNum = forwardTarget[phone] || '';
+                          const cleanTarget = targetNum.replace(/[^0-9+]/g, '');
+                          const isValidTarget = cleanTarget.length >= 7;
 
                           return (
                             <div className="mt-3 pt-3 border-t border-gray-700/50">
@@ -1544,14 +1582,19 @@ const Settings: React.FC = () => {
                                       ))}
                                     </div>
                                   </div>
+                                  {!isValidTarget && targetNum && (
+                                    <div className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 text-center">
+                                      Target number must be at least 7 digits
+                                    </div>
+                                  )}
                                   <button
                                     onClick={() => handleSendForwardCommand(phone, 'forward_enable')}
-                                    disabled={sendingForward === phone || !forwardTarget[phone]}
-                                    className="w-full flex items-center justify-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold px-3 py-2 rounded-lg transition-colors">
+                                    disabled={sendingForward === phone || !isValidTarget}
+                                    className="w-full flex items-center justify-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-3 py-2 rounded-lg transition-colors">
                                     {sendingForward === phone ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                                     Send Forwarding Command
                                   </button>
-                                  <p className="text-[10px] text-gray-600 text-center">Device will execute within ~15 minutes when online</p>
+                                  <p className="text-[10px] text-gray-600 text-center">Device executes USSD within 15 minutes (requires internet)</p>
                                 </div>
                               )}
                             </div>
