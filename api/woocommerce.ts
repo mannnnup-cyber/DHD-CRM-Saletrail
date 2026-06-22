@@ -1,21 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-
-async function resolveContact(sb: any, opts: { name: string; email?: string; phone?: string; company?: string; source: string }): Promise<string | null> {
-  const emailLower = (opts.email || '').toLowerCase().trim();
-  const phoneNorm = (opts.phone || '').replace(/[^\d]/g, '');
-  if (emailLower) {
-    const { data } = await sb.from('contacts').select('id').ilike('email', emailLower).limit(1).single();
-    if (data) return data.id;
-  }
-  if (phoneNorm) {
-    const { data } = await sb.from('contacts').select('id').eq('phone_normalized', phoneNorm).limit(1).single();
-    if (data) return data.id;
-  }
-  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, source: opts.source, status: 'NEW' }).select('id').single();
-  if (error) { console.error('[woocommerce] resolveContact error:', error.message); return null; }
-  return data.id;
-}
+import { resolveContact } from './_resolveContact';
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';

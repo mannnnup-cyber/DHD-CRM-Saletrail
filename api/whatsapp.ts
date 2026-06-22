@@ -1,16 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-
-async function resolveContact(sb: any, opts: { name: string; phone?: string; source: string }): Promise<string | null> {
-  const phoneNorm = (opts.phone || '').replace(/[^\d]/g, '');
-  if (phoneNorm) {
-    const { data } = await sb.from('contacts').select('id').eq('phone_normalized', phoneNorm).limit(1).single();
-    if (data) return data.id;
-  }
-  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', phone: opts.phone || null, phone_normalized: phoneNorm || null, source: opts.source, status: 'NEW' }).select('id').single();
-  if (error) { console.error('[whatsapp] resolveContact error:', error.message); return null; }
-  return data.id;
-}
+import { resolveContact } from './_resolveContact';
 
 // Self-contained Supabase client for Node.js — does NOT import from src/lib/supabase
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)

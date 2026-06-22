@@ -1,21 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-
-async function resolveContact(sb: any, opts: { name: string; email?: string; phone?: string; source: string }): Promise<string | null> {
-  const emailLower = (opts.email || '').toLowerCase().trim();
-  const phoneNorm = (opts.phone || '').replace(/[^\d]/g, '');
-  if (emailLower) {
-    const { data } = await sb.from('contacts').select('id').ilike('email', emailLower).limit(1).single();
-    if (data) return data.id;
-  }
-  if (phoneNorm) {
-    const { data } = await sb.from('contacts').select('id').eq('phone_normalized', phoneNorm).limit(1).single();
-    if (data) return data.id;
-  }
-  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, source: opts.source, status: 'NEW' }).select('id').single();
-  if (error) { console.error('[email] resolveContact error:', error.message); return null; }
-  return data.id;
-}
+import { resolveContact } from './_resolveContact';
 
 // Decode quoted-printable encoding (=3D, =20, soft line breaks etc.)
 function decodeQP(str: string): string {
