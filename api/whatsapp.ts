@@ -2555,6 +2555,76 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      // ── WhatsApp Call Logging (from NotificationListenerService) ─────────────
+
+      case 'addWhatsAppCall': {
+        // POST /api/whatsapp?action=addWhatsAppCall
+        // Body: { callerName, callType, durationSeconds, timestamp, devicePhone, source }
+        const { callerName, callType, durationSeconds, timestamp, devicePhone: waDevicePhone, source } = req.body;
+        if (!supabase) return res.status(500).json({ success: false, error: 'DB not configured' });
+
+        const normalizedCaller = String(callerName || '').trim();
+        const waCallType = String(callType || 'WHATSAPP_VOICE');
+        const waDuration = Number(durationSeconds || 0);
+        const waTimestamp = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
+        const waRepPhone = String(waDevicePhone || '').replace(/[^0-9+]/g, '');
+
+        // Resolve contact if the caller name looks like a phone number
+        const callerAsPhone = normalizedCaller.replace(/[^0-9+]/g, '');
+        let contactId: string | null = null;
+        let contactName: string | null = null;
+
+        if (callerAsPhone.length >= 7) {
+          const { data: contact } = await supabase
+            .from('contacts')
+            .select('id, name')
+            .or(`phone.ilike.%${callerAsPhone.slice(-9)}%,phone_normalized.ilike.%${callerAsPhone.slice(-9)}%`)
+            .limit(1)
+            .maybeSingle();
+          if (contact) { contactId = contact.id; contactName = contact.name; }
+        }
+
+        // Look up rep info from device phone
+        let repId: string | null = null;
+        let repName: string | null = null;
+        if (waRepPhone) {
+          const { data: device } = await supabase
+            .from('devices')
+            .select('user_id, device_name')
+            .eq('phone_number', waRepPhone)
+            .maybeSingle();
+          if (device) {
+            repId = device.user_id;
+            repName = device.device_name;
+          }
+        }
+
+        const { error: insertErr } = await supabase.from('whatsapp_calls').insert({
+          provider:         'companion_app',
+          caller_name:      normalizedCaller,
+          caller_phone:     callerAsPhone.length >= 7 ? callerAsPhone : null,
+          chat_id:          callerAsPhone.length >= 7 ? callerAsPhone : normalizedCaller,
+          call_type:        waCallType,
+          status:           waCallType === 'WHATSAPP_MISSED' ? 'missed' : 'completed',
+          duration_seconds: waDuration,
+          started_at:       waTimestamp,
+          ended_at:         new Date(new Date(waTimestamp).getTime() + waDuration * 1000).toISOString(),
+          called_at:        waTimestamp,
+          contact_id:       contactId,
+          contact_name:     contactName || normalizedCaller,
+          rep_phone:        waRepPhone || null,
+          rep_id:           repId,
+          rep_name:         repName,
+          source:           String(source || 'whatsapp_notification'),
+        });
+
+        if (insertErr) {
+          console.error('[addWhatsAppCall] insert error:', insertErr.message);
+          return res.status(500).json({ success: false, error: insertErr.message });
+        }
+        return res.json({ success: true });
+      }
+
       // ── Call Forwarding Command Queue ────────────────────────────────────────
 
       case 'getDeviceCommands': {
