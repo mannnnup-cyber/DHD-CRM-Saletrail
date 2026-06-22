@@ -2628,7 +2628,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Verify device exists in database
         const { data: deviceExists } = await supabase
-          .from('app_devices')
+          .from('devices')
           .select('device_id')
           .eq('phone_number', normalizedPhone)
           .limit(1)

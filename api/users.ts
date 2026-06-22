@@ -316,7 +316,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'listDevices': {
         const { data, error } = await supabaseAdmin
           .from('devices')
-          .select('device_id, phone_number, device_name, device_model, app_version, user_id, is_active, last_heartbeat')
+          .select('device_id, phone_number, device_name, device_model, app_version, user_id, is_active, last_heartbeat, sim_count')
           .order('created_at', { ascending: true });
         if (error) return res.json({ success: false, error: error.message });
         return res.json({ success: true, devices: data || [] });
