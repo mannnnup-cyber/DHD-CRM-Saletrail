@@ -1,11 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import * as cheerio from 'cheerio';
-import { normalizePhone, resolveContact as sharedResolveContact } from './_resolveContact';
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = _url && _key ? createClient(_url, _key) : null;
+
+function normalizePhone(raw: string): string {
+  const digits = (raw || '').replace(/[^\d]/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
 
 async function resolveContact(opts: {
   name: string;
@@ -18,28 +22,23 @@ async function resolveContact(opts: {
   if (!supabase) return null;
   const emailLower = (opts.email || '').toLowerCase().trim();
   const phoneNorm  = normalizePhone(opts.phone || '');
-
-  // Check existence first so we can report created=true/false to callers
   const filters: string[] = [];
   if (emailLower) filters.push(`email.ilike.${emailLower}`);
   if (phoneNorm)  filters.push(`phone_normalized.eq.${phoneNorm}`);
   if (filters.length > 0) {
-    const { data } = await supabase.from('contacts').select('id').or(filters.join(',')).limit(1).maybeSingle();
-    if (data) {
-      // Delegate to shared resolver so enrichment runs
-      await sharedResolveContact(supabase, opts);
-      return { id: data.id, created: false };
+    const { data: existing } = await supabase.from('contacts').select('id, email, phone, phone_normalized, company').or(filters.join(',')).limit(1).maybeSingle();
+    if (existing) {
+      const updates: Record<string, any> = {};
+      if (emailLower && !existing.email)            updates.email = emailLower;
+      if (phoneNorm  && !existing.phone_normalized) { updates.phone_normalized = phoneNorm; if (opts.phone) updates.phone = opts.phone; }
+      if (opts.company && !existing.company)        updates.company = opts.company;
+      if (Object.keys(updates).length > 0) await supabase.from('contacts').update(updates).eq('id', existing.id);
+      return { id: existing.id, created: false };
     }
   }
-
-  // New contact — shared resolver handles insert
-  const id = await sharedResolveContact(supabase, { name: opts.name, email: opts.email, phone: opts.phone, company: opts.company, source: opts.source });
-  if (!id) return null;
-  // notes column not in shared opts — patch separately if provided
-  if (opts.notes) {
-    await supabase.from('contacts').update({ notes: opts.notes }).eq('id', id);
-  }
-  return { id, created: true };
+  const { data, error } = await supabase.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, notes: opts.notes || null, source: opts.source, status: 'NEW' }).select('id').single();
+  if (error) { console.error('[contacts] insert error:', error.message); return null; }
+  return { id: data.id, created: true };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

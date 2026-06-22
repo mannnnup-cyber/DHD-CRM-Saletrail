@@ -1,6 +1,31 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveContact } from './_resolveContact';
+
+function normalizePhone(raw: string): string {
+  const digits = (raw || '').replace(/[^\d]/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+async function resolveContact(sb: any, opts: { name: string; email?: string; phone?: string; source: string }): Promise<string | null> {
+  const emailLower = (opts.email || '').toLowerCase().trim();
+  const phoneNorm  = normalizePhone(opts.phone || '');
+  const filters: string[] = [];
+  if (emailLower) filters.push(`email.ilike.${emailLower}`);
+  if (phoneNorm)  filters.push(`phone_normalized.eq.${phoneNorm}`);
+  if (filters.length > 0) {
+    const { data: existing } = await sb.from('contacts').select('id, email, phone, phone_normalized').or(filters.join(',')).limit(1).maybeSingle();
+    if (existing) {
+      const updates: Record<string, any> = {};
+      if (emailLower && !existing.email)            updates.email = emailLower;
+      if (phoneNorm  && !existing.phone_normalized) { updates.phone_normalized = phoneNorm; if (opts.phone) updates.phone = opts.phone; }
+      if (Object.keys(updates).length > 0) await sb.from('contacts').update(updates).eq('id', existing.id);
+      return existing.id;
+    }
+  }
+  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, source: opts.source, status: 'NEW' }).select('id').single();
+  if (error) { console.error('[email] resolveContact error:', error.message); return null; }
+  return data.id;
+}
 
 // Decode quoted-printable encoding (=3D, =20, soft line breaks etc.)
 function decodeQP(str: string): string {
