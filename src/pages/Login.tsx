@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { LogIn, ShieldCheck, Mail, Loader2, Crown } from 'lucide-react';
+import { LogIn, ShieldCheck, Mail, Loader2, Crown, Eye, EyeOff } from 'lucide-react';
 
 const Login: React.FC = () => {
   const { login } = useApp();
@@ -10,6 +10,9 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showSetupPassword, setShowSetupPassword] = useState(false);
+  const [showSetupConfirm, setShowSetupConfirm] = useState(false);
 
   // First-time setup state
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -126,15 +129,27 @@ const Login: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-400 mb-1.5">Password</label>
-                    <input type="password" value={setupPassword} onChange={e => setSetupPassword(e.target.value)} required
-                      placeholder="Min. 8 characters"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                    <div className="relative">
+                      <input type={showSetupPassword ? 'text' : 'password'} value={setupPassword} onChange={e => setSetupPassword(e.target.value)} required
+                        placeholder="Min. 8 characters"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 pl-4 pr-11 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                      <button type="button" onClick={() => setShowSetupPassword(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                        {showSetupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-400 mb-1.5">Confirm Password</label>
-                    <input type="password" value={setupConfirm} onChange={e => setSetupConfirm(e.target.value)} required
-                      placeholder="Repeat password"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                    <div className="relative">
+                      <input type={showSetupConfirm ? 'text' : 'password'} value={setupConfirm} onChange={e => setSetupConfirm(e.target.value)} required
+                        placeholder="Repeat password"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 pl-4 pr-11 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                      <button type="button" onClick={() => setShowSetupConfirm(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                        {showSetupConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   {setupError && <p className="text-red-400 text-sm text-center">{setupError}</p>}
@@ -171,12 +186,18 @@ const Login: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">Password</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-400">Password</label>
+                  </div>
                   <div className="relative">
                     <LogIn className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
                       placeholder="••••••••" autoComplete="current-password"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 pl-11 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all" />
+                      className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 pl-11 pr-11 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all" />
+                    <button type="button" onClick={() => setShowPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
                   </div>
                 </div>
 
@@ -189,8 +210,8 @@ const Login: React.FC = () => {
                 </button>
               </form>
 
-              <p className="mt-6 text-center text-xs text-gray-600">
-                Forgot your password? Contact your administrator.
+              <p className="mt-6 text-center text-xs text-gray-500">
+                Forgot your password? Ask your administrator to reset it in Settings → Team.
               </p>
             </>
           )}
