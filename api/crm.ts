@@ -637,6 +637,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ opportunities: all, count: all.length });
   }
 
+  // ── Team stats ────────────────────────────────────────────────────────────
+  if (target === 'team') {
+    if (action === 'stats') return getTeamStats(req, res);
+    return res.status(404).json({ error: 'Action not found' });
+  }
+
   // ── Automation ────────────────────────────────────────────────────────────
   if (target === 'automation') {
     if (action === 'run') {
@@ -917,4 +923,85 @@ async function toggleAutomationRule(req: VercelRequest, res: VercelResponse) {
   if (!ruleId) return res.status(400).json({ error: 'ruleId required' });
   await supabase.from('automation_rules').update({ is_active: isActive }).eq('id', ruleId);
   return res.json({ success: true });
+}
+
+// ── Team Stats ───────────────────────────────────────────────────────────────
+
+async function getTeamStats(_req: VercelRequest, res: VercelResponse) {
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+
+  const [{ data: users }, { data: devices }, { data: calls }, { data: deals }] = await Promise.all([
+    supabase.from('user_profiles').select('id, name, email, role, companion_installed').eq('is_active', true).order('created_at', { ascending: true }),
+    supabase.from('devices').select('phone_number, user_id').not('user_id', 'is', null).eq('is_active', true),
+    supabase.from('cellular_calls').select('rep_phone, call_type'),
+    supabase.from('deals').select('assigned_to, stage, value'),
+  ]);
+
+  // phone → user_id and user_id → phones
+  const userPhones: Record<string, string[]> = {};
+  for (const d of (devices || [])) {
+    if (d.user_id && d.phone_number) {
+      userPhones[d.user_id] = userPhones[d.user_id] || [];
+      userPhones[d.user_id].push(d.phone_number);
+    }
+  }
+
+  // call counts by phone
+  const callsByPhone: Record<string, { out: number; in: number; missed: number }> = {};
+  for (const c of (calls || [])) {
+    if (!c.rep_phone) continue;
+    callsByPhone[c.rep_phone] = callsByPhone[c.rep_phone] || { out: 0, in: 0, missed: 0 };
+    const t = String(c.call_type || '').toUpperCase();
+    if (t === 'OUTGOING') callsByPhone[c.rep_phone].out++;
+    else if (t === 'INCOMING') callsByPhone[c.rep_phone].in++;
+    else if (t === 'MISSED') callsByPhone[c.rep_phone].missed++;
+  }
+
+  // deal stats by user_id
+  const dealsByUser: Record<string, { count: number; closed: number; revenue: number }> = {};
+  let totalActive = 0;
+  let totalClosed = 0;
+  for (const d of (deals || [])) {
+    const uid = d.assigned_to;
+    if (uid) {
+      dealsByUser[uid] = dealsByUser[uid] || { count: 0, closed: 0, revenue: 0 };
+      dealsByUser[uid].count++;
+      if (d.stage === 'Delivered') {
+        dealsByUser[uid].closed++;
+        dealsByUser[uid].revenue += (d.value || 0);
+      }
+    }
+    if (d.stage !== 'Delivered' && d.stage !== 'Lost') totalActive++;
+    if (d.stage === 'Delivered') totalClosed++;
+  }
+
+  const stats = (users || []).map(user => {
+    const phones = userPhones[user.id] || [];
+    let out = 0, incoming = 0, missed = 0;
+    for (const ph of phones) {
+      out += callsByPhone[ph]?.out || 0;
+      incoming += callsByPhone[ph]?.in || 0;
+      missed += callsByPhone[ph]?.missed || 0;
+    }
+    const ds = dealsByUser[user.id] || { count: 0, closed: 0, revenue: 0 };
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      companion_installed: user.companion_installed,
+      has_device: phones.length > 0,
+      outgoing: out,
+      incoming,
+      missed,
+      total_calls: out + incoming + missed,
+      deal_count: ds.count,
+      deals_closed: ds.closed,
+      revenue: ds.revenue,
+    };
+  });
+
+  const totalCalls = stats.reduce((s, r) => s + r.total_calls, 0);
+
+  return res.json({ success: true, stats, totals: { calls: totalCalls, active_deals: totalActive, closed_deals: totalClosed, members: stats.length } });
 }
