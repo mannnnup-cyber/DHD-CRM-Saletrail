@@ -1317,10 +1317,24 @@ const Settings: React.FC = () => {
                         lead_no_contact: 'New lead uncontacted',
                         deal_stale: 'Deal stalled',
                         missing_data: 'Missing data',
+                        new_phone_lead: 'New phone lead',
+                        new_whatsapp_lead: 'New WhatsApp lead',
+                        woo_order_status: 'WooCommerce order status',
+                        woo_stale_order: 'Stale WooCommerce order',
+                        multichannel_followup: 'Multi-channel follow-up',
                       };
                       const priorityColors: Record<string, string> = {
-                        high: 'text-red-400', medium: 'text-amber-400', low: 'text-blue-400',
+                        critical: 'text-red-500', high: 'text-red-400', medium: 'text-amber-400', low: 'text-blue-400',
                       };
+                      const triggerMeta = (() => {
+                        const cfg = rule.trigger_config || {};
+                        if (cfg.hours_since != null && cfg.hours_since > 0) return `after ${cfg.hours_since}h`;
+                        if (cfg.hours) return `within ${cfg.hours}h`;
+                        if (cfg.days) return `${cfg.days}-day window`;
+                        if (cfg.field) return `missing ${cfg.field}`;
+                        if (Array.isArray(cfg.statuses) && cfg.statuses.length) return cfg.statuses.join(', ');
+                        return null;
+                      })();
                       return (
                         <div key={rule.id} className="flex items-start justify-between gap-3 p-4 bg-gray-800/50 rounded-xl">
                           <div className="flex-1 min-w-0">
@@ -1332,9 +1346,7 @@ const Settings: React.FC = () => {
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {triggerLabels[rule.trigger_type] || rule.trigger_type}
-                              {rule.trigger_config?.hours ? ` › ${rule.trigger_config.hours}h timeout` : ''}
-                              {rule.trigger_config?.days ? ` › ${rule.trigger_config.days}d window` : ''}
-                              {rule.trigger_config?.field ? ` › missing ${rule.trigger_config.field}` : ''}
+                              {triggerMeta ? ` › ${triggerMeta}` : ''}
                               {' · '}cooldown {rule.cooldown_hours}h
                             </p>
                             <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-600">

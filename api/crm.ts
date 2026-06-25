@@ -777,13 +777,49 @@ async function wasRecentlyFired(
   return !!data;
 }
 
+// Returns the user_id of the rep who most recently called/handled this contact
+async function findLastRep(sb: any, contactId: string): Promise<string | null> {
+  const { data } = await sb.from('cellular_calls')
+    .select('rep_id')
+    .eq('contact_id', contactId)
+    .not('rep_id', 'is', null)
+    .order('called_at', { ascending: false })
+    .limit(1).maybeSingle();
+  return data?.rep_id ?? null;
+}
+
+// Returns the next untried outbound channel for a contact: WhatsApp → Call → Email
+async function getNextChannel(sb: any, contactId: string): Promise<string> {
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const [waRes, callRes, emailRes] = await Promise.all([
+    sb.from('whatsapp_messages').select('id').eq('contact_id', contactId)
+      .in('direction', ['outbound', 'OUTBOUND']).gte('created_at', since).limit(1).maybeSingle(),
+    sb.from('cellular_calls').select('id').eq('contact_id', contactId)
+      .in('call_type', ['OUTGOING', 'outgoing']).gte('called_at', since).limit(1).maybeSingle(),
+    sb.from('interactions').select('id').eq('contact_id', contactId)
+      .eq('type', 'EMAIL').in('direction', ['OUTBOUND', 'outbound']).gte('timestamp', since).limit(1).maybeSingle(),
+  ]);
+  if (!waRes.data) return 'WhatsApp';
+  if (!callRes.data) return 'Call';
+  if (!emailRes.data) return 'Email';
+  return 'WhatsApp'; // All tried — restart cycle
+}
+
 async function fireTask(
   sb: any, ruleId: string, entityType: string, entityId: string,
-  title: string, priority: string, contactId: string | null
+  title: string, priority: string, contactId: string | null,
+  description?: string, assignedTo?: string | null
 ): Promise<void> {
-  const dueDate = new Date(Date.now() + 24 * 3_600_000).toISOString();
+  const isUrgent = priority === 'critical' || priority === 'high';
+  const dueDate = new Date(Date.now() + (isUrgent ? 0 : 86_400_000)).toISOString().split('T')[0];
   const { data: task } = await sb.from('tasks').insert({
-    title, contact_id: contactId, due_date: dueDate, completed: false, priority: priority || 'medium',
+    title,
+    description: description || null,
+    contact_id: contactId,
+    due_date: dueDate,
+    completed: false,
+    priority: priority || 'medium',
+    assigned_to: assignedTo || null,
   }).select('id').single().catch(() => ({ data: null }));
   await sb.from('automation_runs').insert({
     rule_id: ruleId, entity_type: entityType, entity_id: entityId, task_id: task?.id ?? null, status: 'completed',
@@ -886,6 +922,167 @@ async function runAutomation(_req: VercelRequest, res: VercelResponse) {
               const title = interpolate(rule.action_config.title ?? 'Add {{field}} for {{name}}', { name: contact.name ?? 'contact', field });
               await fireTask(supabase, rule.id, 'contact', contact.id, title, rule.action_config.priority ?? 'low', contact.id);
               tasksCreated++; log.push(`missing_data(${field}): ${contact.name}`);
+            }
+            break;
+          }
+
+          // ── DHD Pipeline: unknown phone called in → create contact + task ──
+          case 'new_phone_lead': {
+            const hours = rule.trigger_config?.hours ?? 1;
+            const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+            const { data: unknownCalls } = await supabase.from('cellular_calls')
+              .select('id, phone_number, phone_normalized, called_at, rep_id')
+              .is('contact_id', null)
+              .in('call_type', ['INCOMING', 'incoming'])
+              .gte('called_at', cutoff)
+              .order('called_at', { ascending: false })
+              .limit(50);
+            if (!unknownCalls?.length) break;
+            // Deduplicate — one task per unique phone
+            const byPhone: Record<string, any> = {};
+            for (const c of unknownCalls) {
+              const ph = c.phone_normalized || c.phone_number;
+              if (ph && !byPhone[ph]) byPhone[ph] = c;
+            }
+            for (const [phone, call] of Object.entries(byPhone) as [string, any][]) {
+              if (await wasRecentlyFired(supabase, rule.id, 'phone', phone, rule.cooldown_hours)) continue;
+              const { data: newContact } = await supabase.from('contacts').insert({
+                name: `New Lead (${phone})`, phone: call.phone_number, source: 'MANUAL', status: 'NEW',
+              }).select('id').single().catch(() => ({ data: null }));
+              const title = interpolate(rule.action_config.title ?? 'Call back new lead: {{name}}', { name: phone });
+              const desc = rule.action_config.description ?? '';
+              await fireTask(supabase, rule.id, 'phone', phone, title, rule.action_config.priority ?? 'high', newContact?.id ?? null, desc, call.rep_id ?? null);
+              tasksCreated++; log.push(`new_phone_lead: ${phone}`);
+            }
+            break;
+          }
+
+          // ── DHD Pipeline: new WhatsApp from unknown contact ──
+          case 'new_whatsapp_lead': {
+            const hours = rule.trigger_config?.hours ?? 1;
+            const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+            const { data: unknownMsgs } = await supabase.from('whatsapp_messages')
+              .select('id, chat_id, sender_name, created_at')
+              .is('contact_id', null)
+              .in('direction', ['inbound', 'INBOUND'])
+              .gte('created_at', cutoff)
+              .order('created_at', { ascending: false })
+              .limit(50);
+            if (!unknownMsgs?.length) break;
+            const byChatId: Record<string, any> = {};
+            for (const m of unknownMsgs) {
+              if (m.chat_id && !byChatId[m.chat_id]) byChatId[m.chat_id] = m;
+            }
+            for (const [chatId, msg] of Object.entries(byChatId) as [string, any][]) {
+              if (await wasRecentlyFired(supabase, rule.id, 'wa_chat', chatId, rule.cooldown_hours)) continue;
+              const phone = chatId.replace(/@[cs]\.us$/, '').replace(/@s\.whatsapp\.net$/, '');
+              const displayName = msg.sender_name || `WhatsApp ${phone}`;
+              const { data: newContact } = await supabase.from('contacts').insert({
+                name: displayName, phone, source: 'WHATSAPP', status: 'NEW',
+              }).select('id').single().catch(() => ({ data: null }));
+              const title = interpolate(rule.action_config.title ?? 'Reply to new WhatsApp lead: {{name}}', { name: displayName });
+              const desc = rule.action_config.description ?? '';
+              await fireTask(supabase, rule.id, 'wa_chat', chatId, title, rule.action_config.priority ?? 'high', newContact?.id ?? null, desc, null);
+              tasksCreated++; log.push(`new_whatsapp_lead: ${displayName}`);
+            }
+            break;
+          }
+
+          // ── DHD Pipeline: WooCommerce order reached a status → task ──
+          case 'woo_order_status': {
+            const statuses: string[] = rule.trigger_config?.statuses ?? [];
+            const hoursSince: number = rule.trigger_config?.hours_since ?? 0;
+            const maxHours: number | null = rule.trigger_config?.max_hours ?? null;
+            if (!statuses.length) break;
+            const cutoff = new Date(Date.now() - hoursSince * 3_600_000).toISOString();
+            let query = supabase.from('woo_orders')
+              .select('id, woo_order_id, customer_name, customer_phone, contact_id, status, updated_at')
+              .in('status', statuses)
+              .lt('updated_at', cutoff);
+            if (maxHours !== null) {
+              query = query.gte('updated_at', new Date(Date.now() - maxHours * 3_600_000).toISOString());
+            }
+            const { data: orders } = await query.limit(30);
+            if (!orders?.length) break;
+            for (const order of orders) {
+              if (await wasRecentlyFired(supabase, rule.id, 'woo_order', order.id, rule.cooldown_hours)) continue;
+              const assignedTo = order.contact_id ? await findLastRep(supabase, order.contact_id) : null;
+              const channel = order.contact_id ? await getNextChannel(supabase, order.contact_id) : 'WhatsApp';
+              const vars = {
+                customer: order.customer_name ?? 'Customer',
+                order_id: order.woo_order_id ?? String(order.id).slice(0, 8),
+                channel,
+                name: order.customer_name ?? 'Customer',
+              };
+              const title = interpolate(rule.action_config.title ?? 'Follow up: {{customer}} order #{{order_id}}', vars);
+              const desc = interpolate(rule.action_config.description ?? '', vars);
+              await fireTask(supabase, rule.id, 'woo_order', order.id, title, rule.action_config.priority ?? 'medium', order.contact_id ?? null, desc, assignedTo);
+              tasksCreated++; log.push(`woo_order_status(${order.status}): ${order.customer_name}`);
+            }
+            break;
+          }
+
+          // ── DHD Pipeline: order with no status movement in N days ──
+          case 'woo_stale_order': {
+            const days = rule.trigger_config?.days ?? 30;
+            const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+            const { data: staleOrders } = await supabase.from('woo_orders')
+              .select('id, woo_order_id, customer_name, contact_id, status, updated_at')
+              .lt('updated_at', cutoff)
+              .not('status', 'in', '("completed","cancelled","wc-completed","wc-cancelled")')
+              .limit(20);
+            if (!staleOrders?.length) break;
+            for (const order of staleOrders) {
+              if (await wasRecentlyFired(supabase, rule.id, 'woo_order', order.id, rule.cooldown_hours)) continue;
+              const staleDays = Math.floor((Date.now() - new Date(order.updated_at).getTime()) / 86_400_000);
+              const assignedTo = order.contact_id ? await findLastRep(supabase, order.contact_id) : null;
+              const vars = {
+                customer: order.customer_name ?? 'Customer',
+                order_id: order.woo_order_id ?? String(order.id).slice(0, 8),
+                days: String(staleDays),
+              };
+              const title = interpolate(rule.action_config.title ?? 'Stale order: {{customer}} ({{days}} days)', vars);
+              const desc = interpolate(rule.action_config.description ?? '', vars);
+              await fireTask(supabase, rule.id, 'woo_order', order.id, title, rule.action_config.priority ?? 'high', order.contact_id ?? null, desc, assignedTo);
+              tasksCreated++; log.push(`woo_stale_order: ${order.customer_name} (${staleDays}d)`);
+            }
+            break;
+          }
+
+          // ── DHD Pipeline: no response to quote → try next channel ──
+          case 'multichannel_followup': {
+            const hours = rule.trigger_config?.hours ?? 24;
+            const statuses: string[] = rule.trigger_config?.statuses ?? ['pending', 'on-hold'];
+            const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+            const { data: pendingOrders } = await supabase.from('woo_orders')
+              .select('id, woo_order_id, customer_name, contact_id, status, updated_at')
+              .in('status', statuses)
+              .not('contact_id', 'is', null)
+              .lt('updated_at', cutoff)
+              .limit(30);
+            if (!pendingOrders?.length) break;
+            for (const order of pendingOrders) {
+              if (!order.contact_id) continue;
+              if (await wasRecentlyFired(supabase, rule.id, 'woo_order', order.id, rule.cooldown_hours)) continue;
+              // Skip if customer has sent an inbound message recently (they responded)
+              const responseSince = new Date(Date.now() - 7 * 86_400_000).toISOString();
+              const { data: inboundReply } = await supabase.from('interactions')
+                .select('id').eq('contact_id', order.contact_id)
+                .in('direction', ['INBOUND', 'inbound']).gte('timestamp', responseSince)
+                .limit(1).maybeSingle();
+              if (inboundReply) continue;
+              const nextChannel = await getNextChannel(supabase, order.contact_id);
+              const assignedTo = await findLastRep(supabase, order.contact_id);
+              const vars = {
+                channel: nextChannel,
+                customer: order.customer_name ?? 'Customer',
+                order_id: order.woo_order_id ?? String(order.id).slice(0, 8),
+                name: order.customer_name ?? 'Customer',
+              };
+              const title = interpolate(rule.action_config.title ?? '{{channel}} follow-up: {{customer}}', vars);
+              const desc = interpolate(rule.action_config.description ?? '', vars);
+              await fireTask(supabase, rule.id, 'woo_order', order.id, title, rule.action_config.priority ?? 'high', order.contact_id, desc, assignedTo);
+              tasksCreated++; log.push(`multichannel_followup(${nextChannel}): ${order.customer_name}`);
             }
             break;
           }
