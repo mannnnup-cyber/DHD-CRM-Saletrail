@@ -221,7 +221,7 @@ const Contacts: React.FC = () => {
                     </div>
                     {contact.phone && (
                       <button
-                        onClick={e => { e.stopPropagation(); navigate(`/whatsapp?phone=${encodeURIComponent(contact.phone!)}&name=${encodeURIComponent(contact.name)}`); }}
+                        onClick={e => { e.stopPropagation(); localStorage.setItem('wa_open_contact', JSON.stringify({ phone: contact.phone!, name: contact.name })); navigate('/whatsapp'); }}
                         className="p-2 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-400 transition-colors flex-shrink-0"
                         title="Message on WhatsApp"
                       >
@@ -254,7 +254,7 @@ const Contacts: React.FC = () => {
                           <Phone className="w-3 h-3 flex-shrink-0 text-gray-600" />
                           <span>{contact.phone}</span>
                           <button
-                            onClick={e => { e.stopPropagation(); navigate(`/whatsapp?phone=${encodeURIComponent(contact.phone!)}&name=${encodeURIComponent(contact.name)}`); }}
+                            onClick={e => { e.stopPropagation(); localStorage.setItem('wa_open_contact', JSON.stringify({ phone: contact.phone!, name: contact.name })); navigate('/whatsapp'); }}
                             className="ml-1 p-0.5 rounded bg-green-500/10 hover:bg-green-500/20 text-green-400 transition-colors"
                             title="Message on WhatsApp"
                           >

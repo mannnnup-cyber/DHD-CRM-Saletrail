@@ -604,7 +604,10 @@ const ContactProfile: React.FC = () => {
                     Call
                   </a>
                   <button
-                    onClick={() => navigate(`/whatsapp?phone=${encodeURIComponent(contact.phone!)}&name=${encodeURIComponent(contact.name)}`)}
+                    onClick={() => {
+                      localStorage.setItem('wa_open_contact', JSON.stringify({ phone: contact.phone!, name: contact.name }));
+                      navigate('/whatsapp');
+                    }}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 text-green-300 rounded-lg text-xs font-medium transition-colors"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />

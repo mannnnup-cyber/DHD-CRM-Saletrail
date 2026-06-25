@@ -1,4 +1,4 @@
-name: CI + Deploy
+name: CI
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,10 +23,3 @@ jobs:
 
       - name: Build (Vite production)
         run: npm run build
-
-      - name: Deploy to Vercel
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
-        env:
-          VERCEL_ORG_ID: team_oR9AcZvAU91AR7ralAlffIB3
-          VERCEL_PROJECT_ID: prj_USKJsJQAVoYMosqbE19F6bre2nhK
