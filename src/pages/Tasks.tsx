@@ -4,7 +4,6 @@ import {
   CheckCircle2, Circle, Clock, AlertTriangle, Plus, X, Calendar,
   User, Flag, RefreshCw, ExternalLink, AlertCircle, Loader2
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 
 interface Task {
   id: string;
@@ -45,24 +44,10 @@ const Tasks: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const { data, error: err } = await supabase
-        .from('tasks')
-        .select(`
-          id, title, description, due_date, completed, priority,
-          contact_id, assigned_to, created_at,
-          contacts:contact_id (name),
-          user_profiles:assigned_to (name)
-        `)
-        .order('completed', { ascending: true })
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .limit(200);
-
-      if (err) throw err;
-      setTasks((data || []).map((r: any) => ({
-        ...r,
-        contact_name: r.contacts?.name ?? null,
-        assigned_name: r.user_profiles?.name ?? null,
-      })));
+      const res = await fetch('/api/tasks');
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Failed to load tasks');
+      setTasks(json.tasks || []);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -88,36 +73,41 @@ const Tasks: React.FC = () => {
 
   const toggleComplete = async (task: Task) => {
     setToggling(task.id);
-    const { error: err } = await supabase
-      .from('tasks')
-      .update({ completed: !task.completed, updated_at: new Date().toISOString() })
-      .eq('id', task.id);
-    if (!err) {
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: !t.completed } : t));
-    }
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id, completed: !task.completed }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: !t.completed } : t));
+      }
+    } catch {}
     setToggling(null);
   };
 
   const handleAdd = async () => {
     if (!newTask.title.trim()) return;
     setSaving(true);
-    const { data, error: err } = await supabase
-      .from('tasks')
-      .insert({
-        title: newTask.title.trim(),
-        description: newTask.description.trim() || null,
-        due_date: newTask.dueDate || null,
-        priority: newTask.priority,
-        completed: false,
-      })
-      .select('id, title, description, due_date, completed, priority, contact_id, assigned_to, created_at')
-      .single();
-
-    if (!err && data) {
-      setTasks(prev => [{ ...data, contact_name: null, assigned_name: null }, ...prev]);
-      setNewTask({ title: '', dueDate: '', priority: 'medium', description: '' });
-      setShowAdd(false);
-    }
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newTask.title.trim(),
+          description: newTask.description.trim() || null,
+          due_date: newTask.dueDate || null,
+          priority: newTask.priority,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.task) {
+        setTasks(prev => [json.task, ...prev]);
+        setNewTask({ title: '', dueDate: '', priority: 'medium', description: '' });
+        setShowAdd(false);
+      }
+    } catch {}
     setSaving(false);
   };
 
