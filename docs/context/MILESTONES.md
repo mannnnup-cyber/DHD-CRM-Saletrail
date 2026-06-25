@@ -4,90 +4,126 @@
 
 Status: Done
 
-- Add guard-rail files under `docs/context/`.
-- Add root `AGENTS.md`.
-- Add file map with Markdown and parseable JSON.
-- Add reusable prompt template.
-- Install project dependencies.
-- Set up GitNexus and Context7.
-- Verify build.
+- Guard-rail files created under `docs/context/`.
+- Root `AGENTS.md` added.
+- File map with Markdown and parseable JSON.
+- Reusable prompt template.
+- GitNexus and Context7 set up.
+- Build verified.
 
 ## Phase 0b: Core CRM Workflows
 
 Status: Done
 
-- AppContext decomposition into AuthContext, SyncContext, DataContext.
+- AppContext decomposed into AuthContext, SyncContext, DataContext.
 - Quote → Invoice workflow with Approve/Decline/Convert actions.
 - Email inbox: IMAP sync, body rendering fix, sort order, deduplication,
   auto-sync, last-synced timestamp.
-- Settings persistence via localStorage-first pattern.
+- Settings persistence via app_settings Supabase table.
 
 ## Phase 1: Data Foundation
 
 Status: Done
 
-The highest priority phase. Enables every feature in Phases 2–6.
-
-- Write and run `supabase/v2-contact-links.sql` — add `contact_id` FK to
-  emails, calls, whatsapp_messages, leads, deals, quotes, invoices.
-- Build `api/contacts.ts` identity resolution — match by email then phone,
-  create Contact if no match.
-- Wire email sync, call logging, WhatsApp webhook, WooCommerce sync to write
+- `supabase/v2-contact-links.sql` — added `contact_id` FK to emails, calls,
+  whatsapp_messages, leads, deals, quotes, invoices.
+- `api/contacts.ts` — identity resolution: match by email then phone, create
+  Contact if no match.
+- Email sync, call logging, WhatsApp webhook, WooCommerce sync all write
   `contact_id` and log to `interactions` table.
-- Migrate existing leads into `contacts` table with one-time script.
+- Existing leads migrated into `contacts` table.
 
 ## Phase 2: Unified Customer Profile
 
-Status: Planned
+Status: Done
 
-Depends on Phase 1.
+- `src/pages/Contacts.tsx` — master contact list with search, source/status
+  filters, WhatsApp button, and status badge.
+- `src/pages/ContactProfile.tsx` — 360° view with header, activity timeline
+  (calls, emails, WhatsApp, notes), WooCommerce orders, open deals, action bar.
+- Cross-linking from CallLogs, WhatsApp, Email, WooCommerce to `/contacts/:id`.
+- Inline note creation on activity timeline.
+- Activity type filter tabs on timeline.
+- Organization hierarchy: company grouping, parent-child contact links.
+- Enrichment fields: website, contact preference, timezone, LinkedIn URL.
+- Duplicate detection on lead import.
+- WhatsApp message button on contact list and contact profile.
 
-- Build `src/pages/ContactProfile.tsx` — 360° view with timeline, orders,
-  deals, leads, and action bar.
-- Build `src/pages/Contacts.tsx` — master contact list replacing LeadImport.
-- Cross-link all pages (Calls, Email, WhatsApp, WooCommerce, Pipeline) to
-  Contact Profile by contact name.
+## Phase 3: Automation Engine
 
-## Phase 3: Missed Opportunity Engine
+Status: Done
 
-Status: Planned
+- `automation_rules` and `automation_runs` tables created in Supabase.
+- `api/crm.ts` — automation engine with daily cron trigger via Vercel cron.
+- 11 pipeline rules covering: new phone leads, new WhatsApp leads,
+  WooCommerce order status changes, stale WooCommerce orders, and
+  multi-channel follow-up cadence (WhatsApp → Call → Email).
+- Smart channel selector reads 7-day outbound activity history.
+- Rep assignment via `cellular_calls.rep_id` (last rep who touched the contact).
+- Automation section added to Settings page.
+- `api/tasks.ts` — serverless endpoint for task CRUD (GET / POST / PATCH).
+- `src/pages/Tasks.tsx` — full task management UI: stats, filters, complete
+  toggle, add task modal, overdue detection, contact and rep name links.
 
-Depends on Phase 1.
+## Phase 3b: Missed Opportunity Engine
 
-- Write `api/opportunities.ts` implementing 9 rules from the DHD CS manual
-  timeframes (2hr quote, 24hr email, 3-day pickup, next-day feedback, etc.).
-- Build `src/components/ActionList.tsx` — daily action list widget for Dashboard.
-- Replace hardcoded notifications in App.tsx with live opportunity data.
+Status: Done
+
+- `api/crm.ts` — action list rules: unanswered emails, WhatsApp unread, no
+  activity follow-up, lead no contact, deal stale, missing data.
+- `src/components/ActionList.tsx` — daily action list widget surfaced on Dashboard.
 
 ## Phase 4: Smart Lead Import & AI Enrichment
 
-Status: Planned
+Status: Done
 
-Depends on Phase 1. Requires Gemini API key.
+- AI enrichment via Anthropic Claude and/or OpenAI (multi-provider).
+- Duplicate detection in import flow checks existing contacts before creating.
+- Bulk enrichment option on LeadImport page.
+- Multi-provider API key validation in Settings (OpenAI and Anthropic).
 
-- AI-powered import analysis using Google Gemini Flash (free tier).
-- Duplicate detection against existing contacts before import.
-- Optional Tavily web enrichment per contact.
-- Priority-sorted import results with suggested first actions.
+## Phase 4b: Companion Android App Integration
+
+Status: Done
+
+- Android companion app (DHD-CRM-Companion) syncs GSM calls to Supabase via
+  `/api/whatsapp?action=addGSMCall`.
+- `cellular_calls` table stores rep_phone, rep_name, contact resolution,
+  call type, duration, and timestamps.
+- `devices` table registers and tracks active companion devices.
+- `src/pages/CompanionApp.tsx` — setup guide, download link, device list,
+  version check, and health status.
+- `src/components/CompanionConnect.tsx` — compact connection status widget.
+- `src/pages/CallLogs.tsx` — full call log with GSM + WhatsApp calls,
+  rep filter, date filter (all / last 24h / yesterday / week / month),
+  type filter, pagination, and stats.
+- `api/whatsapp.ts` — getGSMCalls, getDevices, updateDeviceName,
+  addGSMCall, addWhatsAppCall actions.
+- GSM calls bridged into `interactions` table for activity timeline.
+- Call recording settings placeholder page added.
 
 ## Phase 5: Intelligence Dashboard
 
-Status: Planned
+Status: In Progress
 
-Depends on Phases 1–3.
+- Team page rebuilt with live Supabase data (calls, WhatsApp, deals per rep).
+- Call log stats (total, incoming, outgoing, missed, avg duration, missed rate).
+- WhatsApp provider switching: Green API and Evolution API both supported.
+- Evolution API integration via Railway-hosted instance.
+- Reports page partially rebuilt.
 
-- Rebuild Dashboard and Reports with live Supabase data.
-- Customer order pattern analysis (WooCommerce line items).
-- Team accountability metrics from real interaction data.
-- Management intelligence view: at-risk customers, top customers, trends.
+Remaining:
+- Full revenue and pipeline analytics from live Supabase data.
+- Coaching dashboard data integration.
 
 ## Phase 6: AI Communication Layer
 
-Status: Planned
+Status: Partially Done
 
-Depends on Phases 1–5. Requires Gemini API key and Facebook Business Verification.
+- Anthropic Claude API support added to email analysis pipeline.
+- Multi-provider AI key management in Settings.
 
-- AI-drafted email replies in Email Inbox (Gemini Flash, informed by contact history).
-- AI-drafted WhatsApp messages matched to pipeline stage.
-- Migrate WhatsApp from Green API to official Meta Cloud API.
-- Unified compose from Contact Profile page.
+Remaining:
+- AI-drafted reply suggestions in Email Inbox.
+- AI-drafted WhatsApp message suggestions.
+- WhatsApp provider selection UI (plan exists in plan mode draft).

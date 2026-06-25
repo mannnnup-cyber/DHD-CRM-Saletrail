@@ -1,85 +1,141 @@
 # Task Board
 
-## Workflow Setup
+## Status Values
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Create AI guard-rail docs | AI agent | Done | None | Keep docs current as work changes |
-| Add root AI operating guide | AI agent | Done | None | Keep `AGENTS.md` aligned with context docs |
-| Add parseable file map | AI agent | Done | None | Update when files, routes, APIs, or env vars change |
-| Install app dependencies | AI agent | Done | None | Review npm audit output separately |
-| Set up GitNexus | AI agent | Done | None | Re-run `npx gitnexus analyze` after major changes |
-| Set up Context7 | AI agent | Done | None | Use before changing framework/library usage |
-| Verify build | AI agent | Done | None | Re-run after future code changes |
-| AppContext decomposition | AI agent | Done | None | AuthContext, SyncContext, DataContext created; AppContext is now a thin shell |
-| Quote → Invoice workflow | AI agent | Done | None | Approve/Decline on quotes; Convert to Invoice wires quote to invoice and advances deal stage |
-| Email inbox fixes | AI agent | Done | None | Body rendering, sort order, deduplication, auto-sync, last-synced timestamp all fixed |
+Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
+
+---
+
+## AI Workflow Foundation
+
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| Create AI guard-rail docs | AI | Done | `docs/context/` folder |
+| Add root AI operating guide | AI | Done | `AGENTS.md` |
+| Add parseable file map | AI | Done | Update when routes/APIs/env vars change |
+| Set up GitNexus | AI | Done | Re-run `npx gitnexus analyze` after major changes |
+| Set up Context7 | AI | Done | Use before changing framework/library usage |
+| Verify build | AI | Done | Re-run after code changes |
+
+---
 
 ## Phase 1 — Data Foundation
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Write `supabase/v2-contact-links.sql` | AI agent | Done | None | Run in Supabase SQL Editor to apply FK columns and dismissed_opportunities table |
-| Write `api/contacts.ts` (resolve + list + get + migrate) | AI agent | Done | None | Identity resolution live; POST /api/contacts?action=migrate to backfill leads |
-| Wire email sync to identity resolution | AI agent | Done | None | Sync and convertToLead both set contact_id and write to interactions |
-| Wire call logging to identity resolution | AI agent | Done | None | addCall resolves phone via contacts API, logs to interactions |
-| Wire WhatsApp webhook to identity resolution | AI agent | Done | None | Inbound webhook resolves chat phone to Contact, logs to interactions |
-| Wire WooCommerce sync to identity resolution | AI agent | Done | None | POST /api/woocommerce?action=syncOrders resolves customers and updates contact stats |
-| Write leads → contacts migration | AI agent | Done | None | POST /api/contacts?action=migrate — product owner runs once in Supabase or via curl |
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| `supabase/v2-contact-links.sql` — contact_id FKs | AI | Done | Applied in Supabase |
+| `api/contacts.ts` — identity resolution + REST | AI | Done | resolve, list, get, migrate actions |
+| Wire email sync to contacts | AI | Done | Sets contact_id, writes to interactions |
+| Wire call logging to contacts | AI | Done | addCall resolves phone, logs to interactions |
+| Wire WhatsApp webhook to contacts | AI | Done | Inbound resolves phone, logs to interactions |
+| Wire WooCommerce sync to contacts | AI | Done | syncOrders resolves customers, updates stats |
+| Migrate leads → contacts (one-time) | Team | Done | Completed via POST /api/contacts?action=migrate |
+
+---
 
 ## Phase 2 — Unified Customer Profile
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Build `src/pages/ContactProfile.tsx` | AI agent | Planned | Phase 1 complete | 360° view: header, timeline, orders, deals, open leads, action bar |
-| Build `src/pages/Contacts.tsx` list page | AI agent | Planned | Phase 1 complete | Replaces/aliases LeadImport; filters by segment/source/rep |
-| Cross-link all pages to Contact Profile | AI agent | Planned | Phase 2 profile page | Calls, Email, WhatsApp, WooCommerce, Pipeline all link to /contacts/:id |
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| `src/pages/Contacts.tsx` list page | AI | Done | Replaces LeadImport as master contact list |
+| `src/pages/ContactProfile.tsx` 360° view | AI | Done | Timeline, orders, deals, action bar |
+| Cross-link all pages to Contact Profile | AI | Done | Calls, Email, WhatsApp, WooCommerce, Pipeline |
+| Inline note creation on timeline | AI | Done | Add note directly in activity timeline |
+| Activity type filter tabs on timeline | AI | Done | Filter by call, email, WhatsApp, note |
+| Organization hierarchy | AI | Done | Company grouping, parent-child links |
+| Enrichment fields | AI | Done | Website, contact preference, timezone, LinkedIn |
+| Duplicate detection on import | AI | Done | Checks existing contacts before creating |
+| WhatsApp button on contact list | AI | Done | Opens WhatsApp inbox pre-loaded for contact |
 
-## Phase 3 — Missed Opportunity Engine
+---
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Write `supabase/v3-opportunities.sql` | AI agent | Planned | Phase 1 complete | dismissed_opportunities table |
-| Write `api/opportunities.ts` rules engine | AI agent | Planned | Phase 1 complete | 9 rules from CS manual timeframes, scan + dismiss + complete actions |
-| Build `src/components/ActionList.tsx` widget | AI agent | Planned | Phase 3 API | Daily action list with one-click actions, shown top of Dashboard |
-| Replace hardcoded notifications | AI agent | Planned | Phase 3 widget | Remove static notification array in App.tsx, wire to live opportunities |
+## Phase 3 — Automation Engine
 
-## Phase 4 — Smart Lead Import & AI Enrichment
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| `automation_rules` + `automation_runs` tables | AI | Done | Created in Supabase |
+| `api/crm.ts` — automation engine | AI | Done | Runs via daily Vercel cron |
+| 11 pipeline automation rules | AI | Done | New leads, WC order status, follow-up cadence |
+| Smart channel selector | AI | Done | WhatsApp → Call → Email based on 7-day history |
+| Rep assignment via cellular_calls | AI | Done | Last rep who called the contact |
+| Automation section in Settings page | AI | Done | View/manage rules |
+| `api/tasks.ts` — task CRUD endpoint | AI | Done | GET / POST / PATCH; fixes Supabase browser bug |
+| `src/pages/Tasks.tsx` — task management UI | AI | Done | Stats, filters, toggle, add, overdue detection |
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Add AI analysis to contact import | AI agent | Planned | Gemini API key | Update import flow to call Gemini Flash per contact batch |
-| Add Tavily enrichment to contact profile | AI agent | Planned | Tavily API key | Enrich button on ContactProfile that searches and stores result |
-| Build duplicate detection in import flow | AI agent | Planned | Phase 1 contacts API | Check each import row against existing contacts before creating |
+---
+
+## Phase 3b — Missed Opportunity Engine
+
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| Opportunity rules in `api/crm.ts` | AI | Done | 6 rules: email, WhatsApp, no-activity, stale deal, missing data |
+| `src/components/ActionList.tsx` widget | AI | Done | Surfaces daily actions on Dashboard |
+| Replace hardcoded notifications in App.tsx | AI | Done | Wired to live opportunity data |
+
+---
+
+## Phase 4 — AI Enrichment & Lead Import
+
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| Multi-provider AI support (OpenAI + Anthropic) | AI | Done | Both APIs validated in Settings |
+| Bulk enrichment in LeadImport | AI | Done | Enriches selected contacts in batch |
+| Duplicate detection in import flow | AI | Done | Pre-checks before contact creation |
+
+---
+
+## Phase 4b — Companion Android App
+
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| `cellular_calls` table | AI | Done | Stores all GSM call records with rep info |
+| `devices` table | AI | Done | Tracks registered companion devices |
+| `addGSMCall` API action | AI | Done | Receives calls from Android app |
+| `getGSMCalls` API action | AI | Done | Paginated call log with filters |
+| `getDevices` / `updateDeviceName` actions | AI | Done | Device management |
+| GSM calls bridged to interactions | AI | Done | Appears on ContactProfile timeline |
+| `src/pages/CompanionApp.tsx` | AI | Done | Setup guide, download, device list, health |
+| `src/pages/CallLogs.tsx` full rewrite | AI | Done | GSM + WhatsApp, rep/date/type filters, stats |
+| Call log rolling 24h "Last 24h" filter | AI | Done | Fixed UTC midnight edge case |
+| Yesterday filter added to call log | AI | Done | 48h-24h window |
+| Context-aware empty state in call log | AI | Done | Different message for filter vs no data |
+| `api/recordings.ts` | AI | Done | Recording settings support |
+| `src/pages/RecordingSettings.tsx` | AI | Done | Call recording configuration |
+
+---
 
 ## Phase 5 — Intelligence Dashboard
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Rebuild Dashboard with live Supabase data | AI agent | Planned | Phase 1 complete | Replace in-memory calculations with Supabase queries |
-| Rebuild Reports with live Supabase data | AI agent | Planned | Phase 1 complete | Replace hardcoded rep name matching with DB-driven stats |
-| Add order pattern analysis section | AI agent | Planned | Phase 1 WC wiring | Best-selling services, repeat order rate, revenue by month |
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| Team page with live Supabase data | AI | Done | Real calls, WhatsApp, deals per rep |
+| Call log stats panel | AI | Done | Incoming/outgoing/missed/avg duration |
+| WhatsApp Evolution API integration | AI | Done | Railway-hosted instance |
+| Coaching dashboard skeleton | AI | Done | `src/pages/CoachingDashboard.tsx` |
+| Reports with live data | AI | In Progress | Partial — pipeline stats live, revenue pending |
+| Full revenue analytics | AI | Planned | Needs Phase 5 rebuild |
+
+---
 
 ## Phase 6 — AI Communication Layer
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Add AI reply drafting to email inbox | AI agent | Planned | Gemini API key | Gemini Flash analyses email + contact history, suggests reply |
-| Add AI reply drafting to WhatsApp | AI agent | Planned | Gemini API key | Same pattern, matched to pipeline stage |
-| Migrate WhatsApp to Meta Cloud API | AI agent | Planned | Facebook Business verification | Rewrite api/whatsapp.ts handler for Meta webhook format |
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| Anthropic Claude in email analysis | AI | Done | Added alongside OpenAI |
+| AI reply drafting in Email Inbox | AI | Planned | Requires API key wired to compose |
+| AI WhatsApp draft suggestions | AI | Planned | Match to pipeline stage |
+| WhatsApp provider switch UI | AI | Planned | Plan drafted; Green API ↔ Evolution API |
+
+---
 
 ## Product Backlog
 
-| Task | Owner | Status | Blockers | Next Step |
-| --- | --- | --- | --- | --- |
-| Review production authentication approach | Team | Planned | Product/security decision | Compare demo login with Supabase Auth needs |
-| Review Supabase RLS policies | Team | Planned | Production role model | Define least-privilege table policies |
-| Verify WooCommerce credential storage | Team | Planned | Deployment env setup | Confirm secrets stay server-side |
-| Start Facebook Business Verification | Product owner | Planned | None | Required for Phase 6 WhatsApp migration — takes 1-2 weeks |
-| Get Gemini API key (free) | Product owner | Planned | None | Required for Phase 4 and 6 — console.cloud.google.com |
-| Get Tavily API key (optional) | Product owner | Planned | None | Required for Phase 4 enrichment — tavily.com free tier |
-| Run `supabase/email_schema.sql` in Supabase | Product owner | Planned | None | Enables permanent email storage instead of localStorage |
-
-## Status Values
-
-Use `Planned`, `In progress`, `Blocked`, `Review`, or `Done`.
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| WhatsApp provider switching UI | AI | Planned | Allow switching Green API ↔ Evolution in Settings |
+| WooCommerce rep/order association | Team | Planned | WC REST API does not expose admin who created order; need custom meta field |
+| Supabase RLS policies | Team | Planned | Define least-privilege table policies for production |
+| Facebook Business Verification | Product Owner | Planned | Required for Meta Cloud API WhatsApp migration |
+| Full Coaching Dashboard data integration | AI | Planned | Real coaching metrics and rep performance data |
+| Companion app version bump to 1.1.8 | AI | Planned | Update versionName in android/app/build.gradle |
+| WooCommerce DHD custom order statuses sync | AI | Planned | DHD statuses not yet mapped; only pending/completed/cancelled synced |
