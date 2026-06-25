@@ -21,7 +21,7 @@
   "crons": [
     {
       "path": "/api/crm?target=automation&action=run",
-      "schedule": "0 * * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }
