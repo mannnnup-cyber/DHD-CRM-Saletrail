@@ -637,6 +637,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ opportunities: all, count: all.length });
   }
 
+  // ── Automation ────────────────────────────────────────────────────────────
+  if (target === 'automation') {
+    if (action === 'run') {
+      const secret = (req.headers['x-cron-secret'] as string) || (req.query.secret as string);
+      const configured = process.env.CRON_SECRET;
+      if (configured && secret !== configured) return res.status(401).json({ error: 'Unauthorized' });
+      return runAutomation(req, res);
+    }
+    if (action === 'getStatus') return getAutomationStatus(req, res);
+    if (action === 'toggleRule' && req.method === 'POST') return toggleAutomationRule(req, res);
+    return res.status(404).json({ error: 'Action not found' });
+  }
+
   // ── Organizations ─────────────────────────────────────────────────────────
   if (target === 'organizations') {
     if (action === 'linkContact' && req.method === 'POST') return linkContact(req, res);
@@ -738,4 +751,170 @@ async function handleGetMetrics(req: VercelRequest, res: VercelResponse) {
   allTopics.forEach(t => { freq[t] = (freq[t] || 0) + 1; });
   const topicsRanked = Object.entries(freq).sort(([, a], [, b]) => b - a).slice(0, 5).map(([t]) => t);
   return res.json({ success: true, metrics: { total_calls: calls.length, sentiment_distribution: { positive: pos, negative: neg, neutral: calls.length - pos - neg, positive_rate: Math.round((pos / calls.length) * 100) }, top_topics: topicsRanked, areas_of_strength: topicsRanked.filter(t => ['closing_signal', 'call_to_action', 'needs_discovery'].includes(t)), areas_for_improvement: topicsRanked.filter(t => ['objection_handling', 'competitor_mention'].includes(t)) } });
+}
+
+// ---------------------------------------------------------------------------
+// Automation engine
+// ---------------------------------------------------------------------------
+
+function interpolate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? '');
+}
+
+async function wasRecentlyFired(
+  sb: any, ruleId: string, entityType: string, entityId: string, cooldownHours: number
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - cooldownHours * 3_600_000).toISOString();
+  const { data } = await sb.from('automation_runs')
+    .select('id').eq('rule_id', ruleId).eq('entity_type', entityType)
+    .eq('entity_id', entityId).gte('created_at', cutoff).limit(1).maybeSingle();
+  return !!data;
+}
+
+async function fireTask(
+  sb: any, ruleId: string, entityType: string, entityId: string,
+  title: string, priority: string, contactId: string | null
+): Promise<void> {
+  const dueDate = new Date(Date.now() + 24 * 3_600_000).toISOString();
+  const { data: task } = await sb.from('tasks').insert({
+    title, contact_id: contactId, due_date: dueDate, completed: false, priority: priority || 'medium',
+  }).select('id').single().catch(() => ({ data: null }));
+  await sb.from('automation_runs').insert({
+    rule_id: ruleId, entity_type: entityType, entity_id: entityId, task_id: task?.id ?? null, status: 'completed',
+  });
+}
+
+async function runAutomation(_req: VercelRequest, res: VercelResponse) {
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+  try {
+    const { data: rules } = await supabase.from('automation_rules').select('*').eq('is_active', true);
+    if (!rules?.length) return res.json({ success: true, tasksCreated: 0 });
+    let tasksCreated = 0;
+    const log: string[] = [];
+
+    for (const rule of rules) {
+      try {
+        switch (rule.trigger_type) {
+
+          case 'whatsapp_unread': {
+            const hours = rule.trigger_config?.hours ?? 2;
+            const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+            const { data: inbound } = await supabase.from('interactions')
+              .select('contact_id').eq('type', 'WHATSAPP').eq('direction', 'INBOUND').lt('timestamp', cutoff).limit(50);
+            if (!inbound?.length) break;
+            const cids = [...new Set(inbound.map((r: any) => r.contact_id).filter(Boolean))];
+            const { data: replied } = await supabase.from('interactions')
+              .select('contact_id').eq('type', 'WHATSAPP').eq('direction', 'OUTBOUND').gte('timestamp', cutoff).in('contact_id', cids);
+            const repliedSet = new Set((replied || []).map((r: any) => r.contact_id));
+            for (const cid of cids) {
+              if (repliedSet.has(cid)) continue;
+              if (await wasRecentlyFired(supabase, rule.id, 'contact', cid, rule.cooldown_hours)) continue;
+              const { data: c } = await supabase.from('contacts').select('name').eq('id', cid).maybeSingle();
+              const title = interpolate(rule.action_config.title ?? 'Reply to {{name}} on WhatsApp', { name: c?.name ?? 'contact' });
+              await fireTask(supabase, rule.id, 'contact', cid, title, rule.action_config.priority ?? 'high', cid);
+              tasksCreated++; log.push(`whatsapp_unread: ${c?.name ?? cid}`);
+            }
+            break;
+          }
+
+          case 'no_activity': {
+            const days = rule.trigger_config?.days ?? 14;
+            const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+            const { data: contacts } = await supabase.from('contacts')
+              .select('id, name').not('assigned_to', 'is', null).limit(200);
+            if (!contacts?.length) break;
+            const { data: recent } = await supabase.from('interactions')
+              .select('contact_id').in('contact_id', contacts.map((c: any) => c.id)).gte('timestamp', cutoff);
+            const activeSet = new Set((recent || []).map((r: any) => r.contact_id));
+            for (const contact of contacts) {
+              if (activeSet.has(contact.id)) continue;
+              if (await wasRecentlyFired(supabase, rule.id, 'contact', contact.id, rule.cooldown_hours)) continue;
+              const title = interpolate(rule.action_config.title ?? 'Re-engage {{name}}', { name: contact.name ?? 'contact', days: String(days) });
+              await fireTask(supabase, rule.id, 'contact', contact.id, title, rule.action_config.priority ?? 'medium', contact.id);
+              tasksCreated++; log.push(`no_activity: ${contact.name}`);
+            }
+            break;
+          }
+
+          case 'lead_no_contact': {
+            const hours = rule.trigger_config?.hours ?? 4;
+            const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+            const { data: leads } = await supabase.from('leads')
+              .select('id, name, contact_id').eq('status', 'new').lt('created_at', cutoff).limit(30);
+            if (!leads?.length) break;
+            for (const lead of leads) {
+              if (!lead.contact_id) continue;
+              const { data: ex } = await supabase.from('interactions').select('id').eq('contact_id', lead.contact_id).limit(1).maybeSingle();
+              if (ex) continue;
+              if (await wasRecentlyFired(supabase, rule.id, 'contact', lead.contact_id, rule.cooldown_hours)) continue;
+              const title = interpolate(rule.action_config.title ?? 'First contact: call {{name}}', { name: lead.name ?? 'lead' });
+              await fireTask(supabase, rule.id, 'contact', lead.contact_id, title, rule.action_config.priority ?? 'high', lead.contact_id);
+              tasksCreated++; log.push(`lead_no_contact: ${lead.name}`);
+            }
+            break;
+          }
+
+          case 'deal_stale': {
+            const days = rule.trigger_config?.days ?? 7;
+            const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+            const { data: deals } = await supabase.from('deals')
+              .select('id, name, updated_at, contact_id').lt('updated_at', cutoff)
+              .not('stage', 'in', '("Delivered","Lost")').limit(20);
+            if (!deals?.length) break;
+            for (const deal of deals) {
+              if (await wasRecentlyFired(supabase, rule.id, 'deal', deal.id, rule.cooldown_hours)) continue;
+              const staleDays = Math.floor((Date.now() - new Date(deal.updated_at).getTime()) / 86_400_000);
+              const title = interpolate(rule.action_config.title ?? 'Push {{name}} deal forward — stalled {{days}}d', { name: deal.name ?? 'deal', days: String(staleDays) });
+              await fireTask(supabase, rule.id, 'deal', deal.id, title, rule.action_config.priority ?? 'medium', deal.contact_id ?? null);
+              tasksCreated++; log.push(`deal_stale: ${deal.name} (${staleDays}d)`);
+            }
+            break;
+          }
+
+          case 'missing_data': {
+            const field = rule.trigger_config?.field ?? 'phone';
+            const { data: contacts } = await supabase.from('contacts').select('id, name').is(field, null).limit(50);
+            if (!contacts?.length) break;
+            for (const contact of contacts) {
+              if (await wasRecentlyFired(supabase, rule.id, 'contact', contact.id, rule.cooldown_hours)) continue;
+              const title = interpolate(rule.action_config.title ?? 'Add {{field}} for {{name}}', { name: contact.name ?? 'contact', field });
+              await fireTask(supabase, rule.id, 'contact', contact.id, title, rule.action_config.priority ?? 'low', contact.id);
+              tasksCreated++; log.push(`missing_data(${field}): ${contact.name}`);
+            }
+            break;
+          }
+        }
+      } catch (ruleErr: any) {
+        log.push(`[${rule.trigger_type}] error: ${ruleErr.message}`);
+      }
+    }
+    return res.json({ success: true, tasksCreated, rulesRun: rules.length, log });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+async function getAutomationStatus(_req: VercelRequest, res: VercelResponse) {
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+  const { data: rules } = await supabase.from('automation_rules').select('*').order('created_at');
+  const { data: runs } = await supabase.from('automation_runs')
+    .select('rule_id, created_at').order('created_at', { ascending: false }).limit(500);
+  const byRule = (runs || []).reduce((acc: Record<string, any[]>, r: any) => {
+    (acc[r.rule_id] = acc[r.rule_id] || []).push(r); return acc;
+  }, {});
+  return res.json({
+    rules: (rules || []).map((r: any) => ({
+      ...r,
+      lastFired: byRule[r.id]?.[0]?.created_at ?? null,
+      totalTasksCreated: byRule[r.id]?.length ?? 0,
+    })),
+  });
+}
+
+async function toggleAutomationRule(req: VercelRequest, res: VercelResponse) {
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+  const { ruleId, isActive } = req.body;
+  if (!ruleId) return res.status(400).json({ error: 'ruleId required' });
+  await supabase.from('automation_rules').update({ is_active: isActive }).eq('id', ruleId);
+  return res.json({ success: true });
 }

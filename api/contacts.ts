@@ -117,6 +117,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === 'previewEnrichment' && req.method === 'POST') return previewEnrichment(req, res);
   if (action === 'enrichLead' && req.method === 'POST') return enrichLead(req, res);
 
+  if (action === 'addNote' && id && req.method === 'POST') {
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ error: 'content required' });
+    const { error } = await supabase.from('interactions').insert({
+      contact_id: id,
+      type: 'NOTE',
+      direction: 'OUTBOUND',
+      subject: 'Note',
+      content: content.trim(),
+      timestamp: new Date().toISOString(),
+    });
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true });
+  }
+
+  if (action === 'search' && req.method === 'GET') {
+    const q = (req.query.search as string || '').trim();
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    if (!q) return res.status(400).json({ error: 'search required' });
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('id, name, company, email, phone, contact_type')
+      .or(`name.ilike.%${q}%,company.ilike.%${q}%,email.ilike.%${q}%`)
+      .limit(limit);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ contacts: data || [] });
+  }
+
   return res.status(400).json({ error: 'Unknown action' });
 }
 

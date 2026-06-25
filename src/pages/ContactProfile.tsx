@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Phone, Building2, ShoppingCart, MessageCircle,
   PhoneCall, FileText, RefreshCw, AlertCircle, Clock, TrendingUp,
-  DollarSign, Package, User, ExternalLink, ChevronDown, ChevronUp, Globe, X
+  DollarSign, Package, User, ExternalLink, ChevronDown, ChevronUp, Globe, X, Plus
 } from 'lucide-react';
 
 interface Contact {
@@ -75,6 +75,10 @@ const ContactProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAllInteractions, setShowAllInteractions] = useState(false);
+  const [timelineFilter, setTimelineFilter] = useState<'ALL' | 'WHATSAPP' | 'CALL' | 'EMAIL' | 'NOTE'>('ALL');
+  const [showNoteForm, setShowNoteForm] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
   const [editingFields, setEditingFields] = useState(false);
   const [fieldDraft, setFieldDraft] = useState<{ contact_preference: string; timezone: string; linkedin_url: string }>({ contact_preference: '', timezone: '', linkedin_url: '' });
   const [fieldSaving, setFieldSaving] = useState(false);
@@ -424,8 +428,25 @@ const ContactProfile: React.FC = () => {
     );
   }
 
+  const addNote = async () => {
+    if (!id || !noteText.trim()) return;
+    setNoteSaving(true);
+    try {
+      const r = await fetch(`/api/contacts?action=addNote&id=${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: noteText.trim() }),
+      });
+      if (r.ok) { setShowNoteForm(false); setNoteText(''); await load(); }
+    } catch (_) {}
+    finally { setNoteSaving(false); }
+  };
+
   const statusColor = STATUS_COLORS[contact.status] || STATUS_COLORS.NEW;
-  const visibleInteractions = showAllInteractions ? interactions : interactions.slice(0, 10);
+  const filteredInteractions = timelineFilter === 'ALL'
+    ? interactions
+    : interactions.filter(i => i.type === timelineFilter);
+  const visibleInteractions = showAllInteractions ? filteredInteractions : filteredInteractions.slice(0, 10);
 
   const initials = contact.name
     .split(' ')
@@ -794,27 +815,76 @@ const ContactProfile: React.FC = () => {
 
       {/* Interaction Timeline / Email Section */}
       <div id="email-section" className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-          <h2 className="font-semibold text-white">Activity Timeline</h2>
-          <div className="flex gap-2">
-            {(['EMAIL', 'WHATSAPP', 'CALL'] as const).map(type => {
-              const count = interactions.filter(i => i.type === type).length;
-              if (!count) return null;
-              const cfg = TYPE_CONFIG[type];
-              return (
-                <span key={type} className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.color} bg-gray-800`}>
-                  {count} {cfg.label}
-                </span>
-              );
-            })}
-          </div>
+        {/* Header row */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800/50">
+          <h2 className="font-semibold text-white text-sm">Activity Timeline</h2>
+          <button
+            onClick={() => { setShowNoteForm(v => !v); setNoteText(''); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 rounded-lg text-xs font-medium transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Note
+          </button>
         </div>
 
-        {interactions.length === 0 ? (
+        {/* Inline note form */}
+        {showNoteForm && (
+          <div className="px-5 py-3 bg-purple-500/5 border-b border-gray-800">
+            <textarea
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="Add a note about this contact..."
+              rows={3}
+              autoFocus
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-purple-500/50"
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={addNote}
+                disabled={noteSaving || !noteText.trim()}
+                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                {noteSaving ? 'Saving…' : 'Save Note'}
+              </button>
+              <button
+                onClick={() => { setShowNoteForm(false); setNoteText(''); }}
+                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Filter tabs */}
+        <div className="flex gap-1.5 px-5 py-2.5 border-b border-gray-800 overflow-x-auto scrollbar-hide">
+          {(['ALL', 'WHATSAPP', 'CALL', 'EMAIL', 'NOTE'] as const).map(f => {
+            const count = f === 'ALL' ? interactions.length : interactions.filter(i => i.type === f).length;
+            if (f !== 'ALL' && count === 0) return null;
+            const cfg = f === 'ALL' ? null : TYPE_CONFIG[f];
+            const active = timelineFilter === f;
+            return (
+              <button
+                key={f}
+                onClick={() => { setTimelineFilter(f); setShowAllInteractions(false); }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex-shrink-0 ${
+                  active
+                    ? `${cfg?.color ?? 'text-white'} bg-gray-700 border border-gray-500`
+                    : 'text-gray-400 bg-gray-800/60 border border-gray-700/50 hover:text-gray-300 hover:border-gray-600'
+                }`}
+              >
+                {f === 'ALL' ? 'All' : cfg!.label}
+                <span className="opacity-60 ml-0.5">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {filteredInteractions.length === 0 ? (
           <div className="py-16 text-center text-gray-500">
             <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-sm">No activity yet</p>
-            <p className="text-xs mt-1">Interactions will appear here as they happen</p>
+            <p className="font-medium text-sm">{timelineFilter === 'ALL' ? 'No activity yet' : `No ${TYPE_CONFIG[timelineFilter]?.label ?? timelineFilter} activity`}</p>
+            <p className="text-xs mt-1">{timelineFilter === 'ALL' ? 'Interactions will appear here as they happen' : 'Switch to All to see other activity'}</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-800/40">
@@ -855,7 +925,7 @@ const ContactProfile: React.FC = () => {
               );
             })}
 
-            {interactions.length > 10 && (
+            {filteredInteractions.length > 10 && (
               <button
                 onClick={() => setShowAllInteractions(!showAllInteractions)}
                 className="w-full flex items-center justify-center gap-2 py-3 text-sm text-gray-400 hover:text-white hover:bg-gray-800/30 transition-colors"
@@ -863,7 +933,7 @@ const ContactProfile: React.FC = () => {
                 {showAllInteractions ? (
                   <><ChevronUp className="w-4 h-4" /> Show less</>
                 ) : (
-                  <><ChevronDown className="w-4 h-4" /> Show {interactions.length - 10} more interactions</>
+                  <><ChevronDown className="w-4 h-4" /> Show {filteredInteractions.length - 10} more</>
                 )}
               </button>
             )}

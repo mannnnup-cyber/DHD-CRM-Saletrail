@@ -2302,18 +2302,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               inserted++;
               // Log interaction for the contact if matched
               if (contactId) {
-                const direction = String(callType).toUpperCase() === 'OUTGOING' ? 'OUTBOUND' : 'INBOUND';
+                const callTypeUpper = String(callType).toUpperCase();
+                const direction = callTypeUpper === 'OUTGOING' ? 'OUTBOUND' : 'INBOUND';
+                const durMin = duration_seconds ? Math.floor(duration_seconds / 60) : 0;
+                const durSec = duration_seconds ? duration_seconds % 60 : 0;
+                const durStr = duration_seconds > 0 ? ` · ${durMin > 0 ? `${durMin}m ` : ''}${durSec}s` : '';
+                const subject = callTypeUpper === 'MISSED'
+                  ? 'Missed call'
+                  : callTypeUpper === 'OUTGOING'
+                    ? `Outgoing call${durStr}`
+                    : `Incoming call${durStr}`;
                 try {
                   await supabase.from('interactions').insert({
                     contact_id: contactId,
                     type: 'CALL',
                     direction,
-                    content: `GSM ${callType} call${duration_seconds ? ` (${duration_seconds}s)` : ''}`,
-                    metadata: { source: 'gsm', device_model: deviceModel, phone_number: phoneNumber, duration_seconds, rep_phone: repPhone || null },
+                    subject,
+                    content: deviceRepName ? `via ${deviceRepName}` : null,
+                    metadata: { source: 'gsm', device_model: deviceModel, phone_number: phoneNumber, duration_seconds, rep_phone: repPhone || null, call_type: callTypeUpper },
                     timestamp: calledAt
                   });
                 } catch (interactionErr) {
-                  // Log interaction insertion errors but don't fail the sync (non-blocking)
                   console.warn('[addGSMCall] interaction insert failed (non-blocking):', interactionErr);
                 }
               }

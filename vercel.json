@@ -17,5 +17,11 @@
     "api/crm.ts": {
       "maxDuration": 120
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/crm?target=automation&action=run",
+      "schedule": "0 * * * *"
+    }
+  ]
 }

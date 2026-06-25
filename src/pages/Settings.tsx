@@ -60,6 +60,13 @@ const Settings: React.FC = () => {
   const [showForwardForm, setShowForwardForm] = useState<Record<string, boolean>>({});
   const [sendingForward, setSendingForward] = useState<string | null>(null);
 
+  // Automation rules state
+  const [automationRules, setAutomationRules] = useState<any[]>([]);
+  const [automationLoading, setAutomationLoading] = useState(false);
+  const [automationToggling, setAutomationToggling] = useState<string | null>(null);
+  const [automationRunning, setAutomationRunning] = useState(false);
+  const [automationRunResult, setAutomationRunResult] = useState<string | null>(null);
+
   // First-time owner setup state
   const [showOwnerSetup, setShowOwnerSetup] = useState(false);
   const [ownerName, setOwnerName] = useState('');
@@ -630,8 +637,43 @@ const Settings: React.FC = () => {
     setInviting(false);
   };
 
+  const loadAutomationRules = async () => {
+    setAutomationLoading(true);
+    try {
+      const r = await fetch('/api/crm?target=automation&action=getStatus');
+      if (r.ok) { const d = await r.json(); setAutomationRules(d.rules || []); }
+    } catch (_) {}
+    finally { setAutomationLoading(false); }
+  };
+
+  const toggleAutomationRule = async (ruleId: string, isActive: boolean) => {
+    setAutomationToggling(ruleId);
+    try {
+      await fetch('/api/crm?target=automation&action=toggleRule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruleId, isActive }),
+      });
+      setAutomationRules(prev => prev.map(r => r.id === ruleId ? { ...r, is_active: isActive } : r));
+    } catch (_) {}
+    finally { setAutomationToggling(null); }
+  };
+
+  const runAutomationNow = async () => {
+    setAutomationRunning(true);
+    setAutomationRunResult(null);
+    try {
+      const r = await fetch('/api/crm?target=automation&action=run');
+      const d = await r.json();
+      setAutomationRunResult(d.success ? `✓ ${d.tasksCreated} task${d.tasksCreated !== 1 ? 's' : ''} created across ${d.rulesRun} rules` : `Error: ${d.error}`);
+      await loadAutomationRules();
+    } catch (_) { setAutomationRunResult('Network error'); }
+    finally { setAutomationRunning(false); }
+  };
+
   useEffect(() => {
     if (activeTab === 'team') { loadTeam(); loadDevices(); }
+    if (activeTab === 'automation') { loadAutomationRules(); }
   }, [activeTab]);
 
   return (
@@ -1184,6 +1226,91 @@ const Settings: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Workflow Automation Rules */}
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-white flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-amber-500" />
+                    Workflow Automation
+                  </h3>
+                  <button
+                    onClick={runAutomationNow}
+                    disabled={automationRunning}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {automationRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                    {automationRunning ? 'Running…' : 'Run Now'}
+                  </button>
+                </div>
+
+                {automationRunResult && (
+                  <div className={`text-xs px-3 py-2 rounded-lg mb-4 ${automationRunResult.startsWith('✓') ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                    {automationRunResult}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 mb-4">
+                  Rules run automatically every hour. Each rule creates a task when conditions are met, with a cooldown to prevent duplicates.
+                </p>
+
+                {automationLoading ? (
+                  <div className="flex items-center gap-2 text-gray-500 text-sm py-4">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading rules…
+                  </div>
+                ) : automationRules.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    <Bot className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p>No automation rules found.</p>
+                    <p className="text-xs mt-1">Run the SQL migration to create default rules.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {automationRules.map((rule: any) => {
+                      const triggerLabels: Record<string, string> = {
+                        whatsapp_unread: 'WhatsApp unread',
+                        no_activity: 'No activity',
+                        lead_no_contact: 'New lead uncontacted',
+                        deal_stale: 'Deal stalled',
+                        missing_data: 'Missing data',
+                      };
+                      const priorityColors: Record<string, string> = {
+                        high: 'text-red-400', medium: 'text-amber-400', low: 'text-blue-400',
+                      };
+                      return (
+                        <div key={rule.id} className="flex items-start justify-between gap-3 p-4 bg-gray-800/50 rounded-xl">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium text-gray-200">{rule.name}</p>
+                              <span className={`text-xs font-medium ${priorityColors[rule.action_config?.priority] || 'text-gray-400'}`}>
+                                {rule.action_config?.priority || 'medium'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {triggerLabels[rule.trigger_type] || rule.trigger_type}
+                              {rule.trigger_config?.hours ? ` › ${rule.trigger_config.hours}h timeout` : ''}
+                              {rule.trigger_config?.days ? ` › ${rule.trigger_config.days}d window` : ''}
+                              {rule.trigger_config?.field ? ` › missing ${rule.trigger_config.field}` : ''}
+                              {' · '}cooldown {rule.cooldown_hours}h
+                            </p>
+                            <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-600">
+                              <span>{rule.totalTasksCreated} tasks created</span>
+                              {rule.lastFired && <span>· last fired {new Date(rule.lastFired).toLocaleDateString()}</span>}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => toggleAutomationRule(rule.id, !rule.is_active)}
+                            disabled={automationToggling === rule.id}
+                            className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 mt-0.5 disabled:opacity-50 ${rule.is_active ? 'bg-amber-500' : 'bg-gray-700'}`}
+                          >
+                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${rule.is_active ? 'left-7' : 'left-1'}`} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">

@@ -1525,47 +1525,66 @@ export default function WhatsApp() {
                 )}
               </div>
             ) : (
-              <>
-                {/* Chat type filter: All / Individual / Groups */}
-                <div className="flex border-b border-gray-700/50">
-                  {(['all', 'individual', 'groups'] as const).map(f => (
-                    <button
-                      key={f}
-                      onClick={() => setChatFilter(f)}
-                      className={`flex-1 py-2 text-xs font-medium transition-colors ${
-                        chatFilter === f
-                          ? 'text-green-400 border-b-2 border-green-400 bg-green-500/5'
-                          : 'text-gray-500 hover:text-gray-300'
-                      }`}
-                    >
-                      {f === 'all' ? 'All' : f === 'individual' ? '👤 People' : '👥 Groups'}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-700/50 overflow-x-auto scrollbar-hide">
+                <button
+                  onClick={() => { setChatFilter('all'); setAssignmentFilter('all'); }}
+                  className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                    chatFilter === 'all' && assignmentFilter === 'all'
+                      ? 'bg-gray-600 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                  }`}
+                >
+                  All
+                </button>
 
-                {/* Assignment filter: Everyone / Mine / Unassigned */}
-                <div className="flex border-b border-gray-700/50">
-                  {([
-                    { key: 'all', label: 'Everyone' },
-                    { key: 'mine', label: '👤 Mine' },
-                    { key: 'unassigned', label: '📥 Unassigned' },
-                  ] as const).map(f => (
-                    (f.key === 'all' && state.user?.role === 'sales_rep') ? null : (
-                      <button
-                        key={f.key}
-                        onClick={() => setAssignmentFilter(f.key)}
-                        className={`flex-1 py-1.5 text-[11px] font-medium transition-colors ${
-                          assignmentFilter === f.key
-                            ? 'text-amber-400 border-b-2 border-amber-400 bg-amber-500/5'
-                            : 'text-gray-500 hover:text-gray-300'
-                        }`}
-                      >
-                        {f.label}
-                      </button>
-                    )
-                  ))}
-                </div>
-              </>
+                {state.user?.role !== 'sales_rep' && (
+                  <button
+                    onClick={() => setAssignmentFilter(assignmentFilter === 'mine' ? 'all' : 'mine')}
+                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                      assignmentFilter === 'mine'
+                        ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                    }`}
+                  >
+                    Mine
+                  </button>
+                )}
+
+                {state.user?.role !== 'sales_rep' && (
+                  <button
+                    onClick={() => setAssignmentFilter(assignmentFilter === 'unassigned' ? 'all' : 'unassigned')}
+                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                      assignmentFilter === 'unassigned'
+                        ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                    }`}
+                  >
+                    Unassigned
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setChatFilter(chatFilter === 'groups' ? 'all' : 'groups')}
+                  className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                    chatFilter === 'groups'
+                      ? 'bg-green-500/20 text-green-400 ring-1 ring-green-500/40'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                  }`}
+                >
+                  Groups
+                </button>
+
+                <button
+                  onClick={() => setChatFilter(chatFilter === 'individual' ? 'all' : 'individual')}
+                  className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                    chatFilter === 'individual'
+                      ? 'bg-green-500/20 text-green-400 ring-1 ring-green-500/40'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                  }`}
+                >
+                  People
+                </button>
+              </div>
             )}
 
             <div className="flex-1 overflow-y-auto">
