@@ -184,10 +184,11 @@ const Contacts: React.FC = () => {
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           {/* Table header — desktop */}
-          <div className="hidden lg:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_40px] gap-4 px-4 py-3 border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wide">
+          <div className="hidden lg:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_40px] gap-4 px-4 py-3 border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wide">
             <span>Contact</span>
             <span>Contact Info</span>
             <span>Source</span>
+            <span>Status</span>
             <span>Orders</span>
             <span>Revenue</span>
             <span />
@@ -213,16 +214,25 @@ const Contacts: React.FC = () => {
                       <p className="text-gray-400 text-xs truncate">{contact.email || contact.phone || '—'}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${src.color}`}>{src.label}</span>
-                        {(contact.total_orders || 0) > 0 && (
-                          <span className="text-xs text-gray-500">{contact.total_orders} orders · JMD {(contact.total_revenue || 0).toLocaleString()}</span>
-                        )}
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_COLORS[contact.status] || STATUS_COLORS.NEW}`}>
+                          {contact.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </span>
                       </div>
                     </div>
+                    {contact.phone && (
+                      <button
+                        onClick={e => { e.stopPropagation(); navigate(`/whatsapp?phone=${encodeURIComponent(contact.phone!)}&name=${encodeURIComponent(contact.name)}`); }}
+                        className="p-2 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-400 transition-colors flex-shrink-0"
+                        title="Message on WhatsApp"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </button>
+                    )}
                     <ChevronRight className="w-4 h-4 text-gray-600 flex-shrink-0" />
                   </div>
 
                   {/* Desktop layout */}
-                  <div className="hidden lg:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_40px] gap-4 items-center px-4 py-3">
+                  <div className="hidden lg:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_40px] gap-4 items-center px-4 py-3">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
                         <span className="text-amber-400 font-bold text-xs">{contact.name?.[0]?.toUpperCase() || '?'}</span>
@@ -242,7 +252,14 @@ const Contacts: React.FC = () => {
                       {contact.phone && (
                         <div className="flex items-center gap-1.5 text-xs text-gray-400">
                           <Phone className="w-3 h-3 flex-shrink-0 text-gray-600" />
-                          {contact.phone}
+                          <span>{contact.phone}</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); navigate(`/whatsapp?phone=${encodeURIComponent(contact.phone!)}&name=${encodeURIComponent(contact.name)}`); }}
+                            className="ml-1 p-0.5 rounded bg-green-500/10 hover:bg-green-500/20 text-green-400 transition-colors"
+                            title="Message on WhatsApp"
+                          >
+                            <MessageCircle className="w-3 h-3" />
+                          </button>
                         </div>
                       )}
                     </div>
@@ -250,6 +267,11 @@ const Contacts: React.FC = () => {
                       <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${src.color}`}>
                         <SrcIcon className="w-3 h-3" />
                         {src.label}
+                      </span>
+                    </div>
+                    <div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[contact.status] || STATUS_COLORS.NEW}`}>
+                        {contact.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </span>
                     </div>
                     <div className="text-sm text-white font-medium">{contact.total_orders || 0}</div>
