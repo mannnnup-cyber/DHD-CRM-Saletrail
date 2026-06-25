@@ -50,7 +50,7 @@ interface WhatsAppCall {
 }
 
 type ActiveTab = 'gsm' | 'whatsapp';
-type DateFilter = 'all' | 'today' | 'week' | 'month';
+type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month';
 
 const formatDuration = (seconds: number) => {
   if (!seconds || seconds === 0) return '0s';
@@ -334,7 +334,7 @@ const CallLogs: React.FC = () => {
 
             {/* Date filter */}
             <div className="flex items-center gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1">
-              {(['all','today','week','month'] as DateFilter[]).map(d => (
+              {(['all','today','yesterday','week','month'] as DateFilter[]).map(d => (
                 <button
                   key={d}
                   onClick={() => { setDateFilter(d); setGsmOffset(0); }}
@@ -342,7 +342,7 @@ const CallLogs: React.FC = () => {
                     dateFilter === d ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  {d === 'all' ? 'All Time' : d === 'today' ? 'Today' : d === 'week' ? 'This Week' : 'This Month'}
+                  {d === 'all' ? 'All Time' : d === 'today' ? 'Last 24h' : d === 'yesterday' ? 'Yesterday' : d === 'week' ? 'This Week' : 'This Month'}
                 </button>
               ))}
             </div>
@@ -396,15 +396,32 @@ const CallLogs: React.FC = () => {
               <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Smartphone className="w-8 h-8 text-amber-400" />
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">No GSM calls synced yet</h3>
-              <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
-                Install the DHD-CRM companion app on your Android phone to automatically
-                sync cellular call logs here. The app runs in the background and syncs
-                every 60 minutes.
-              </p>
-              <div className="flex justify-center">
-                <CompanionConnect />
-              </div>
+              {dateFilter !== 'all' || typeFilter !== 'All' || repFilter !== 'all' ? (
+                <>
+                  <h3 className="text-lg font-semibold text-white mb-2">No calls for this period</h3>
+                  <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+                    No calls match the selected filters. Try changing the date range, rep, or call type.
+                  </p>
+                  <button
+                    onClick={() => { setDateFilter('all'); setTypeFilter('All'); setRepFilter('all'); setGsmOffset(0); }}
+                    className="text-sm text-amber-400 hover:text-amber-300 underline"
+                  >
+                    Clear all filters
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold text-white mb-2">No GSM calls synced yet</h3>
+                  <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
+                    Install the DHD-CRM companion app on your Android phone to automatically
+                    sync cellular call logs here. The app runs in the background and syncs
+                    every 60 minutes.
+                  </p>
+                  <div className="flex justify-center">
+                    <CompanionConnect />
+                  </div>
+                </>
+              )}
             </div>
           )}
 

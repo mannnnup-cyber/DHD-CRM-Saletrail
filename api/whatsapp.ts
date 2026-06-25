@@ -2502,8 +2502,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const now = new Date();
         let dateFrom: string | null = null;
         if (dateFilter === 'today') {
-          const d = new Date(now); d.setHours(0,0,0,0);
-          dateFrom = d.toISOString();
+          // Rolling 24-hour window — avoids UTC midnight edge cases
+          dateFrom = new Date(now.getTime() - 24 * 3_600_000).toISOString();
+        } else if (dateFilter === 'yesterday') {
+          const yStart = new Date(now.getTime() - 48 * 3_600_000);
+          const yEnd   = new Date(now.getTime() - 24 * 3_600_000);
+          dateFrom = yStart.toISOString();
+          // NOTE: yEnd handled below via dateTo
         } else if (dateFilter === 'week') {
           const d = new Date(now); d.setDate(d.getDate() - 7);
           dateFrom = d.toISOString();
@@ -2511,6 +2516,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const d = new Date(now); d.setDate(1); d.setHours(0,0,0,0);
           dateFrom = d.toISOString();
         }
+        const dateTo = dateFilter === 'yesterday'
+          ? new Date(now.getTime() - 24 * 3_600_000).toISOString()
+          : null;
 
         try {
           // Build paginated data query
@@ -2523,6 +2531,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (typeFilter && typeFilter !== 'All') query = query.eq('call_type', typeFilter.toUpperCase());
           if (repFilter  && repFilter  !== 'all')  query = query.eq('rep_phone', repFilter);
           if (dateFrom) query = query.gte('called_at', dateFrom);
+          if (dateTo)   query = query.lt('called_at', dateTo);
 
           const { data: calls, error, count } = await query;
           if (error) {
@@ -2534,6 +2543,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           let statsBase = supabase.from('cellular_calls').select('call_type, duration_seconds', { count: 'exact' });
           if (repFilter && repFilter !== 'all') statsBase = statsBase.eq('rep_phone', repFilter);
           if (dateFrom) statsBase = statsBase.gte('called_at', dateFrom);
+          if (dateTo)   statsBase = statsBase.lt('called_at', dateTo);
           const { data: statsRows } = await statsBase;
 
           const statsData = statsRows || [];
