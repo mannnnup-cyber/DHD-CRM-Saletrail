@@ -206,21 +206,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.json({ success: false, error: 'API key required' });
         }
 
-        try {
-          const response = await fetch('https://api.openai.com/v1/models', {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json'
-            }
-          });
+        const isAnthropic = apiKey.startsWith('sk-ant-');
 
-          if (response.ok) {
-            return res.json({ success: true, message: 'OpenAI API key is valid' });
+        try {
+          if (isAnthropic) {
+            const response = await fetch('https://api.anthropic.com/v1/models', {
+              headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+              }
+            });
+            if (response.ok) {
+              return res.json({ success: true, message: 'Anthropic API key is valid', provider: 'anthropic' });
+            } else {
+              const err = await response.json().catch(() => ({}));
+              return res.json({ success: false, error: (err as any).error?.message || 'Invalid Anthropic API key', provider: 'anthropic' });
+            }
           } else {
-            return res.json({ success: false, error: 'Invalid API key — check your OpenAI key at platform.openai.com' });
+            const response = await fetch('https://api.openai.com/v1/models', {
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            if (response.ok) {
+              return res.json({ success: true, message: 'OpenAI API key is valid', provider: 'openai' });
+            } else {
+              return res.json({ success: false, error: 'Invalid API key — check your OpenAI key at platform.openai.com', provider: 'openai' });
+            }
           }
         } catch (error) {
-          return res.json({ success: false, error: 'Failed to test API key' });
+          return res.json({ success: false, error: 'Failed to connect to AI provider' });
         }
       }
 

@@ -59,6 +59,7 @@ const Settings: React.FC = () => {
   const [forwardSim, setForwardSim] = useState<Record<string, number>>({});
   const [showForwardForm, setShowForwardForm] = useState<Record<string, boolean>>({});
   const [sendingForward, setSendingForward] = useState<string | null>(null);
+  const [forwardPollPhone, setForwardPollPhone] = useState<string | null>(null);
 
   // Automation rules state
   const [automationRules, setAutomationRules] = useState<any[]>([]);
@@ -110,6 +111,32 @@ const Settings: React.FC = () => {
       setWhatsAppInstanceName(null);
     }
   }, [localValues['EVOLUTION_PHONE'], localValues['EVOLUTION_INSTANCE_NAME']]);
+
+  // Auto-poll forwarding status after queuing a command
+  useEffect(() => {
+    if (!forwardPollPhone) return;
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch('/api/whatsapp?action=getForwardStatus');
+        const data = await r.json();
+        if (data.success) {
+          setForwardStatus(data.forwardStatus || {});
+          const s = (data.forwardStatus || {})[forwardPollPhone];
+          if (s && (s.status === 'done' || s.status === 'failed')) {
+            setForwardPollPhone(null);
+          }
+        }
+      } catch {}
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [forwardPollPhone]);
+
+  const detectKeyProvider = (key: string): 'anthropic' | 'openai' | null => {
+    if (!key) return null;
+    if (key.startsWith('sk-ant-')) return 'anthropic';
+    if (key.startsWith('sk-')) return 'openai';
+    return null;
+  };
 
   const STORAGE_KEY = 'dhd_crm_settings';
 
@@ -489,11 +516,12 @@ const Settings: React.FC = () => {
       if (data.success) {
         setForwardStatus(prev => ({ ...prev, [devicePhone]: data.command }));
         setShowForwardForm(prev => ({ ...prev, [devicePhone]: false }));
+        setForwardPollPhone(devicePhone);
         setTeamMessage({
           type: 'success',
           text: command === 'forward_enable'
-            ? `Forwarding to ${forwardTarget[devicePhone] || 'target'} queued — device will activate within 15 min`
-            : `Disable forwarding queued — device will cancel within 15 min`,
+            ? `Forwarding queued — status will update automatically when the device responds`
+            : `Disable command queued — status will update automatically`,
         });
         // Reset target/sim after successful send
         setForwardTarget(prev => ({ ...prev, [devicePhone]: '' }));
@@ -907,80 +935,95 @@ const Settings: React.FC = () => {
           )}
 
           {/* AI & API Settings */}
-          {activeTab === 'api' && (
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-              <h3 className="font-bold text-white flex items-center gap-2 mb-4">
-                <Bot className="w-5 h-5 text-amber-500" />
-                AI Configuration
-              </h3>
-              <p className="text-gray-400 text-sm mb-6">
-                Configure OpenAI for AI-powered email analysis and reply suggestions.
-              </p>
+          {activeTab === 'api' && (() => {
+            const detectedProvider = detectKeyProvider(localValues['OPENAI_API_KEY'] || '');
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                  <Bot className="w-5 h-5 text-amber-500" />
+                  AI Configuration
+                </h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Configure an AI API key for email analysis and reply suggestions. Supports both OpenAI and Anthropic.
+                </p>
 
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
-                    OpenAI API Key
-                    {isConfigured['OPENAI_API_KEY'] && !localValues['OPENAI_API_KEY'] && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded border border-green-500/30">Saved</span>
-                    )}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPasswords['OPENAI_API_KEY'] ? 'text' : 'password'}
-                      value={localValues['OPENAI_API_KEY'] || ''}
-                      onChange={(e) => handleValueChange('OPENAI_API_KEY', e.target.value)}
-                      placeholder={isConfigured['OPENAI_API_KEY'] ? 'Leave blank to keep saved key' : 'sk-••••••••'}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
-                    />
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+                      AI API Key
+                      {isConfigured['OPENAI_API_KEY'] && !localValues['OPENAI_API_KEY'] && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded border border-green-500/30">Saved</span>
+                      )}
+                      {detectedProvider === 'anthropic' && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded border border-purple-500/30">Anthropic detected</span>
+                      )}
+                      {detectedProvider === 'openai' && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded border border-green-500/30">OpenAI detected</span>
+                      )}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPasswords['OPENAI_API_KEY'] ? 'text' : 'password'}
+                        value={localValues['OPENAI_API_KEY'] || ''}
+                        onChange={(e) => handleValueChange('OPENAI_API_KEY', e.target.value)}
+                        placeholder={isConfigured['OPENAI_API_KEY'] ? 'Leave blank to keep saved key' : 'sk-…  or  sk-ant-…'}
+                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 outline-none focus:border-amber-500/50 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility('OPENAI_API_KEY')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                      >
+                        {showPasswords['OPENAI_API_KEY'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {detectedProvider === 'anthropic'
+                        ? 'Anthropic key — get yours at console.anthropic.com → API Keys.'
+                        : detectedProvider === 'openai'
+                        ? 'OpenAI key — get yours at platform.openai.com → API Keys.'
+                        : 'Paste an OpenAI key (sk-…) or Anthropic key (sk-ant-…) — provider detected automatically.'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                    <div>
+                      <p className="text-sm font-medium text-gray-200">AI Email Analysis</p>
+                      <p className="text-xs text-gray-500">Automatically analyze emails for lead scoring</p>
+                    </div>
                     <button
-                      type="button"
-                      onClick={() => togglePasswordVisibility('OPENAI_API_KEY')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                      onClick={() => handleValueChange('AI_ANALYSIS_ENABLED', localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'false' : 'true')}
+                      className={`w-12 h-6 rounded-full transition-colors relative ${localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'bg-amber-500' : 'bg-gray-700'}`}
                     >
-                      {showPasswords['OPENAI_API_KEY'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'left-7' : 'left-1'}`} />
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Get your API key from platform.openai.com → API Keys.</p>
+
+                  <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                    <div>
+                      <p className="text-sm font-medium text-gray-200">AI Reply Suggestions</p>
+                      <p className="text-xs text-gray-500">Generate AI-powered reply suggestions</p>
+                    </div>
+                    <button
+                      onClick={() => handleValueChange('AI_SUGGESTIONS_ENABLED', localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'false' : 'true')}
+                      className={`w-12 h-6 rounded-full transition-colors relative ${localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'bg-amber-500' : 'bg-gray-700'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
-                  <div>
-                    <p className="text-sm font-medium text-gray-200">AI Email Analysis</p>
-                    <p className="text-xs text-gray-500">Automatically analyze emails for lead scoring</p>
-                  </div>
-                  <button
-                    onClick={() => handleValueChange('AI_ANALYSIS_ENABLED', localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'false' : 'true')}
-                    className={`w-12 h-6 rounded-full transition-colors relative ${localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'bg-amber-500' : 'bg-gray-700'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localValues['AI_ANALYSIS_ENABLED'] === 'true' ? 'left-7' : 'left-1'}`} />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
-                  <div>
-                    <p className="text-sm font-medium text-gray-200">AI Reply Suggestions</p>
-                    <p className="text-xs text-gray-500">Generate AI-powered reply suggestions</p>
-                  </div>
-                  <button
-                    onClick={() => handleValueChange('AI_SUGGESTIONS_ENABLED', localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'false' : 'true')}
-                    className={`w-12 h-6 rounded-full transition-colors relative ${localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'bg-amber-500' : 'bg-gray-700'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localValues['AI_SUGGESTIONS_ENABLED'] === 'true' ? 'left-7' : 'left-1'}`} />
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleTest('openai')}
+                  disabled={testing === 'openai'}
+                  className="mt-6 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                >
+                  {testing === 'openai' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  {detectedProvider === 'anthropic' ? 'Test Anthropic Key' : detectedProvider === 'openai' ? 'Test OpenAI Key' : 'Test AI Key'}
+                </button>
               </div>
-
-              <button
-                onClick={() => handleTest('openai')}
-                disabled={testing === 'openai'}
-                className="mt-6 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
-              >
-                {testing === 'openai' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Test OpenAI API Key
-              </button>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Integrations Settings */}
           {activeTab === 'integrations' && (
@@ -1648,6 +1691,7 @@ const Settings: React.FC = () => {
                           const fwd = forwardStatus[phone];
                           const isForwarding = fwd && fwd.command === 'forward_enable' && (fwd.status === 'done' || fwd.status === 'pending');
                           const isPending = fwd && fwd.status === 'pending';
+                          const isPolling = forwardPollPhone === phone;
                           const showForm = showForwardForm[phone];
                           const targetNum = forwardTarget[phone] || '';
                           const cleanTarget = targetNum.replace(/[^0-9+]/g, '');
@@ -1665,6 +1709,12 @@ const Settings: React.FC = () => {
                                   )}
                                   {fwd && fwd.command === 'forward_disable' && fwd.status === 'pending' && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-gray-600/40 text-gray-400">⏳ Disabling…</span>
+                                  )}
+                                  {isPolling && (
+                                    <span className="text-[10px] text-blue-400 flex items-center gap-1">
+                                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                      Auto-checking…
+                                    </span>
                                   )}
                                   {fwd && fwd.status === 'failed' && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-red-500/20 text-red-400" title={fwd.result_message}>Failed</span>
