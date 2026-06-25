@@ -595,13 +595,22 @@ const ContactProfile: React.FC = () => {
                 </>
               )}
               {contact.phone && (
-                <a
-                  href={`tel:${contact.phone}`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  <PhoneCall className="w-3.5 h-3.5" />
-                  Call
-                </a>
+                <>
+                  <a
+                    href={`tel:${contact.phone}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5" />
+                    Call
+                  </a>
+                  <button
+                    onClick={() => navigate(`/whatsapp?phone=${encodeURIComponent(contact.phone!)}&name=${encodeURIComponent(contact.name)}`)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 text-green-300 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    WhatsApp
+                  </button>
+                </>
               )}
               <button
                 onClick={() => navigate('/leads')}

@@ -128,7 +128,31 @@ async function getAIKey(): Promise<string> {
 
 async function callOpenAI(messages: { role: string; content: string }[], jsonMode = false): Promise<string> {
   const apiKey = await getAIKey();
-  if (!apiKey) throw new Error('No OpenAI API key configured');
+  if (!apiKey) throw new Error('No AI API key configured');
+
+  const isAnthropic = apiKey.startsWith('sk-ant-');
+
+  if (isAnthropic) {
+    const body: any = {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content })),
+    };
+    const systemMsg = messages.find(m => m.role === 'system');
+    if (systemMsg) body.system = systemMsg.content;
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    return data.content?.[0]?.text || '';
+  }
+
   const body: any = { model: 'gpt-4o-mini', messages };
   if (jsonMode) body.response_format = { type: 'json_object' };
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
