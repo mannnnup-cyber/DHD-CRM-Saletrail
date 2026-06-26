@@ -644,9 +644,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
+          // Select only display columns — raw is excluded (can be 70+ MB for active group chats)
           const { data: msgsDesc } = await supabase
             .from('whatsapp_messages')
-            .select('*')
+            .select('id, provider_message_id, chat_id, body, message_type, media_url, direction, created_at, sender_name, contact_id')
             .eq('chat_id', chatId)
             .order('created_at', { ascending: false })
             .limit(1000);
