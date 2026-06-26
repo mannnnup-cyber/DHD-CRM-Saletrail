@@ -84,7 +84,9 @@ const supaDb = {
 };
 
 // Evolution API configuration
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:3001';
+// Default to '' (not localhost) so the !EVOLUTION_API_URL guard returns the proper
+// "not configured" response instead of throwing a network error to localhost.
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
 // Helper to get a setting from Supabase with caching
@@ -2215,7 +2217,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.json({ success: false, error: 'Supabase not configured' });
         }
 
-        const { calls: gsmCalls, device: deviceModel, phone: repPhone, app_version: appVersion, sim_count: simCount } = req.body;
+        const { calls: gsmCalls, device: deviceModel, phone: repPhone, app_version: appVersion, sim_count: simCount, android_version: androidVersion, device_brand: deviceBrand } = req.body;
 
         if (!gsmCalls || !Array.isArray(gsmCalls)) {
           return res.status(400).json({ success: false, error: 'calls array required' });
@@ -2230,12 +2232,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           let deviceRepName: string | null = null;
           if (repPhone) {
             await supabase.from('devices').upsert({
-              phone_number:   repPhone,
-              device_model:   deviceModel || null,
-              is_active:      true,
-              last_heartbeat: new Date().toISOString(),
-              ...(appVersion ? { app_version: appVersion } : {}),
-              ...(simCount ? { sim_count: simCount } : {}),
+              phone_number:    repPhone,
+              device_model:    deviceModel || null,
+              is_active:       true,
+              last_heartbeat:  new Date().toISOString(),
+              ...(appVersion     ? { app_version:     appVersion }     : {}),
+              ...(simCount       ? { sim_count:        simCount }       : {}),
+              ...(androidVersion ? { android_version: androidVersion } : {}),
+              ...(deviceBrand    ? { device_brand:    deviceBrand }    : {}),
             }, { onConflict: 'phone_number' }).select();
 
             // Fetch the linked user_id and device_name so we can attribute calls

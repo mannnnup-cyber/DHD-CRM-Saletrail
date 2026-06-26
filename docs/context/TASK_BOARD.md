@@ -101,6 +101,9 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 | Context-aware empty state in call log | AI | Done | Different message for filter vs no data |
 | `api/recordings.ts` | AI | Done | Recording settings support |
 | `src/pages/RecordingSettings.tsx` | AI | Done | Call recording configuration |
+| Call recording end-to-end (companion) | AI | Done | RecordingUploadWorker + PhoneStateReceiver IDLE hook |
+| Android version + brand in sync payload | AI | Done | SyncWorker sends Build.MANUFACTURER, SDK_INT; API stores in devices |
+| `supabase/companion-device-info.sql` migration | Team | Planned | Run in Supabase: adds android_version, device_brand to devices |
 
 ---
 
@@ -137,5 +140,5 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 | Supabase RLS policies | Team | Planned | Define least-privilege table policies for production |
 | Facebook Business Verification | Product Owner | Planned | Required for Meta Cloud API WhatsApp migration |
 | Full Coaching Dashboard data integration | AI | Planned | Real coaching metrics and rep performance data |
-| Companion app version bump to 1.1.8 | AI | Planned | Update versionName in android/app/build.gradle |
+| Companion app version bump to 1.1.8 | AI | Done | versionCode 2, versionName 1.1.8 in android/app/build.gradle |
 | WooCommerce DHD custom order statuses sync | AI | Planned | DHD statuses not yet mapped; only pending/completed/cancelled synced |

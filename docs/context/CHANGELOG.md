@@ -4,6 +4,35 @@ Entries are newest first. Each entry covers a development session or sprint.
 
 ---
 
+## 2026-06-26
+
+### Companion App — Call Recording + Device Info (v1.1.8)
+
+**Call recording** was already skeletonised; completed the end-to-end flow:
+- `CallRecordingService.kt` — added `lastCallStartTimeMs` static so upload worker
+  can compute call duration without keeping the service alive.
+- `PhoneStateReceiver.kt` — on IDLE, captures file path + start time before sending
+  the STOP intent, then enqueues `RecordingUploadWorker` immediately.
+- `RecordingUploadWorker.kt` (new) — WorkManager `OneTimeWorkRequest` that POSTs
+  the .m4a file to `POST /api/recordings?action=uploadRecording` as multipart
+  form-data. Runs only when network is connected. Retries up to 3× with exponential
+  back-off. Deletes the local file on success.
+
+**Device info collection** added:
+- `SyncWorker.kt` — `device` field now sends `"${Build.MANUFACTURER} ${Build.MODEL}"`
+  instead of the literal string `"SyncWorker/Android"`. Also sends `android_version`
+  (SDK int as string) and `device_brand` (`Build.MANUFACTURER`).
+- `api/whatsapp.ts` `addGSMCall` — destructures `android_version` and `device_brand`
+  from the request body and writes them to the `devices` table upsert.
+- `supabase/companion-device-info.sql` — migration: adds `android_version` and
+  `device_brand` columns to `devices`; documents `rep_phone`, `rep_id`, `rep_name`
+  on `cellular_calls` with `ADD COLUMN IF NOT EXISTS`.
+
+**Version bump:** `versionCode 1 → 2`, `versionName "1.0" → "1.1.8"` in
+`android/app/build.gradle`.
+
+---
+
 ## 2026-06-25
 
 ### Tasks Page Runtime Fix

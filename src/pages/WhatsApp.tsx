@@ -174,6 +174,8 @@ export default function WhatsApp() {
   const lastMessageCountRef = useRef<number>(0);
   const chatMessagesCache = useRef<Record<string, Message[]>>({});
   const selectedChatRef = useRef<Chat | null>(null);
+  const prevChatsRef = useRef<Chat[]>([]);          // tracks unread counts between polls
+  const initialChatLoadDoneRef = useRef(false);     // skip notifications on first load
   const [avatars, setAvatars] = useState<Record<string, string>>({});
   const fetchingAvatars = useRef<Set<string>>(new Set());
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
@@ -467,10 +469,23 @@ export default function WhatsApp() {
           await loadMessages(selectedChatRef.current.id);
         }
       } else {
-        setSyncResult(`✗ Sync failed: ${data.error}`);
+        // Provider unreachable or not configured — inbox is already current from DB, don't alarm user
+        const isProviderUnavailable = !data.error ||
+          data.error.includes('fetch failed') ||
+          data.error.includes('not configured') ||
+          data.error.includes('Evolution API') ||
+          data.error.includes('ECONNREFUSED') ||
+          data.error.includes('timeout');
+        if (!isProviderUnavailable) {
+          setSyncResult(`✗ Sync error: ${data.error}`);
+        }
+        // Always refresh from DB even when provider is down
+        await loadChats();
       }
     } catch (err: any) {
-      setSyncResult(`✗ ${err.message}`);
+      // Network error reaching our own API — log but don't alarm user
+      console.warn('[syncNow] provider sync failed:', err.message);
+      await loadChats();
     }
     setSyncing2(false);
     setTimeout(() => setSyncResult(null), 5000);
@@ -536,12 +551,20 @@ export default function WhatsApp() {
         delete chatMessagesCache.current[chatId];
         await loadMessages(chatId);
       } else {
-        const err = `✗ ${data.error || 'Failed to pull history'}`;
-        setMoreHistoryResult(err);
-        setSyncResult(err);
+        // Provider unavailable — show a clear, non-technical message
+        const isProviderDown = !data.error ||
+          data.error.includes('fetch failed') ||
+          data.error.includes('not configured') ||
+          data.error.includes('Evolution API') ||
+          data.error.includes('ECONNREFUSED');
+        const msg = isProviderDown
+          ? `✗ Provider unreachable — showing messages saved in database`
+          : `✗ ${data.error || 'Failed to pull history'}`;
+        setMoreHistoryResult(msg);
+        setSyncResult(msg);
       }
     } catch (err) {
-      const msg = '✗ Network error pulling history';
+      const msg = '✗ Unable to reach provider — showing saved messages';
       setMoreHistoryResult(msg);
       setSyncResult(msg);
     }
@@ -846,6 +869,35 @@ export default function WhatsApp() {
     }, 30000);
     return () => clearInterval(interval);
   }, [loadChats]);
+
+  // Fire browser notifications when polling detects new unread messages.
+  // Skips the initial load so the first render doesn't flood notifications.
+  useEffect(() => {
+    if (!initialChatLoadDoneRef.current) {
+      if (chats.length > 0) {
+        initialChatLoadDoneRef.current = true;
+        prevChatsRef.current = chats;
+      }
+      return;
+    }
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      prevChatsRef.current = chats;
+      return;
+    }
+    chats.forEach(chat => {
+      const prev = prevChatsRef.current.find(c => c.id === chat.id);
+      const isOpen = selectedChatRef.current?.id === chat.id;
+      if (!isOpen && chat.unread > 0 && (!prev || chat.unread > prev.unread)) {
+        new Notification(`WhatsApp: ${chat.name}`, {
+          body: (chat.lastMessage || 'New message').slice(0, 100),
+          icon: '/favicon.ico',
+          tag: chat.id,
+          requireInteraction: false,
+        });
+      }
+    });
+    prevChatsRef.current = chats;
+  }, [chats]);
 
   useEffect(() => {
     if (selectedChat) loadMessages(selectedChat.id);
