@@ -756,6 +756,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             if (!r.ok) {
               console.error('[mediaProxy/msgId] Evolution API error:', r.status, await r.text().catch(() => ''));
+              // Fallback to stored CDN URL when Evolution API is unreachable
+              if (msgRow?.media_url) {
+                return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+              }
               return res.status(r.status).json({ error: `Evolution API returned ${r.status}` });
             }
 
@@ -764,6 +768,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const b64Raw: string = rData.base64 || rData.data?.base64 || '';
             if (!b64Raw) {
               console.error('[mediaProxy/msgId] No base64 in response:', JSON.stringify(rData).slice(0, 200));
+              // Fallback to stored CDN URL when Evolution API returns no data
+              if (msgRow?.media_url) {
+                return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+              }
               return res.status(404).json({ error: 'No media data in Evolution API response' });
             }
 
@@ -784,6 +792,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.send(Buffer.from(b64Data, 'base64'));
           } catch (err: any) {
             console.error('[mediaProxy/msgId] Error:', err.message);
+            // Fallback to stored CDN URL when Evolution API throws (network timeout, ECONNREFUSED, etc.)
+            if (msgRow?.media_url) {
+              return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+            }
             return res.status(500).json({ error: err.message });
           }
         }
