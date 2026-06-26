@@ -57,12 +57,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (!action && id) {
-    const [{ data: contact, error: ce }, { data: interactions }] = await Promise.all([
+    const [
+      { data: contact, error: ce },
+      { data: interactions },
+      { data: gsmCalls },
+      { data: wooOrders },
+    ] = await Promise.all([
       supabase.from('contacts').select('*').eq('id', id).single(),
       supabase.from('interactions').select('*').eq('contact_id', id).order('timestamp', { ascending: false }).limit(100),
+      supabase.from('cellular_calls').select('id, phone_number, direction, duration, started_at, rep_name, rep_phone, status').eq('contact_id', id).order('started_at', { ascending: false }).limit(50),
+      supabase.from('woo_orders').select('id, woo_order_id, status, total_amount, currency, customer_name, customer_email, customer_phone, line_items, created_at').eq('contact_id', id).order('created_at', { ascending: false }).limit(20),
     ]);
     if (ce) return res.status(404).json({ error: 'Contact not found' });
-    return res.status(200).json({ contact, interactions: interactions || [] });
+    return res.status(200).json({ contact, interactions: interactions || [], gsmCalls: gsmCalls || [], wooOrders: wooOrders || [] });
   }
 
   if (action === 'resolve' && req.method === 'POST') {
@@ -116,6 +123,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === 'enrichContacts' && req.method === 'POST') return enrichContacts(req, res);
   if (action === 'previewEnrichment' && req.method === 'POST') return previewEnrichment(req, res);
   if (action === 'enrichLead' && req.method === 'POST') return enrichLead(req, res);
+
+  // Search woo_orders for a contact by email/phone (unlinked orders)
+  if (action === 'searchOrders' && req.method === 'GET') {
+    const email = (req.query.email as string || '').trim();
+    const phone = (req.query.phone as string || '').trim();
+    if (!email && !phone) return res.status(400).json({ error: 'email or phone required' });
+    const filters: string[] = [];
+    if (email) filters.push(`customer_email.ilike.%${email}%`);
+    if (phone) {
+      const normalized = phone.replace(/\D/g, '').slice(-10);
+      filters.push(`customer_phone.ilike.%${normalized}%`);
+    }
+    const { data, error } = await supabase
+      .from('woo_orders')
+      .select('id, woo_order_id, status, total_amount, currency, customer_name, customer_email, customer_phone, line_items, created_at, contact_id')
+      .or(filters.join(','))
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ orders: data || [] });
+  }
+
+  // Link a woo_order to a contact
+  if (action === 'linkOrder' && id && req.method === 'POST') {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
+    const { error } = await supabase
+      .from('woo_orders')
+      .update({ contact_id: id })
+      .eq('id', orderId);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true });
+  }
 
   if (action === 'addNote' && id && req.method === 'POST') {
     const { content } = req.body;

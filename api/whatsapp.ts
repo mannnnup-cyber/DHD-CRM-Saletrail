@@ -644,12 +644,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         try {
-          const { data: msgs } = await supabase
+          const { data: msgsDesc } = await supabase
             .from('whatsapp_messages')
             .select('*')
             .eq('chat_id', chatId)
-            .order('created_at', { ascending: true })
+            .order('created_at', { ascending: false })
             .limit(1000);
+          const msgs = (msgsDesc || []).reverse();
 
           const formatted = (msgs || []).map((m: any) => ({
             id: m.provider_message_id || m.id,
@@ -693,7 +694,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
           const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
           if (!instanceName || !EVOLUTION_API_URL) {
-            return res.status(500).json({ error: 'Evolution API not configured' });
+            // Evolution API not configured — try serving via stored media_url directly
+            let { data: fallbackRow } = await supabase
+              .from('whatsapp_messages')
+              .select('media_url')
+              .eq('provider_message_id', msgId)
+              .maybeSingle();
+            if (!fallbackRow) {
+              const { data: fb2 } = await supabase
+                .from('whatsapp_messages')
+                .select('media_url')
+                .eq('id', msgId)
+                .maybeSingle();
+              fallbackRow = fb2;
+            }
+            if (fallbackRow?.media_url) {
+              return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(fallbackRow.media_url)}`);
+            }
+            return res.status(503).json({ error: 'Evolution API not configured and no cached media URL' });
           }
 
           // Load the raw message from DB (we need the full Baileys message object for decryption)

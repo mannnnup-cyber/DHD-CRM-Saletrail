@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Phone, Building2, ShoppingCart, MessageCircle,
   PhoneCall, FileText, RefreshCw, AlertCircle, Clock, TrendingUp,
-  DollarSign, Package, User, ExternalLink, ChevronDown, ChevronUp, Globe, X, Plus
+  DollarSign, Package, User, ExternalLink, ChevronDown, ChevronUp, Globe, X, Plus,
+  Search, Link2, ShoppingBag
 } from 'lucide-react';
 
 interface Contact {
@@ -38,6 +39,42 @@ interface Interaction {
   timestamp: string;
 }
 
+interface GsmCall {
+  id: string;
+  phone_number: string;
+  direction: string;
+  duration: number | null;
+  started_at: string;
+  rep_name: string | null;
+  rep_phone: string | null;
+  status: string | null;
+}
+
+interface WooOrder {
+  id: string;
+  woo_order_id: number;
+  status: string;
+  total_amount: number;
+  currency: string;
+  customer_name: string;
+  customer_email: string | null;
+  customer_phone: string | null;
+  line_items: any;
+  created_at: string;
+}
+
+// Unified timeline event combining all source types
+interface TimelineEvent {
+  id: string;
+  sourceType: 'interaction' | 'gsm_call' | 'woo_order';
+  type: string;
+  direction?: string;
+  subject?: string | null;
+  content?: string | null;
+  timestamp: string;
+  raw: Interaction | GsmCall | WooOrder;
+}
+
 const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
   EMAIL:    { icon: Mail,           color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/20',   label: 'Email' },
   WHATSAPP: { icon: MessageCircle,  color: 'text-green-400',  bg: 'bg-green-500/10 border-green-500/20', label: 'WhatsApp' },
@@ -45,6 +82,8 @@ const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; bg: 
   NOTE:     { icon: FileText,       color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20', label: 'Note' },
   SMS:      { icon: MessageCircle,  color: 'text-cyan-400',   bg: 'bg-cyan-500/10 border-cyan-500/20',   label: 'SMS' },
   MEETING:  { icon: User,           color: 'text-rose-400',   bg: 'bg-rose-500/10 border-rose-500/20',   label: 'Meeting' },
+  GSM_CALL: { icon: Phone,          color: 'text-amber-300',  bg: 'bg-amber-400/10 border-amber-400/20', label: 'GSM Call' },
+  ORDER:    { icon: ShoppingBag,    color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', label: 'Order' },
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -72,10 +111,16 @@ const ContactProfile: React.FC = () => {
   const navigate = useNavigate();
   const [contact, setContact] = useState<Contact | null>(null);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [gsmCalls, setGsmCalls] = useState<GsmCall[]>([]);
+  const [wooOrders, setWooOrders] = useState<WooOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAllInteractions, setShowAllInteractions] = useState(false);
-  const [timelineFilter, setTimelineFilter] = useState<'ALL' | 'WHATSAPP' | 'CALL' | 'EMAIL' | 'NOTE'>('ALL');
+  const [timelineFilter, setTimelineFilter] = useState<'ALL' | 'WHATSAPP' | 'CALL' | 'EMAIL' | 'NOTE' | 'GSM_CALL' | 'ORDER'>('ALL');
+  const [showOrderSearch, setShowOrderSearch] = useState(false);
+  const [orderSearchLoading, setOrderSearchLoading] = useState(false);
+  const [orderSearchResults, setOrderSearchResults] = useState<any[]>([]);
+  const [orderLinkingId, setOrderLinkingId] = useState<string | null>(null);
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
@@ -113,6 +158,8 @@ const ContactProfile: React.FC = () => {
       const json = await r.json();
       setContact(json.contact);
       setInteractions(json.interactions || []);
+      setGsmCalls(json.gsmCalls || []);
+      setWooOrders(json.wooOrders || []);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -443,10 +490,49 @@ const ContactProfile: React.FC = () => {
   };
 
   const statusColor = STATUS_COLORS[contact.status] || STATUS_COLORS.NEW;
-  const filteredInteractions = timelineFilter === 'ALL'
-    ? interactions
-    : interactions.filter(i => i.type === timelineFilter);
-  const visibleInteractions = showAllInteractions ? filteredInteractions : filteredInteractions.slice(0, 10);
+
+  // Build unified timeline from interactions + GSM calls + WooCommerce orders
+  const allEvents: TimelineEvent[] = [
+    ...interactions.map(i => ({
+      id: `int-${i.id}`,
+      sourceType: 'interaction' as const,
+      type: i.type,
+      direction: i.direction,
+      subject: i.subject,
+      content: i.content,
+      timestamp: i.timestamp,
+      raw: i,
+    })),
+    ...gsmCalls.map(c => ({
+      id: `gsm-${c.id}`,
+      sourceType: 'gsm_call' as const,
+      type: 'GSM_CALL',
+      direction: c.direction?.toUpperCase(),
+      subject: `${c.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call${c.duration ? ` (${Math.floor(c.duration / 60)}m ${c.duration % 60}s)` : ''}`,
+      content: c.rep_name ? `Rep: ${c.rep_name}` : undefined,
+      timestamp: c.started_at,
+      raw: c,
+    })),
+    ...wooOrders.map(o => {
+      const items = Array.isArray(o.line_items) ? o.line_items : [];
+      const itemSummary = items.slice(0, 2).map((li: any) => `${li.name || li.product_name || 'Item'} ×${li.quantity || 1}`).join(', ');
+      return {
+        id: `order-${o.id}`,
+        sourceType: 'woo_order' as const,
+        type: 'ORDER',
+        direction: undefined,
+        subject: `Order #${o.woo_order_id} — ${o.currency || 'USD'} ${parseFloat(String(o.total_amount || 0)).toFixed(2)}`,
+        content: itemSummary || o.status,
+        timestamp: o.created_at,
+        raw: o,
+      };
+    }),
+  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const filteredEvents = timelineFilter === 'ALL'
+    ? allEvents
+    : allEvents.filter(e => e.type === timelineFilter);
+  const visibleEvents = showAllInteractions ? filteredEvents : filteredEvents.slice(0, 10);
 
   const initials = contact.name
     .split(' ')
@@ -753,7 +839,7 @@ const ContactProfile: React.FC = () => {
             <Clock className="w-4 h-4 text-blue-400" />
             <span className="text-xs text-gray-500">Interactions</span>
           </div>
-          <p className="text-2xl font-bold text-white">{interactions.length}</p>
+          <p className="text-2xl font-bold text-white">{allEvents.length}</p>
         </div>
       </div>
 
@@ -870,8 +956,8 @@ const ContactProfile: React.FC = () => {
 
         {/* Filter tabs */}
         <div className="flex gap-1.5 px-5 py-2.5 border-b border-gray-800 overflow-x-auto scrollbar-hide">
-          {(['ALL', 'WHATSAPP', 'CALL', 'EMAIL', 'NOTE'] as const).map(f => {
-            const count = f === 'ALL' ? interactions.length : interactions.filter(i => i.type === f).length;
+          {(['ALL', 'WHATSAPP', 'CALL', 'EMAIL', 'GSM_CALL', 'ORDER', 'NOTE'] as const).map(f => {
+            const count = f === 'ALL' ? allEvents.length : allEvents.filter(e => e.type === f).length;
             if (f !== 'ALL' && count === 0) return null;
             const cfg = f === 'ALL' ? null : TYPE_CONFIG[f];
             const active = timelineFilter === f;
@@ -892,7 +978,7 @@ const ContactProfile: React.FC = () => {
           })}
         </div>
 
-        {filteredInteractions.length === 0 ? (
+        {filteredEvents.length === 0 ? (
           <div className="py-16 text-center text-gray-500">
             <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium text-sm">{timelineFilter === 'ALL' ? 'No activity yet' : `No ${TYPE_CONFIG[timelineFilter]?.label ?? timelineFilter} activity`}</p>
@@ -900,11 +986,11 @@ const ContactProfile: React.FC = () => {
           </div>
         ) : (
           <div className="divide-y divide-gray-800/40">
-            {visibleInteractions.map((interaction) => {
-              const cfg = TYPE_CONFIG[interaction.type] || TYPE_CONFIG.NOTE;
+            {visibleEvents.map((event) => {
+              const cfg = TYPE_CONFIG[event.type] || TYPE_CONFIG.NOTE;
               const Icon = cfg.icon;
               return (
-                <div key={interaction.id} className="flex gap-4 px-5 py-4 hover:bg-gray-800/20 transition-colors">
+                <div key={event.id} className="flex gap-4 px-5 py-4 hover:bg-gray-800/20 transition-colors">
                   {/* Icon */}
                   <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 mt-0.5 ${cfg.bg}`}>
                     <Icon className={`w-4 h-4 ${cfg.color}`} />
@@ -914,30 +1000,42 @@ const ContactProfile: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
+                      {event.direction && (
+                        <>
+                          <span className="text-xs text-gray-600">·</span>
+                          <span className="text-xs text-gray-500 capitalize">{event.direction.toLowerCase()}</span>
+                        </>
+                      )}
+                      {event.sourceType === 'woo_order' && (
+                        <>
+                          <span className="text-xs text-gray-600">·</span>
+                          <span className={`text-xs font-medium ${(event.raw as WooOrder).status === 'completed' ? 'text-green-400' : (event.raw as WooOrder).status === 'cancelled' ? 'text-red-400' : 'text-amber-400'}`}>
+                            {(event.raw as WooOrder).status}
+                          </span>
+                        </>
+                      )}
                       <span className="text-xs text-gray-600">·</span>
-                      <span className="text-xs text-gray-500 capitalize">{interaction.direction?.toLowerCase()}</span>
-                      <span className="text-xs text-gray-600">·</span>
-                      <span className="text-xs text-gray-500">{timeAgo(interaction.timestamp)}</span>
+                      <span className="text-xs text-gray-500">{timeAgo(event.timestamp)}</span>
                     </div>
-                    {interaction.subject && (
-                      <p className="text-sm font-medium text-white mt-0.5 truncate">{interaction.subject}</p>
+                    {event.subject && (
+                      <p className="text-sm font-medium text-white mt-0.5 truncate">{event.subject}</p>
                     )}
-                    {interaction.content && (
-                      <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{interaction.content}</p>
+                    {event.content && (
+                      <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{event.content}</p>
                     )}
                   </div>
 
                   {/* Timestamp */}
                   <div className="text-xs text-gray-600 flex-shrink-0 text-right hidden sm:block">
-                    {new Date(interaction.timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                    {new Date(event.timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
                     <br />
-                    {new Date(interaction.timestamp).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(event.timestamp).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
               );
             })}
 
-            {filteredInteractions.length > 10 && (
+            {filteredEvents.length > 10 && (
               <button
                 onClick={() => setShowAllInteractions(!showAllInteractions)}
                 className="w-full flex items-center justify-center gap-2 py-3 text-sm text-gray-400 hover:text-white hover:bg-gray-800/30 transition-colors"
@@ -945,7 +1043,7 @@ const ContactProfile: React.FC = () => {
                 {showAllInteractions ? (
                   <><ChevronUp className="w-4 h-4" /> Show less</>
                 ) : (
-                  <><ChevronDown className="w-4 h-4" /> Show {filteredInteractions.length - 10} more</>
+                  <><ChevronDown className="w-4 h-4" /> Show {filteredEvents.length - 10} more</>
                 )}
               </button>
             )}
@@ -978,6 +1076,118 @@ const ContactProfile: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* WooCommerce Order Search/Link */}
+      {(contact.email || contact.phone) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4 text-emerald-400" />
+              <span className="text-sm font-semibold text-white">WooCommerce Orders</span>
+              {wooOrders.length > 0 && (
+                <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">{wooOrders.length} linked</span>
+              )}
+            </div>
+            <button
+              onClick={async () => {
+                setShowOrderSearch(v => !v);
+                if (!showOrderSearch && orderSearchResults.length === 0) {
+                  setOrderSearchLoading(true);
+                  try {
+                    const params = new URLSearchParams();
+                    if (contact.email) params.set('email', contact.email);
+                    if (contact.phone) params.set('phone', contact.phone);
+                    const r = await fetch(`/api/contacts?action=searchOrders&${params}`);
+                    const data = await r.json();
+                    setOrderSearchResults(data.orders || []);
+                  } catch (_) {}
+                  finally { setOrderSearchLoading(false); }
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-xs font-medium transition-colors border border-emerald-500/20"
+            >
+              <Search className="w-3.5 h-3.5" />
+              Find Orders
+            </button>
+          </div>
+
+          {wooOrders.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {wooOrders.map(o => {
+                const items = Array.isArray(o.line_items) ? o.line_items : [];
+                return (
+                  <div key={o.id} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white">Order #{o.woo_order_id}</p>
+                      <p className="text-xs text-gray-400 truncate">{items.slice(0,2).map((li: any) => li.name || li.product_name).join(', ') || o.status}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-3">
+                      <p className="text-sm font-semibold text-white">{o.currency} {parseFloat(String(o.total_amount || 0)).toFixed(2)}</p>
+                      <span className={`text-xs ${o.status === 'completed' ? 'text-green-400' : o.status === 'cancelled' ? 'text-red-400' : 'text-amber-400'}`}>{o.status}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {showOrderSearch && (
+            <div className="border-t border-gray-800 pt-3">
+              <p className="text-xs text-gray-500 mb-2">
+                {orderSearchLoading ? 'Searching...' : `${orderSearchResults.length} order${orderSearchResults.length !== 1 ? 's' : ''} found matching ${contact.email || contact.phone}`}
+              </p>
+              {!orderSearchLoading && orderSearchResults.length > 0 && (
+                <div className="space-y-2">
+                  {orderSearchResults.filter(o => o.contact_id !== id).map(o => {
+                    const items = Array.isArray(o.line_items) ? o.line_items : [];
+                    return (
+                      <div key={o.id} className="flex items-center gap-3 bg-gray-800/30 rounded-lg px-3 py-2.5 border border-gray-700/50">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white">Order #{o.woo_order_id}</p>
+                          <p className="text-xs text-gray-400">{new Date(o.created_at).toLocaleDateString()} · {o.currency} {parseFloat(String(o.total_amount || 0)).toFixed(2)}</p>
+                          <p className="text-xs text-gray-500 truncate">{items.slice(0,2).map((li: any) => li.name || li.product_name).join(', ')}</p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {o.contact_id ? (
+                            <span className="text-xs text-gray-500">Already linked</span>
+                          ) : (
+                            <button
+                              disabled={orderLinkingId === o.id}
+                              onClick={async () => {
+                                setOrderLinkingId(o.id);
+                                try {
+                                  await fetch(`/api/contacts?action=linkOrder&id=${id}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ orderId: o.id }),
+                                  });
+                                  await load();
+                                  setOrderSearchResults(prev => prev.map(r => r.id === o.id ? { ...r, contact_id: id } : r));
+                                } catch (_) {}
+                                finally { setOrderLinkingId(null); }
+                              }}
+                              className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                            >
+                              <Link2 className="w-3 h-3" />
+                              {orderLinkingId === o.id ? 'Linking...' : 'Link'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {orderSearchResults.every(o => o.contact_id === id) && (
+                    <p className="text-xs text-gray-500 text-center py-2">All matching orders are already linked.</p>
+                  )}
+                </div>
+              )}
+              {!orderSearchLoading && orderSearchResults.length === 0 && (
+                <p className="text-xs text-gray-500 py-2">No unlinked orders found for this contact's email or phone.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Organization Link Modal */}
       {showOrgModal && (
