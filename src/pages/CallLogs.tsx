@@ -67,14 +67,18 @@ const formatDateTime = (ts: string) => {
   };
 };
 
+const BUCKET_ORDER = ['Today', 'Yesterday', 'This Week', 'Earlier'];
+
 const dayLabel = (ts: string): string => {
   const d = new Date(ts);
   const now = new Date();
   const today = new Date(now); today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
   if (d >= today) return 'Today';
   if (d >= yesterday) return 'Yesterday';
-  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  if (d >= weekAgo) return 'This Week';
+  return 'Earlier';
 };
 
 const gsmIcon = (type: string) => {
@@ -223,15 +227,16 @@ const CallLogs: React.FC = () => {
   // ─── Date grouping helpers ─────────────────────────────────────────────────
 
   const groupByDay = <T extends { calledAt?: string; timestamp?: string }>(items: T[]) => {
-    const groups: { label: string; items: T[] }[] = [];
-    const seen: Record<string, number> = {};
+    const map: Record<string, T[]> = {};
     for (const item of items) {
       const ts  = item.calledAt || item.timestamp || '';
-      const lbl = ts ? dayLabel(ts) : 'Unknown';
-      if (seen[lbl] === undefined) { seen[lbl] = groups.length; groups.push({ label: lbl, items: [] }); }
-      groups[seen[lbl]].items.push(item);
+      const lbl = ts ? dayLabel(ts) : 'Earlier';
+      if (!map[lbl]) map[lbl] = [];
+      map[lbl].push(item);
     }
-    return groups;
+    return BUCKET_ORDER
+      .filter(b => map[b])
+      .map(b => ({ label: b, items: map[b] }));
   };
 
   const gsmGroups = groupByDay(filteredGSM);
@@ -439,7 +444,11 @@ const CallLogs: React.FC = () => {
                 <div key={group.label} className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
                   {/* Day header */}
                   <div className="px-4 py-2.5 bg-gray-800/50 border-b border-gray-800 flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{group.label}</span>
+                    <span className={`text-xs font-bold tracking-wider ${
+                      group.label === 'Today' ? 'text-amber-400' :
+                      group.label === 'Yesterday' ? 'text-blue-400' :
+                      'text-gray-400 uppercase'
+                    }`}>{group.label}</span>
                     <span className="text-xs text-gray-600">· {group.items.length} call{group.items.length !== 1 ? 's' : ''}</span>
                   </div>
                   <div className="overflow-x-auto">
@@ -457,11 +466,17 @@ const CallLogs: React.FC = () => {
                         {group.items.map(call => {
                           const { time } = formatDateTime(call.calledAt);
                           const waNum = call.phoneNormalized || call.phoneNumber.replace(/\D/g, '');
+                          const isMissedGSM = call.callType === 'MISSED';
+                          const dirArrow = call.callType === 'INCOMING' ? '↙' : call.callType === 'OUTGOING' ? '↗' : '✕';
                           return (
-                            <tr key={call.id} className="hover:bg-gray-800/30 transition-colors">
+                            <tr key={call.id} className={`transition-colors ${isMissedGSM ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-gray-800/30'}`}>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
-                                  {gsmIcon(call.callType)}
+                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                    call.callType === 'INCOMING' ? 'bg-green-500/20 text-green-400'
+                                    : call.callType === 'OUTGOING' ? 'bg-blue-500/20 text-blue-400'
+                                    : 'bg-red-500/20 text-red-400'
+                                  }`}>{dirArrow}</span>
                                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${gsmBadge(call.callType)}`}>
                                     {call.callType.charAt(0) + call.callType.slice(1).toLowerCase()}
                                   </span>
@@ -605,7 +620,11 @@ const CallLogs: React.FC = () => {
                 <div key={group.label} className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
                   {/* Day header */}
                   <div className="px-4 py-2.5 bg-gray-800/50 border-b border-gray-800 flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{group.label}</span>
+                    <span className={`text-xs font-bold tracking-wider ${
+                      group.label === 'Today' ? 'text-amber-400' :
+                      group.label === 'Yesterday' ? 'text-blue-400' :
+                      'text-gray-400 uppercase'
+                    }`}>{group.label}</span>
                     <span className="text-xs text-gray-600">· {group.items.length} call{group.items.length !== 1 ? 's' : ''}</span>
                   </div>
                   <div className="overflow-x-auto">
@@ -624,11 +643,15 @@ const CallLogs: React.FC = () => {
                           const { time } = formatDateTime(call.timestamp);
                           const isMissed = call.status === 'missed' || call.status === 'rejected';
                           const isVideo  = call.callType === 'video';
+                          const waDir = (call as any).direction;
+                          const waDirArrow = isMissed ? '✕' : waDir === 'outbound' ? '↗' : '↙';
                           return (
-                            <tr key={call.id} className="hover:bg-gray-800/30 transition-colors">
+                            <tr key={call.id} className={`transition-colors ${isMissed ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-gray-800/30'}`}>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
-                                  <MessageSquare className={`w-4 h-4 ${isMissed ? 'text-red-400' : 'text-emerald-400'}`} />
+                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                    isMissed ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
+                                  }`}>{waDirArrow}</span>
                                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                                     isMissed ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'
                                   }`}>
