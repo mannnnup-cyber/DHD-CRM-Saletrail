@@ -18,6 +18,7 @@ interface GSMCall {
   deviceModel: string | null;
   rep_phone: string | null;
   rep_name: string | null;
+  isInternal: boolean;
 }
 
 interface GSMStats {
@@ -28,6 +29,7 @@ interface GSMStats {
   avgDuration: number;
   totalDuration: number;
   missedRate: number;
+  internalCount: number;
 }
 
 interface RepOption {
@@ -319,8 +321,8 @@ const CallLogs: React.FC = () => {
         <>
           {/* Accurate stats from API */}
           {gsmStats && (
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-              <StatCard label="Total" value={gsmStats.total} color="white" />
+            <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
+              <StatCard label="Customer Calls" value={gsmStats.total} color="white" />
               <StatCard label="Incoming" value={gsmStats.incoming} color="green" icon={<PhoneIncoming className="w-3.5 h-3.5" />} />
               <StatCard label="Outgoing" value={gsmStats.outgoing} color="blue"  icon={<PhoneOutgoing className="w-3.5 h-3.5" />} />
               <StatCard label="Missed"   value={gsmStats.missed}   color="red"   icon={<PhoneMissed   className="w-3.5 h-3.5" />} />
@@ -338,6 +340,15 @@ const CallLogs: React.FC = () => {
                 color="purple"
                 icon={<Clock className="w-3.5 h-3.5" />}
               />
+              {gsmStats.internalCount > 0 && (
+                <StatCard
+                  label="Internal"
+                  value={gsmStats.internalCount}
+                  color="gray"
+                  sub="rep-to-rep calls"
+                  icon={<Phone className="w-3.5 h-3.5" />}
+                />
+              )}
             </div>
           )}
 
@@ -485,19 +496,29 @@ const CallLogs: React.FC = () => {
                           const { smartTime } = formatDateTime(call.calledAt);
                           const waNum = call.phoneNormalized || call.phoneNumber.replace(/\D/g, '');
                           const isMissedGSM = call.callType === 'MISSED';
-                          const dirArrow = call.callType === 'INCOMING' ? '↙' : call.callType === 'OUTGOING' ? '↗' : '✕';
+                          const dirArrow = call.isInternal ? '⇄' : call.callType === 'INCOMING' ? '↙' : call.callType === 'OUTGOING' ? '↗' : '✕';
+                          const rowClass = call.isInternal
+                            ? 'bg-purple-500/5 hover:bg-purple-500/10'
+                            : isMissedGSM
+                            ? 'bg-red-500/5 hover:bg-red-500/10'
+                            : 'hover:bg-gray-800/30';
                           return (
-                            <tr key={call.id} className={`transition-colors ${isMissedGSM ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-gray-800/30'}`}>
+                            <tr key={call.id} className={`transition-colors ${rowClass}`}>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                    call.callType === 'INCOMING' ? 'bg-green-500/20 text-green-400'
+                                    call.isInternal ? 'bg-purple-500/20 text-purple-400'
+                                    : call.callType === 'INCOMING' ? 'bg-green-500/20 text-green-400'
                                     : call.callType === 'OUTGOING' ? 'bg-blue-500/20 text-blue-400'
                                     : 'bg-red-500/20 text-red-400'
                                   }`}>{dirArrow}</span>
-                                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${gsmBadge(call.callType)}`}>
-                                    {call.callType.charAt(0) + call.callType.slice(1).toLowerCase()}
-                                  </span>
+                                  {call.isInternal ? (
+                                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-500/10 text-purple-400">Internal</span>
+                                  ) : (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${gsmBadge(call.callType)}`}>
+                                      {call.callType.charAt(0) + call.callType.slice(1).toLowerCase()}
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-4 py-3">

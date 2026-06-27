@@ -2608,6 +2608,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : null;
 
         try {
+          // Fetch registered device phone numbers for internal call detection
+          const { data: deviceRows } = await supabase
+            .from('devices')
+            .select('phone_number');
+          const devicePhones = new Set(
+            (deviceRows || []).map((d: any) => String(d.phone_number).replace(/\D/g, ''))
+          );
+
           // Build paginated data query
           let query = supabase
             .from('cellular_calls')
@@ -2626,26 +2634,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.json({ success: false, error: error.message });
           }
 
+          // Tag each call as internal if the other party is a registered device
+          const taggedCalls = (calls || []).map((c: any) => {
+            const norm = String(c.phone_normalized || c.phone_number).replace(/\D/g, '');
+            const isInternal = devicePhones.has(norm);
+            return { ...c, isInternal };
+          });
+
           // Accurate stats — separate count queries unaffected by pagination
-          let statsBase = supabase.from('cellular_calls').select('call_type, duration_seconds', { count: 'exact' });
+          let statsBase = supabase.from('cellular_calls').select('call_type, duration_seconds, phone_normalized, phone_number', { count: 'exact' });
           if (repFilter && repFilter !== 'all') statsBase = statsBase.eq('rep_phone', repFilter);
           if (dateFrom) statsBase = statsBase.gte('called_at', dateFrom);
           if (dateTo)   statsBase = statsBase.lt('called_at', dateTo);
           const { data: statsRows } = await statsBase;
 
           const statsData = statsRows || [];
-          const statsTotal    = statsData.length;
-          const statsIncoming = statsData.filter((r: any) => r.call_type === 'INCOMING').length;
-          const statsOutgoing = statsData.filter((r: any) => r.call_type === 'OUTGOING').length;
-          const statsMissed   = statsData.filter((r: any) => r.call_type === 'MISSED').length;
-          const answered      = statsData.filter((r: any) => (r.duration_seconds || 0) > 0);
+          // Customer stats exclude internal (rep-to-rep) calls
+          const customerData  = statsData.filter((r: any) => !devicePhones.has(String(r.phone_normalized || r.phone_number).replace(/\D/g, '')));
+          const internalCount = statsData.length - customerData.length;
+
+          const statsTotal    = customerData.length;
+          const statsIncoming = customerData.filter((r: any) => r.call_type === 'INCOMING').length;
+          const statsOutgoing = customerData.filter((r: any) => r.call_type === 'OUTGOING').length;
+          const statsMissed   = customerData.filter((r: any) => r.call_type === 'MISSED').length;
+          const answered      = customerData.filter((r: any) => (r.duration_seconds || 0) > 0);
           const totalDuration = answered.reduce((s: number, r: any) => s + (r.duration_seconds || 0), 0);
           const avgDuration   = answered.length > 0 ? Math.round(totalDuration / answered.length) : 0;
           const missedRate    = statsTotal > 0 ? Math.round((statsMissed / statsTotal) * 100) : 0;
 
           return res.json({
             success: true,
-            calls: (calls || []).map((c: any) => ({
+            calls: taggedCalls.map((c: any) => ({
               id: c.id,
               phoneNumber: c.phone_number,
               phoneNormalized: c.phone_normalized,
@@ -2657,6 +2676,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               deviceModel: c.device_model,
               rep_phone: c.rep_phone || null,
               rep_name: c.rep_name  || null,
+              isInternal: c.isInternal,
             })),
             total: count || 0,
             stats: {
@@ -2667,6 +2687,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               avgDuration,
               totalDuration,
               missedRate,
+              internalCount,
             },
             offset,
             limit
