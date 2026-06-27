@@ -61,9 +61,27 @@ const formatDuration = (seconds: number) => {
 
 const formatDateTime = (ts: string) => {
   const d = new Date(ts);
+  const now = new Date();
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  let smartTime: string;
+  if (d >= today) {
+    smartTime = `Today ${timeStr}`;
+  } else if (d >= yesterday) {
+    smartTime = `Yesterday ${timeStr}`;
+  } else if (d >= weekAgo) {
+    smartTime = `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${timeStr}`;
+  } else {
+    smartTime = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   return {
     date: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
-    time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    time: timeStr,
+    smartTime,
   };
 };
 
@@ -464,7 +482,7 @@ const CallLogs: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-gray-800/60">
                         {group.items.map(call => {
-                          const { time } = formatDateTime(call.calledAt);
+                          const { smartTime } = formatDateTime(call.calledAt);
                           const waNum = call.phoneNormalized || call.phoneNumber.replace(/\D/g, '');
                           const isMissedGSM = call.callType === 'MISSED';
                           const dirArrow = call.callType === 'INCOMING' ? '↙' : call.callType === 'OUTGOING' ? '↗' : '✕';
@@ -515,7 +533,7 @@ const CallLogs: React.FC = () => {
                                   <span className="text-red-400">—</span>
                                 ) : formatDuration(call.duration)}
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-400">{time}</td>
+                              <td className="px-4 py-3 text-sm text-gray-400">{smartTime}</td>
                               <td className="px-4 py-3 text-xs text-gray-500">{call.deviceModel || '—'}</td>
                               <td className="px-4 py-3">
                                 {waNum && (
@@ -640,7 +658,7 @@ const CallLogs: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-gray-800/60">
                         {group.items.map(call => {
-                          const { time } = formatDateTime(call.timestamp);
+                          const { smartTime } = formatDateTime(call.timestamp);
                           const isMissed = call.status === 'missed' || call.status === 'rejected';
                           const isVideo  = call.callType === 'video';
                           const waDir = (call as any).direction;
@@ -682,7 +700,7 @@ const CallLogs: React.FC = () => {
                                   {call.status}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-400">{time}</td>
+                              <td className="px-4 py-3 text-sm text-gray-400">{smartTime}</td>
                               <td className="px-4 py-3">
                                 {call.chatId && (
                                   <button
