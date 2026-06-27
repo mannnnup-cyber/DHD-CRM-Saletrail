@@ -458,8 +458,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
         const webhookUrl = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/whatsapp`;
 
+        // Always include last message timestamp so UI can detect webhook gaps
+        const { data: lastMsgRow } = await supabase
+          .from('whatsapp_messages')
+          .select('created_at')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        const lastMessageAt = lastMsgRow?.created_at || null;
+
         if (!instanceName || !EVOLUTION_API_URL) {
-          return res.json({ success: true, configured: false, url: '', message: 'Not configured' });
+          return res.json({ success: true, configured: false, url: '', message: 'Not configured', lastMessageAt });
         }
 
         try {
@@ -474,12 +483,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               success: true,
               configured: !!currentUrl,
               url: currentUrl,
-              webhookUrl
+              webhookUrl,
+              lastMessageAt
             });
           }
         } catch (e) { /* ignore */ }
 
-        return res.json({ success: true, configured: false, url: '', webhookUrl });
+        return res.json({ success: true, configured: false, url: '', webhookUrl, lastMessageAt });
       }
 
       case 'setWebhook': {

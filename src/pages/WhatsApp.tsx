@@ -152,7 +152,7 @@ export default function WhatsApp() {
   const [callTimer, setCallTimer] = useState(0);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [connected, setConnected] = useState<boolean | null>(null);
-  const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string } | null>(null);
+  const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string; lastMessageAt?: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
@@ -292,13 +292,14 @@ export default function WhatsApp() {
       if (data.success) {
         setWebhookStatus({
           configured: data.configured || false,
-          url: data.url || ''
+          url: data.url || '',
+          lastMessageAt: data.lastMessageAt || null
         });
       } else {
-        setWebhookStatus({ configured: false, url: '' });
+        setWebhookStatus({ configured: false, url: '', lastMessageAt: null });
       }
     } catch {
-      setWebhookStatus({ configured: false, url: '' });
+      setWebhookStatus({ configured: false, url: '', lastMessageAt: null });
     }
   }, []);
 
@@ -518,7 +519,14 @@ export default function WhatsApp() {
       const data = await res.json();
       if (data.success) {
         setWebhookConfigResult('✓ Webhook configured! MESSAGES_UPSERT, CONNECTION_UPDATE, and CALL events are now enabled.');
-        setWebhookStatus({ configured: true, url: webhookUrl });
+        // Update webhookStatus so gap banner disappears
+        setWebhookStatus(prev => ({ ...prev, configured: true, url: webhookUrl, lastMessageAt: new Date().toISOString() }));
+        // Trigger a sync to pull any messages missed while webhook was down
+        fetch('/api/whatsapp?action=syncEvolutionMessages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 200 })
+        }).catch(() => {});
       } else {
         setWebhookConfigResult(`✗ ${data.error || 'Failed to configure webhook'}`);
       }
@@ -1367,6 +1375,29 @@ export default function WhatsApp() {
               <span><strong>WhatsApp disconnected</strong> — check that your Evolution API instance is running and the business phone is linked. Messages sent to your number are not being received.</span>
             </div>
           )}
+          {/* Webhook gap banner — shown when no messages received in >2 hours */}
+          {(() => {
+            const last = webhookStatus?.lastMessageAt;
+            if (!last) return null;
+            const gapMs = Date.now() - new Date(last).getTime();
+            if (gapMs < 2 * 60 * 60 * 1000) return null;
+            const hours = Math.floor(gapMs / 3600000);
+            return (
+              <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-300 text-sm">
+                <WifiOff className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                <span className="flex-1">
+                  <strong>No messages received in {hours}h</strong> — the webhook may have disconnected when the server restarted.
+                </span>
+                <button
+                  onClick={autoConfigureWebhook}
+                  disabled={configuringWebhook}
+                  className="flex-shrink-0 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-semibold rounded-lg transition-colors"
+                >
+                  {configuringWebhook ? '⟳ Reconnecting…' : '⚡ Reconnect'}
+                </button>
+              </div>
+            );
+          })()}
           <div className="flex-1 flex gap-4 min-h-0" style={{ height: 'calc(100vh - 340px)' }}>
           {/* Chat List */}
           <div className="w-80 flex-shrink-0 flex flex-col bg-gray-800/40 rounded-xl border border-gray-700/50 overflow-hidden">
