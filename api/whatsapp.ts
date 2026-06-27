@@ -149,6 +149,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // Shadow module-level env-var constants with DB-backed values so the
+  // Evolution API URL/key can be updated from the Settings UI without
+  // touching Vercel env vars. Falls back to env var if not in app_settings.
+  // eslint-disable-next-line @typescript-eslint/no-shadow
+  const EVOLUTION_API_URL = await getSetting('EVOLUTION_API_URL', process.env.EVOLUTION_API_URL || '');
+  // eslint-disable-next-line @typescript-eslint/no-shadow
+  const EVOLUTION_API_KEY = await getSetting('EVOLUTION_API_KEY', process.env.EVOLUTION_API_KEY || '');
+
   // Handle webhook POST from WhatsApp providers (Green API or Evolution API)
   if (req.method === 'POST' && !req.query.action) {
     const body = req.body;
@@ -538,6 +546,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.error('[Evolution setWebhook] Error:', err.message);
           return res.json({ success: false, error: err.message });
         }
+      }
+
+      case 'saveEvolutionConfig': {
+        // POST: save EVOLUTION_API_URL and/or EVOLUTION_API_KEY to app_settings
+        // Allows updating without touching Vercel env vars
+        const { apiUrl, apiKey } = req.body;
+        if (!apiUrl) return res.status(400).json({ success: false, error: 'apiUrl is required' });
+
+        const savedUrl = await setSetting('EVOLUTION_API_URL', apiUrl.trim());
+        const savedKey = apiKey !== undefined ? await setSetting('EVOLUTION_API_KEY', apiKey.trim()) : true;
+
+        if (!savedUrl) return res.status(500).json({ success: false, error: 'Failed to save API URL' });
+        return res.json({
+          success: true,
+          message: 'Evolution API config saved. Click Auto-Configure Webhook to re-register.'
+        });
+      }
+
+      case 'getEvolutionConfig': {
+        // GET: return current effective Evolution API config (URL only, key masked)
+        const url = await getSetting('EVOLUTION_API_URL', process.env.EVOLUTION_API_URL || '');
+        const key = await getSetting('EVOLUTION_API_KEY', process.env.EVOLUTION_API_KEY || '');
+        return res.json({
+          success: true,
+          apiUrl: url,
+          apiKeySet: !!key,
+          apiKeyMasked: key ? key.slice(0, 4) + '…' + key.slice(-4) : '',
+          source: url === (process.env.EVOLUTION_API_URL || '') ? 'env' : 'database'
+        });
       }
 
       case 'chats': {

@@ -208,6 +208,11 @@ export default function WhatsApp() {
   const [msgReactions, setMsgReactions] = useState<Record<string, string>>({});
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [webhookConfigResult, setWebhookConfigResult] = useState<string | null>(null);
+  const [evolutionApiUrl, setEvolutionApiUrl] = useState('');
+  const [evolutionApiKey, setEvolutionApiKey] = useState('');
+  const [evolutionConfigSource, setEvolutionConfigSource] = useState<'env' | 'database' | ''>('');
+  const [savingEvolutionConfig, setSavingEvolutionConfig] = useState(false);
+  const [evolutionConfigResult, setEvolutionConfigResult] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([UNASSIGNED]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingWATarget = useRef<{ phone: string; name: string } | null>(null);
@@ -302,6 +307,47 @@ export default function WhatsApp() {
       setWebhookStatus({ configured: false, url: '', lastMessageAt: null });
     }
   }, []);
+
+  // Load current Evolution API config (URL + key) from backend
+  const loadEvolutionConfig = useCallback(async () => {
+    try {
+      const r = await fetch('/api/whatsapp?action=getEvolutionConfig');
+      const data = await r.json();
+      if (data.success) {
+        setEvolutionApiUrl(data.apiUrl || '');
+        setEvolutionApiKey('');  // start blank — user fills in new key if needed
+        setEvolutionConfigSource(data.source || '');
+      }
+    } catch { /* silent */ }
+  }, []);
+
+  // Save updated Evolution API config to DB
+  const saveEvolutionConfig = useCallback(async () => {
+    if (!evolutionApiUrl.trim()) return;
+    setSavingEvolutionConfig(true);
+    setEvolutionConfigResult(null);
+    try {
+      const res = await fetch('/api/whatsapp?action=saveEvolutionConfig', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiUrl: evolutionApiUrl.trim(),
+          ...(evolutionApiKey.trim() && { apiKey: evolutionApiKey.trim() })
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEvolutionConfigResult('✓ Saved. Click Auto-Configure Webhook to reconnect.');
+        setEvolutionConfigSource('database');
+      } else {
+        setEvolutionConfigResult(`✗ ${data.error}`);
+      }
+    } catch (err: any) {
+      setEvolutionConfigResult(`✗ ${err.message}`);
+    }
+    setSavingEvolutionConfig(false);
+    setTimeout(() => setEvolutionConfigResult(null), 8000);
+  }, [evolutionApiUrl, evolutionApiKey]);
 
   // Load chats from backend API (database-backed, Evolution API)
   const loadChats = useCallback(async () => {
@@ -862,12 +908,13 @@ export default function WhatsApp() {
     checkStatus();
     checkWebhookStatus();
     loadChats();
+    loadEvolutionConfig();
     // Silently sync contact names from Evolution API once on mount
     // so @lid JIDs resolve to real names on next chat load
     fetch('/api/whatsapp?action=syncContactNames', { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: '{}' })
       .catch(() => {}); // fire-and-forget, non-blocking
-  }, [checkStatus, checkWebhookStatus, loadChats]);
+  }, [checkStatus, checkWebhookStatus, loadChats, loadEvolutionConfig]);
 
   // Poll chat LIST every 30 seconds to surface new conversations (quiet — no cache clear)
   // New messages inside open chats arrive via Supabase real-time subscription, not polling
@@ -2501,8 +2548,52 @@ export default function WhatsApp() {
             </div>
           </div>
 
-          {/* Webhook Status */}
-          {connected && (
+          {/* Evolution API Server URL — editable so the URL can be updated when Railway restarts */}
+          <div className="rounded-xl p-4 border bg-gray-800/40 border-gray-700/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-white">Evolution API Server</p>
+              {evolutionConfigSource === 'database' && (
+                <span className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">Saved in DB</span>
+              )}
+              {evolutionConfigSource === 'env' && (
+                <span className="text-xs text-gray-400 bg-gray-700/50 border border-gray-600/30 px-2 py-0.5 rounded">From env vars</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400">
+              If Evolution API moved (e.g. Railway restart changed the URL/port), update it here — no Vercel dashboard needed.
+            </p>
+            <div className="space-y-2">
+              <input
+                type="url"
+                value={evolutionApiUrl}
+                onChange={e => setEvolutionApiUrl(e.target.value)}
+                placeholder="http://your-server:port or https://..."
+                className="w-full px-3 py-2 bg-gray-900/60 border border-gray-600/50 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-green-500/50"
+              />
+              <input
+                type="password"
+                value={evolutionApiKey}
+                onChange={e => setEvolutionApiKey(e.target.value)}
+                placeholder="API Key (leave blank to keep existing)"
+                className="w-full px-3 py-2 bg-gray-900/60 border border-gray-600/50 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-green-500/50"
+              />
+              <button
+                onClick={saveEvolutionConfig}
+                disabled={savingEvolutionConfig || !evolutionApiUrl.trim()}
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {savingEvolutionConfig ? '⟳ Saving…' : 'Save Server URL'}
+              </button>
+              {evolutionConfigResult && (
+                <p className={`text-xs px-1 ${evolutionConfigResult.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>
+                  {evolutionConfigResult}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Webhook Status — always shown (not gated on connected) so user can reconnect */}
+          {(
             <div className={`rounded-xl p-4 border ${
               webhookStatus?.configured ? 'bg-green-500/10 border-green-500/30' : 'bg-amber-500/10 border-amber-500/30'
             }`}>
