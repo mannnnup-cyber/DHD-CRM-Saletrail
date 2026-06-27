@@ -23,6 +23,35 @@ const formatChatTimestamp = (rawTimestamp: number | string): string => {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
+// Smart timestamp for call log — returns context-aware label + time
+const formatCallTimestamp = (isoStr: string): { label: string; time: string; dateKey: string } => {
+  if (!isoStr) return { label: '', time: '', dateKey: 'Earlier' };
+  const date = new Date(isoStr);
+  if (isNaN(date.getTime())) return { label: '', time: '', dateKey: 'Earlier' };
+  const now = new Date();
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const todayStr = now.toDateString();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  const yesterdayStr = yest.toDateString();
+  const thisWeekStart = new Date(now); thisWeekStart.setDate(now.getDate() - 6);
+  if (date.toDateString() === todayStr) return { label: 'Today', time, dateKey: 'Today' };
+  if (date.toDateString() === yesterdayStr) return { label: 'Yesterday', time, dateKey: 'Yesterday' };
+  if (date >= thisWeekStart) {
+    const day = date.toLocaleDateString([], { weekday: 'short' });
+    return { label: day, time, dateKey: 'This Week' };
+  }
+  const dateLabel = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return { label: dateLabel, time, dateKey: 'Earlier' };
+};
+
+const formatCallDuration = (secs: number | null | undefined): string => {
+  if (!secs || secs <= 0) return '';
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+};
+
 // Friendly label for message type previews in the chat list
 const friendlyLastMessage = (text: string): string => {
   if (!text) return '';
@@ -148,6 +177,7 @@ export default function WhatsApp() {
   );
   const [allCalls, setAllCalls] = useState<any[]>([]);
   const [callFilter, setCallFilter] = useState<'all' | 'mine' | 'missed' | 'today'>('all');
+  const [callSearch, setCallSearch] = useState('');
   const [callingChatId, setCallingChatId] = useState<string | null>(null);
   const [callTimer, setCallTimer] = useState(0);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1260,17 +1290,24 @@ export default function WhatsApp() {
   const activeChats = chats.filter(c => c.status === 'active').length;
   const resolvedChats = chats.filter(c => c.status === 'resolved').length;
 
-  // Filter calls by selected filter
+  // Filter calls by selected filter + search
   const filteredCalls = allCalls.filter(call => {
     const today = new Date().toDateString();
     const callDate = new Date(call.timestamp).toDateString();
     const isToday = callDate === today;
     const isMine = call.assignedTo === state.user?.name || call.assignedTo === (state.user?.email?.split('@')[0]);
 
-    if (callFilter === 'mine') return isMine;
-    if (callFilter === 'missed') return call.status === 'missed';
-    if (callFilter === 'today') return isToday;
-    return true; // 'all'
+    if (callFilter === 'mine' && !isMine) return false;
+    if (callFilter === 'missed' && call.status !== 'missed') return false;
+    if (callFilter === 'today' && !isToday) return false;
+
+    if (callSearch.trim()) {
+      const q = callSearch.trim().toLowerCase();
+      return (call.contactName || '').toLowerCase().includes(q) ||
+             (call.company || '').toLowerCase().includes(q) ||
+             (call.chatId || '').includes(q);
+    }
+    return true;
   });
 
   // Calculate call metrics (from filtered calls)
@@ -2310,118 +2347,214 @@ export default function WhatsApp() {
 
       {/* CALLS TAB */}
       {activeTab === 'calls' && (
-        <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto">
-          {/* Call Filters */}
+        <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto">
+
           {allCalls.length > 0 && (
-            <div className="flex gap-2 flex-wrap sticky top-0 bg-gray-950/80 backdrop-blur z-10 pb-2">
-              {[
-                { key: 'all', label: 'All Calls' },
-                { key: 'mine', label: '👤 Your Calls' },
-                { key: 'missed', label: '📵 Missed' },
-                { key: 'today', label: '📅 Today' }
-              ].map(f => (
-                <button
-                  key={f.key}
-                  onClick={() => setCallFilter(f.key as any)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    callFilter === f.key
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
+            <div className="sticky top-0 bg-gray-950/90 backdrop-blur z-10 pb-2 space-y-2">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="text"
+                  value={callSearch}
+                  onChange={e => setCallSearch(e.target.value)}
+                  placeholder="Search by name or number…"
+                  className="w-full pl-9 pr-3 py-2 bg-gray-800/60 border border-gray-700/50 rounded-lg text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-green-500/50"
+                />
+                {callSearch && (
+                  <button onClick={() => setCallSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {/* Filters */}
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { key: 'all', label: 'All' },
+                  { key: 'missed', label: '📵 Missed' },
+                  { key: 'today', label: '📅 Today' },
+                  { key: 'mine', label: '👤 Mine' },
+                ] as const).map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setCallFilter(f.key)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      callFilter === f.key ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    {f.label}
+                    {f.key === 'missed' && allCalls.filter(c => c.status === 'missed').length > 0 && (
+                      <span className="ml-1 bg-red-500 text-white rounded-full px-1 text-[10px]">
+                        {allCalls.filter(c => c.status === 'missed').length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          <div className="space-y-2">
-            {filteredCalls.length === 0 && allCalls.length > 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center px-6">
-                <Phone className="w-12 h-12 mb-3 opacity-30" />
-                <p className="text-white font-medium mb-1">No calls found</p>
-                <p className="text-sm text-gray-500">Try adjusting your filters</p>
+          {/* Empty states */}
+          {allCalls.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center px-6">
+              <Phone className="w-12 h-12 mb-3 opacity-30" />
+              <p className="text-white font-medium mb-1">No call logs yet</p>
+              <p className="text-sm text-gray-500 mb-4">
+                Calls appear here when customers call your WhatsApp Business number.
+              </p>
+              <div className="bg-gray-800 rounded-lg p-4 text-left text-xs text-gray-400 space-y-2 w-full max-w-sm">
+                <p className="text-gray-300 font-medium mb-2">To enable call logging:</p>
+                <p>1. Go to the <strong className="text-white">Setup tab</strong> above</p>
+                <p>2. Click <strong className="text-green-400">⚡ Auto-Configure Webhook</strong></p>
+                <p>3. Make or receive a WhatsApp call</p>
               </div>
-            ) : allCalls.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center px-6">
-                <Phone className="w-12 h-12 mb-3 opacity-30" />
-                <p className="text-white font-medium mb-1">No call logs yet</p>
-                <p className="text-sm text-gray-500 mb-4">
-                  Calls appear here when customers call your WhatsApp Business number
-                  and Evolution API sends the call webhook event.
-                </p>
-                <div className="bg-gray-800 rounded-lg p-4 text-left text-xs text-gray-400 space-y-2 w-full max-w-sm">
-                  <p className="text-gray-300 font-medium mb-2">To enable call logging:</p>
-                  <p>1. Go to the <strong className="text-white">Setup tab</strong> above</p>
-                  <p>2. Click <strong className="text-green-400">⚡ Auto-Configure Webhook</strong></p>
-                  <p>3. Make or receive a WhatsApp call</p>
-                  <p className="text-gray-500 pt-1">This enables the <code className="bg-gray-700 px-1 rounded">CALL</code> event so Evolution API sends call notifications to your CRM.</p>
-                </div>
-                <button
-                  onClick={() => setActiveTab('setup')}
-                  className="mt-3 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Go to Setup →
-                </button>
-              </div>
-            ) : (
-              filteredCalls.map((call, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    // Find and open the chat for this call
-                    const chat = chats.find(c => c.id === call.chatId);
-                    if (chat) {
-                      setSelectedChat(chat);
-                      selectedChatRef.current = chat;
-                      setActiveTab('inbox');
-                    }
-                  }}
-                  className="p-4 bg-gray-900 border border-gray-800 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1">
-                      {/* Status icon */}
-                      <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
-                        {call.status === 'missed' ? (
-                          <Phone className="w-5 h-5 text-red-500 rotate-45" />
-                        ) : (
-                          <Phone className="w-5 h-5 text-green-500" />
-                        )}
-                      </div>
+              <button onClick={() => setActiveTab('setup')} className="mt-3 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
+                Go to Setup →
+              </button>
+            </div>
+          ) : filteredCalls.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-center px-6">
+              <Phone className="w-12 h-12 mb-3 opacity-30" />
+              <p className="text-white font-medium mb-1">No calls match</p>
+              <p className="text-sm text-gray-500">Try a different filter or clear the search</p>
+            </div>
+          ) : (() => {
+            // Group calls by date bucket for section headers
+            const GROUP_ORDER = ['Today', 'Yesterday', 'This Week', 'Earlier'];
+            const groups: Record<string, typeof filteredCalls> = {};
+            filteredCalls.forEach(call => {
+              const { dateKey } = formatCallTimestamp(call.timestamp);
+              if (!groups[dateKey]) groups[dateKey] = [];
+              groups[dateKey].push(call);
+            });
 
-                      {/* Contact info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className="font-medium text-white truncate">{call.contactName}</p>
-                          {call.company && <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 flex-shrink-0">{call.company}</span>}
-                        </div>
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-xs text-gray-400">{call.callType === 'video' ? '🎥 Video' : '📞 Voice'}</span>
-                          {call.status === 'missed' ? (
-                            <span className="text-xs text-red-400 font-medium">Missed</span>
-                          ) : (
-                            <span className="text-xs text-gray-400">{call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'Incoming'}</span>
-                          )}
-                          {call.tags && call.tags.length > 0 && (
-                            <span className="text-[10px] text-gray-500">Tags: {call.tags.join(', ')}</span>
-                          )}
-                        </div>
-                        {call.assignedTo && call.assignedTo !== 'Unassigned' && (
-                          <p className="text-[11px] text-gray-500">Assigned: {call.assignedTo}</p>
-                        )}
+            return (
+              <div className="space-y-1">
+                {GROUP_ORDER.filter(g => groups[g]?.length).map(groupName => (
+                  <div key={groupName}>
+                    {/* Only show date headers when showing all / this week / earlier — skip for 'today' filter */}
+                    {callFilter !== 'today' && (
+                      <div className="flex items-center gap-3 py-2 px-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">{groupName}</span>
+                        <div className="flex-1 h-px bg-gray-800" />
+                        <span className="text-[11px] text-gray-600">{groups[groupName].length}</span>
                       </div>
+                    )}
+                    {groups[groupName].map((call, idx) => {
+                      const { label: dateLabel, time } = formatCallTimestamp(call.timestamp);
+                      const isMissed = call.status === 'missed';
+                      const isInbound = call.direction !== 'outbound';
+                      const durText = formatCallDuration(call.duration);
 
-                      {/* Time */}
-                      <div className="text-xs text-gray-500 flex-shrink-0 text-right">
-                        {new Date(call.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
+                      return (
+                        <div
+                          key={call.id || idx}
+                          className={`p-3.5 rounded-xl border transition-colors ${
+                            isMissed
+                              ? 'bg-red-500/5 border-red-500/20 hover:bg-red-500/10'
+                              : 'bg-gray-900/60 border-gray-800/60 hover:bg-gray-800/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {/* Direction + status icon */}
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 relative ${
+                              isMissed ? 'bg-red-500/15' : isInbound ? 'bg-green-500/15' : 'bg-blue-500/15'
+                            }`}>
+                              <Phone className={`w-4.5 h-4.5 ${isMissed ? 'text-red-400' : isInbound ? 'text-green-400' : 'text-blue-400'}`} style={{ width: 18, height: 18 }} />
+                              {/* Direction arrow badge */}
+                              <span className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                                isMissed ? 'bg-red-500 text-white' : isInbound ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'
+                              }`}>
+                                {isMissed ? '✕' : isInbound ? '↙' : '↗'}
+                              </span>
+                            </div>
+
+                            {/* Main info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                {/* Contact name — click goes to profile */}
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    if (call.contactId) {
+                                      window.location.hash = `#/contacts/${call.contactId}`;
+                                    } else {
+                                      const phone = (call.chatId || '').replace(/@[^@]+$/, '');
+                                      if (phone) localStorage.setItem('contacts_search', phone);
+                                      window.location.hash = '#/contacts';
+                                    }
+                                  }}
+                                  className={`font-medium text-sm truncate max-w-[140px] hover:underline text-left ${isMissed ? 'text-red-200' : 'text-white'}`}
+                                >
+                                  {call.contactName}
+                                </button>
+                                {call.company && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 flex-shrink-0">{call.company}</span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {/* Call type */}
+                                <span className="text-[11px] text-gray-500">
+                                  {call.callType === 'video' ? '🎥 Video' : '📞 Voice'}
+                                </span>
+                                {/* Direction label */}
+                                <span className={`text-[11px] ${isInbound ? 'text-green-500' : 'text-blue-400'}`}>
+                                  {isInbound ? 'Inbound' : 'Outbound'}
+                                </span>
+                                {/* Status / duration */}
+                                {isMissed ? (
+                                  <span className="text-[11px] font-semibold text-red-400">Missed</span>
+                                ) : durText ? (
+                                  <span className="text-[11px] text-gray-400">{durText}</span>
+                                ) : (
+                                  <span className="text-[11px] text-gray-500">Answered</span>
+                                )}
+                                {/* Assigned to */}
+                                {call.assignedTo && call.assignedTo !== 'Unassigned' && (
+                                  <span className="text-[11px] text-gray-600">· {call.assignedTo}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Right side: timestamp + action */}
+                            <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                              <div className="text-right">
+                                {callFilter !== 'today' && groupName !== 'Today' && (
+                                  <p className="text-[10px] text-gray-600">{dateLabel}</p>
+                                )}
+                                <p className="text-xs text-gray-400">{time}</p>
+                              </div>
+                              {/* Open chat button */}
+                              <button
+                                onClick={() => {
+                                  const chat = chats.find(c => c.id === call.chatId);
+                                  if (chat) {
+                                    setSelectedChat(chat);
+                                    selectedChatRef.current = chat;
+                                    setActiveTab('inbox');
+                                  } else {
+                                    setActiveTab('inbox');
+                                  }
+                                }}
+                                className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1 ${
+                                  isMissed
+                                    ? 'bg-red-500/20 hover:bg-red-500/40 text-red-300'
+                                    : 'bg-gray-700/60 hover:bg-gray-700 text-gray-300'
+                                }`}
+                              >
+                                {isMissed ? '↩ Reply' : '💬 Chat'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 

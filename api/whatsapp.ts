@@ -347,6 +347,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .limit(1);
 
           if (!existingCall || existingCall.length === 0) {
+            // Calls from the CALL webhook are always inbound (customer calling the business number)
+            const callDirection = 'inbound';
             const { data: inserted, error: insertError } = await supabase
               .from('whatsapp_calls')
               .insert({
@@ -357,7 +359,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 status: callStatus,
                 duration_seconds: callDuration,
                 started_at: callStarted,
-                ended_at: callEnded
+                ended_at: callEnded,
+                direction: callDirection
               })
               .select('id');
 
@@ -1319,11 +1322,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 id: call.id,
                 chatId: call.chat_id,
                 contactName: chatData.name || call.chat_id,
+                contactId: call.contact_id || null,
                 assignedTo: chatData.assignedTo || 'Unassigned',
                 assignedToUserId: chatData.assignedToUserId || null,
                 company: contactDetails.company || null,
                 tags: contactDetails.tags || [],
                 callType: call.call_type,
+                direction: call.direction || 'inbound',
                 status: call.status,
                 duration: call.duration_seconds,
                 timestamp: call.started_at
