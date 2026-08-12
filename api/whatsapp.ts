@@ -2641,26 +2641,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return { ...c, isInternal };
           });
 
-          // Accurate stats — separate count queries unaffected by pagination
-          let statsBase = supabase.from('cellular_calls').select('call_type, duration_seconds, phone_normalized, phone_number', { count: 'exact' });
-          if (repFilter && repFilter !== 'all') statsBase = statsBase.eq('rep_phone', repFilter);
-          if (dateFrom) statsBase = statsBase.gte('called_at', dateFrom);
-          if (dateTo)   statsBase = statsBase.lt('called_at', dateTo);
-          const { data: statsRows } = await statsBase;
+          // Accurate stats — DB-level COUNT queries (head:true fetches no rows, bypasses 1000-row cap)
+          const devicePhoneArray = [...devicePhones];
 
-          const statsData = statsRows || [];
-          // Customer stats exclude internal (rep-to-rep) calls
-          const customerData  = statsData.filter((r: any) => !devicePhones.has(String(r.phone_normalized || r.phone_number).replace(/\D/g, '')));
-          const internalCount = statsData.length - customerData.length;
+          // Helper: base count query with optional filters, excluding internal calls
+          const customerCountQ = () => {
+            let q = supabase.from('cellular_calls').select('*', { count: 'exact', head: true });
+            if (repFilter && repFilter !== 'all') q = q.eq('rep_phone', repFilter);
+            if (dateFrom) q = q.gte('called_at', dateFrom);
+            if (dateTo)   q = q.lt('called_at', dateTo);
+            if (devicePhoneArray.length > 0) {
+              q = q.not('phone_normalized', 'in', `(${devicePhoneArray.join(',')})`);
+            }
+            return q;
+          };
 
-          const statsTotal    = customerData.length;
-          const statsIncoming = customerData.filter((r: any) => r.call_type === 'INCOMING').length;
-          const statsOutgoing = customerData.filter((r: any) => r.call_type === 'OUTGOING').length;
-          const statsMissed   = customerData.filter((r: any) => r.call_type === 'MISSED').length;
-          const answered      = customerData.filter((r: any) => (r.duration_seconds || 0) > 0);
-          const totalDuration = answered.reduce((s: number, r: any) => s + (r.duration_seconds || 0), 0);
-          const avgDuration   = answered.length > 0 ? Math.round(totalDuration / answered.length) : 0;
-          const missedRate    = statsTotal > 0 ? Math.round((statsMissed / statsTotal) * 100) : 0;
+          const internalCountQ = () => {
+            let q = supabase.from('cellular_calls').select('*', { count: 'exact', head: true });
+            if (repFilter && repFilter !== 'all') q = q.eq('rep_phone', repFilter);
+            if (dateFrom) q = q.gte('called_at', dateFrom);
+            if (dateTo)   q = q.lt('called_at', dateTo);
+            if (devicePhoneArray.length > 0) {
+              q = q.in('phone_normalized', devicePhoneArray);
+            } else {
+              // No devices registered — no internal calls possible
+              q = q.eq('phone_normalized', '__no_internal__');
+            }
+            return q;
+          };
+
+          // Duration rows for avg calc — limited fetch, customer calls only
+          const durationQ = () => {
+            let q = supabase.from('cellular_calls').select('duration_seconds').gt('duration_seconds', 0);
+            if (repFilter && repFilter !== 'all') q = q.eq('rep_phone', repFilter);
+            if (dateFrom) q = q.gte('called_at', dateFrom);
+            if (dateTo)   q = q.lt('called_at', dateTo);
+            if (devicePhoneArray.length > 0) {
+              q = q.not('phone_normalized', 'in', `(${devicePhoneArray.join(',')})`);
+            }
+            return q.limit(20000);
+          };
+
+          const [
+            { count: statsTotal },
+            { count: statsIncoming },
+            { count: statsOutgoing },
+            { count: statsMissed },
+            { count: internalCount },
+            { data: durationRows },
+          ] = await Promise.all([
+            customerCountQ(),
+            customerCountQ().eq('call_type', 'INCOMING'),
+            customerCountQ().eq('call_type', 'OUTGOING'),
+            customerCountQ().eq('call_type', 'MISSED'),
+            internalCountQ(),
+            durationQ(),
+          ]);
+
+          const durations    = (durationRows || []).map((r: any) => r.duration_seconds || 0);
+          const totalDuration = durations.reduce((s: number, d: number) => s + d, 0);
+          const avgDuration   = durations.length > 0 ? Math.round(totalDuration / durations.length) : 0;
+          const missedRate    = (statsTotal || 0) > 0 ? Math.round(((statsMissed || 0) / (statsTotal || 0)) * 100) : 0;
 
           return res.json({
             success: true,
