@@ -10,7 +10,6 @@ import Pipeline from './pages/Pipeline';
 import Quotes from './pages/Quotes';
 import LeadImport from './pages/LeadImport';
 import WooCommerce from './pages/WooCommerce';
-import CallSync from './pages/CallSync';
 import CompanionApp from './pages/CompanionApp';
 import CoachingDashboard from './pages/CoachingDashboard';
 import RecordingSettings from './pages/RecordingSettings';
@@ -333,7 +332,6 @@ const AppInner: React.FC = () => {
             <Route path="/quotes" element={<Quotes />} />
             <Route path="/leads" element={<LeadImport />} />
             <Route path="/woocommerce" element={<WooCommerce />} />
-            <Route path="/call-sync" element={<CallSync />} />
             <Route path="/companion" element={<CompanionApp />} />
             <Route path="/coaching" element={<CoachingDashboard />} />
             <Route path="/recording-settings" element={<RecordingSettings />} />

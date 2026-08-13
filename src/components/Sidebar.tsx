@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, Phone, CheckCircle2, ChartPie, FilePenLine,
-  UserPlus, ShoppingCart, RefreshCw, MessageSquare, Users,
+  UserPlus, ShoppingCart, MessageSquare, Users,
   Calendar, Receipt, Settings, BookOpen, LogOut, X,
   BarChart3, MessageCircle, Mail, ContactRound, Smartphone, Mic, BrainCircuit,
   KeyRound, Loader2, CheckCircle, AlertCircle
@@ -22,7 +22,6 @@ const NAV_ITEMS = [
   { section: 'CRM', path: '/contacts', label: 'Contacts', icon: ContactRound, role: 'all' },
   { section: 'CRM', path: '/leads', label: 'Lead Import', icon: UserPlus, role: 'all' },
   { section: 'CRM', path: '/woocommerce', label: 'WooCommerce', icon: ShoppingCart, role: 'all' },
-  { section: 'CRM', path: '/call-sync', label: 'Call Sync', icon: RefreshCw, role: 'all' },
   { section: 'CRM', path: '/companion', label: 'Companion App', icon: Smartphone, role: 'all' },
   { section: 'CRM', path: '/templates', label: 'Templates', icon: MessageSquare, role: 'all' },
   { section: 'CRM', path: '/whatsapp', label: 'WhatsApp Inbox', icon: MessageCircle, role: 'all' },

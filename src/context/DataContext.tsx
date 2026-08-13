@@ -6,7 +6,6 @@ import { db, supabase } from '../lib/supabase';
 import { logger } from '../lib/logger';
 import { rowToLead, rowToDeal, rowToCall, rowToTask, rowToActivity } from '../lib/adapters';
 import { useAuth } from './AuthContext';
-import { useSync } from './SyncContext';
 
 interface DataContextType {
   state: AppState;
@@ -33,7 +32,7 @@ export const DataContext = createContext<DataContextType | undefined>(undefined)
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { isSupabaseConnected, setIsSupabaseConnected } = useSync();
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const [state, setState] = useState<AppState>(() => {
