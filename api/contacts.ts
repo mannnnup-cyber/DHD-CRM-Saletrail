@@ -26,17 +26,19 @@ async function resolveContact(opts: {
   if (emailLower) filters.push(`email.ilike.${emailLower}`);
   if (phoneNorm)  filters.push(`phone_normalized.eq.${phoneNorm}`);
   if (filters.length > 0) {
-    const { data: existing } = await supabase.from('contacts').select('id, email, phone, phone_normalized, company').or(filters.join(',')).limit(1).maybeSingle();
+    const { data: existing } = await supabase.from('contacts').select('id, email, phone, phone_normalized, company, sources').or(filters.join(',')).limit(1).maybeSingle();
     if (existing) {
       const updates: Record<string, any> = {};
       if (emailLower && !existing.email)            updates.email = emailLower;
       if (phoneNorm  && !existing.phone_normalized) { updates.phone_normalized = phoneNorm; if (opts.phone) updates.phone = opts.phone; }
       if (opts.company && !existing.company)        updates.company = opts.company;
+      const existingSources: string[] = existing.sources || [];
+      if (opts.source && !existingSources.includes(opts.source)) updates.sources = [...existingSources, opts.source];
       if (Object.keys(updates).length > 0) await supabase.from('contacts').update(updates).eq('id', existing.id);
       return { id: existing.id, created: false };
     }
   }
-  const { data, error } = await supabase.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, notes: opts.notes || null, source: opts.source, status: 'NEW' }).select('id').single();
+  const { data, error } = await supabase.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, notes: opts.notes || null, source: opts.source, sources: [opts.source], status: 'NEW' }).select('id').single();
   if (error) { console.error('[contacts] insert error:', error.message); return null; }
   return { id: data.id, created: true };
 }
@@ -51,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { action, id } = req.query as Record<string, string>;
 
   if (!action && !id) {
-    const { data, error } = await supabase.from('contacts').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('contacts').select('*').order('created_at', { ascending: false }).range(0, 4999);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ contacts: data });
   }
@@ -320,7 +322,8 @@ async function findDuplicates(req: VercelRequest, res: VercelResponse) {
 
     const { data: allContacts, error: contactsError } = await supabase
       .from('contacts')
-      .select('id, name, email, phone, company, created_at');
+      .select('id, name, email, phone, company, created_at')
+      .range(0, 4999);
 
     if (contactsError) return res.status(500).json({ success: false, error: `Failed to fetch contacts: ${contactsError.message}` });
 
@@ -367,7 +370,8 @@ async function checkBeforeEnrich(req: VercelRequest, res: VercelResponse) {
       const normalizedPhone = normalizePhone(phone);
       const { data: phoneMatches } = await supabase
         .from('contacts')
-        .select('id, name, email, phone, company, enrichment_confidence, enrichment_timestamp');
+        .select('id, name, email, phone, company, enrichment_confidence, enrichment_timestamp')
+        .range(0, 4999);
       if (phoneMatches) {
         for (const match of phoneMatches) {
           if (normalizePhone(match.phone) === normalizedPhone && match.enrichment_confidence && match.enrichment_confidence > 0.7) {

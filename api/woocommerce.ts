@@ -13,17 +13,19 @@ async function resolveContact(sb: any, opts: { name: string; email?: string; pho
   if (emailLower) filters.push(`email.ilike.${emailLower}`);
   if (phoneNorm)  filters.push(`phone_normalized.eq.${phoneNorm}`);
   if (filters.length > 0) {
-    const { data: existing } = await sb.from('contacts').select('id, email, phone, phone_normalized, company').or(filters.join(',')).limit(1).maybeSingle();
+    const { data: existing } = await sb.from('contacts').select('id, email, phone, phone_normalized, company, sources').or(filters.join(',')).limit(1).maybeSingle();
     if (existing) {
       const updates: Record<string, any> = {};
       if (emailLower && !existing.email)            updates.email = emailLower;
       if (phoneNorm  && !existing.phone_normalized) { updates.phone_normalized = phoneNorm; if (opts.phone) updates.phone = opts.phone; }
       if (opts.company && !existing.company)        updates.company = opts.company;
+      const existingSources: string[] = existing.sources || [];
+      if (opts.source && !existingSources.includes(opts.source)) updates.sources = [...existingSources, opts.source];
       if (Object.keys(updates).length > 0) await sb.from('contacts').update(updates).eq('id', existing.id);
       return existing.id;
     }
   }
-  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, source: opts.source, status: 'NEW' }).select('id').single();
+  const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, source: opts.source, sources: [opts.source], status: 'NEW' }).select('id').single();
   if (error) { console.error('[woocommerce] resolveContact error:', error.message); return null; }
   return data.id;
 }
