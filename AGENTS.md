@@ -21,6 +21,15 @@ Before making code changes in this repository, read the guard-rail docs in
 - Update relevant files in `docs/context/` when behavior, architecture, routes, integrations, dependencies, or milestones change.
 - Do not commit secrets, API keys, service-role keys, tokens, passwords, or private customer data.
 
+## Hard-won rules (do not regress — each caused a real production bug)
+
+1. **Never call `supabase.from()` from page components.** `src/lib/supabase.ts` falls back to `{} as any` in browser builds, so it silently fails. All client reads/writes go through `/api/*` endpoints.
+2. **Evolution API settings come from the `app_settings` table via `getSetting()`**, never from `.env.production`. DB values win over env on conflict.
+3. **Call/contact counts must be DB-level COUNT queries** (`/api/*` doing `count()` on the Supabase server side), never row fetching — the 1000-row REST cap once froze the dashboard at "982 calls" while real calls kept growing.
+4. **Credentials live in `.env.production` / `.env.local` and are never printed into chat, docs, or commits.**
+5. **Deploy = push to `master` → Vercel auto-deploys.** Verify the live app after pushing; don't claim done from local state alone.
+6. **`C:\Users\Administrator\dhd crm sale trail\` is a stale copy — never work there.** This repo is the only live codebase.
+
 ## Documentation Updates
 
 When a task changes the project shape, update the matching document:
