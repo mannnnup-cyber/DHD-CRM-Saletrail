@@ -24,6 +24,7 @@ import WhatsApp from './pages/WhatsApp';
 import EmailInbox from './pages/EmailInbox';
 import Contacts from './pages/Contacts';
 import ContactProfile from './pages/ContactProfile';
+import SocialMedia from './pages/SocialMedia';
 import ContactModal from './components/ContactModal';
 import ActionList from './components/ActionList';
 import {
@@ -346,6 +347,7 @@ const AppInner: React.FC = () => {
             <Route path="/email" element={<EmailInbox />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactProfile />} />
+            <Route path="/social" element={<SocialMedia />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>

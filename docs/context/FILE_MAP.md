@@ -87,6 +87,12 @@ parseable by AI tools and harness systems.
       "dependsOn": ["src/context/AppContext.tsx", "api/contacts.ts"]
     },
     {
+      "path": "/social",
+      "file": "src/pages/SocialMedia.tsx",
+      "purpose": "Social media management via BrightBean Studio: setup guide when unconfigured, connected accounts, quick links to Studio, per-account analytics",
+      "dependsOn": ["api/social.ts"]
+    },
+    {
       "path": "/whatsapp",
       "file": "src/pages/WhatsApp.tsx",
       "purpose": "WhatsApp inbox. Contact pre-load via localStorage key dhd_wa_open_contact",
@@ -253,6 +259,13 @@ parseable by AI tools and harness systems.
       "file": "api/woocommerce-webhook.ts",
       "purpose": "Dedicated WooCommerce webhook receiver for real-time order updates",
       "risk": "Public endpoint — validate webhook secret"
+    },
+    {
+      "file": "api/social.ts",
+      "purpose": "BrightBean Studio REST API proxy: social media accounts, workspace status, per-account analytics",
+      "actions": ["status (default)", "accounts", "analytics"],
+      "envVariables": ["BRIGHTBEAN_API_KEY", "BRIGHTBEAN_API_URL (optional, defaults to https://studio.brightbean.xyz/api/v1)"],
+      "note": "API key is read from the app_settings table (setting_key BRIGHTBEAN_API_KEY, password type — masked in the Settings UI) with the env var as fallback; DB wins over env. Returns { success: true, configured: false } when no key is set so the UI can show the setup guide. BrightBean path quirk: /me/ and /accounts/ need trailing slashes, /analytics/accounts/{id} must not."
     },
     {
       "file": "api/settings.ts",
@@ -436,6 +449,8 @@ parseable by AI tools and harness systems.
       { "key": "GREENAPI_TOKEN", "purpose": "Green API authentication token" },
       { "key": "EVOLUTION_API_URL", "purpose": "Evolution API server URL (Railway)" },
       { "key": "EVOLUTION_API_KEY", "purpose": "Evolution API authentication key" },
+      { "key": "BRIGHTBEAN_API_KEY", "purpose": "BrightBean Studio API key (bb_studio_..., workspace-scoped) for social media module" },
+      { "key": "BRIGHTBEAN_API_URL", "purpose": "BrightBean Studio API base URL (optional; defaults to https://studio.brightbean.xyz/api/v1)" },
       { "key": "IMAP_HOST", "purpose": "Email server host" },
       { "key": "IMAP_USER", "purpose": "Email account username" },
       { "key": "IMAP_PASS", "purpose": "Email account password" },

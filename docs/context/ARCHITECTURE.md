@@ -95,6 +95,20 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 - Active send provider controlled by `WHATSAPP_ACTIVE_PROVIDER` app_setting.
 - Inbound webhook: `POST /api/whatsapp` (no action param) — auto-detects provider format.
 
+## Social Media Integration
+
+- **BrightBean Studio** (https://studio.brightbean.xyz) — free hosted, open-source
+  (AGPL-3.0) social media management platform. Used for composing, scheduling,
+  approving, and publishing posts; the CRM does not publish posts itself.
+- The CRM integrates read-only via BrightBean's REST API (`{APP_URL}/api/v1/`,
+  bearer-key auth). `api/social.ts` proxies `status`/`accounts`/`analytics`.
+  The API key lives in `app_settings` (key `BRIGHTBEAN_API_KEY`, password type,
+  masked in Settings) with `process.env.BRIGHTBEAN_API_KEY` as fallback —
+  DB values win over env, same pattern as the Evolution API settings.
+- The `/social` page shows a setup guide when the key is not configured, and
+  connected accounts + per-account analytics when it is. Composing/scheduling
+  happens in Studio via external links (deep-link phase 2: `POST /api/v1/posts`).
+
 ## Integrations
 
 | Integration | Purpose |
@@ -104,6 +118,7 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 | Evolution API | WhatsApp send/receive (secondary, Railway) |
 | WooCommerce | Order/customer sync |
 | IMAP | Email inbox sync |
+| BrightBean Studio | Social media scheduling/publishing (free hosted plan); CRM proxies its REST API via `api/social.ts` |
 | Vercel | Deployment, serverless API runtime, daily cron |
 | Android Companion App | GSM call sync from rep devices |
 | GitNexus | Codebase indexing for AI-assisted development |

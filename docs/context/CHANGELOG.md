@@ -4,6 +4,38 @@ Entries are newest first. Each entry covers a development session or sprint.
 
 ---
 
+## 2026-09-01
+
+### Social Media Module (BrightBean Studio integration)
+
+Added social media management to the CRM via **BrightBean Studio**
+(https://studio.brightbean.xyz) — a free hosted, open-source (AGPL-3.0) social
+scheduling platform supporting Instagram, Facebook, TikTok, LinkedIn, YouTube,
+Pinterest, Threads, and more. Decision recorded: build-native was rejected
+(Meta App Review + weeks of scheduler/inbox work); Mixpost rejected (free tier
+lacks Instagram/TikTok); Postiz was the runner-up.
+
+- `api/social.ts` (new) — Vercel serverless handler proxying the BrightBean REST
+  API (`{BRIGHTBEAN_API_URL}/api/v1/`). Actions: `status` (workspace + accounts),
+  `accounts`, `analytics` (per-account 7/30/90-day metrics). Auth via
+  `Authorization: Bearer ${BRIGHTBEAN_API_KEY}`. Returns a soft success with
+  `configured: false` when the key is missing so the UI shows setup steps.
+- `src/pages/SocialMedia.tsx` (new) — page with a 4-step setup guide when
+  unconfigured; when configured shows stat cards, quick links into Studio
+  (composer/calendar/inbox), connected-account list with connection-status
+  badges, and expandable per-account 30-day analytics (hero metrics + deltas).
+- `src/App.tsx` — added `/social` route.
+- `src/components/Sidebar.tsx` — added "Social Media" nav item (CRM section,
+  Share2 icon, all roles).
+- **Key config:** `BRIGHTBEAN_API_KEY` is stored in `app_settings` (password
+  type, masked in the Settings UI) with the `BRIGHTBEAN_API_KEY` env var as
+  fallback — DB wins over env, same pattern as Evolution API settings. Key was
+  inserted via Supabase REST and verified live against the hosted API
+  (`/me/` and `/accounts/` return 200; one YouTube account connected).
+  `BRIGHTBEAN_API_URL` optional, defaults to the hosted instance.
+
+---
+
 ## 2026-06-26
 
 ### Companion App — Call Recording + Device Info (v1.1.8)

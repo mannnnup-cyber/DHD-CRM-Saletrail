@@ -5,7 +5,7 @@ import {
   UserPlus, ShoppingCart, MessageSquare, Users,
   Calendar, Receipt, Settings, BookOpen, LogOut, X,
   BarChart3, MessageCircle, Mail, ContactRound, Smartphone, Mic, BrainCircuit,
-  KeyRound, Loader2, CheckCircle, AlertCircle
+  KeyRound, Loader2, CheckCircle, AlertCircle, Share2
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { section: 'CRM', path: '/templates', label: 'Templates', icon: MessageSquare, role: 'all' },
   { section: 'CRM', path: '/whatsapp', label: 'WhatsApp Inbox', icon: MessageCircle, role: 'all' },
   { section: 'CRM', path: '/email', label: 'Email Inbox', icon: Mail, role: 'all' },
+  { section: 'CRM', path: '/social', label: 'Social Media', icon: Share2, role: 'all' },
   { section: 'Analytics', path: '/team', label: 'Team', icon: Users, role: 'manager' },
   { section: 'Analytics', path: '/reports', label: 'Reports', icon: BarChart3, role: 'all' },
   { section: 'Analytics', path: '/coaching', label: 'Call Coaching', icon: BrainCircuit, role: 'manager' },
