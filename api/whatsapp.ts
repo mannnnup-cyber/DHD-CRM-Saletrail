@@ -435,7 +435,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Try Evolution API status check
         if (EVOLUTION_API_URL) {
           try {
-            const stateUrl = new URL(`/instance/${instanceName}/connectionState`, EVOLUTION_API_URL).toString();
+            const stateUrl = new URL(`/instance/connectionState/${instanceName}`, EVOLUTION_API_URL).toString();
             const stateRes = await fetch(stateUrl, {
               method: 'GET',
               headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {},
@@ -1648,7 +1648,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           // Attempt 1: /instance/{name}/connectionState
           try {
-            const stateUrl = new URL(`/instance/${instanceName}/connectionState`, EVOLUTION_API_URL).toString();
+            const stateUrl = new URL(`/instance/connectionState/${instanceName}`, EVOLUTION_API_URL).toString();
             const stateRes = await fetch(stateUrl, {
               method: 'GET',
               headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {}
