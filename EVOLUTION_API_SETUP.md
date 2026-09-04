@@ -1,7 +1,7 @@
 # Evolution API Docker Deployment Setup Guide
 
 **New Evolution API URL:** `http://76.13.31.176:32768`  
-**API Key:** `WWX3An6vhvi3xY91YczNGZJjsx6pAF9a`  
+**API Key:** `<YOUR_EVOLUTION_API_KEY>`  
 **Instance Name:** `dhd-crm-mpvtxwbu-ujwki9`  
 **Status:** Ready to configure ⚙️
 
@@ -16,7 +16,7 @@ Before setting environment variables, **test that your Evolution API Docker is a
 ```bash
 # From your local machine or server:
 curl -X POST "http://76.13.31.176:32768/message/send" \
-  -H "apikey: WWX3An6vhvi3xY91YczNGZJjsx6pAF9a" \
+  -H "apikey: <YOUR_EVOLUTION_API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
     "instance": "dhd-crm-mpvtxwbu-ujwki9",
@@ -50,7 +50,7 @@ curl -X POST "http://76.13.31.176:32768/message/send" \
 | Variable | Value |
 |----------|-------|
 | `EVOLUTION_API_URL` | `http://76.13.31.176:32768` |
-| `EVOLUTION_API_KEY` | `WWX3An6vhvi3xY91YczNGZJjsx6pAF9a` |
+| `EVOLUTION_API_KEY` | `<YOUR_EVOLUTION_API_KEY>` |
 | `EVOLUTION_INSTANCE_NAME` | `dhd-crm-mpvtxwbu-ujwki9` |
 | `EVOLUTION_PHONE` | `18768412776` |
 | `WHATSAPP_ACTIVE_PROVIDER` | `evolution` |
@@ -183,7 +183,7 @@ LIMIT 5;
 1. Verify instance name in Evolution API: `dhd-crm-mpvtxwbu-ujwki9`
 2. Verify phone number format: `18768412776@c.us`
 3. Check Evolution API logs for errors
-4. Verify API key `WWX3An6vhvi3xY91YczNGZJjsx6pAF9a` is correct
+4. Verify API key `<YOUR_EVOLUTION_API_KEY>` is correct
 
 ---
 
@@ -192,7 +192,7 @@ LIMIT 5;
 | Setting | Value | Purpose |
 |---------|-------|---------|
 | **API URL** | `http://76.13.31.176:32768` | Where your Evolution API Docker is running |
-| **API Key** | `WWX3An6vhvi3xY91YczNGZJjsx6pAF9a` | Authentication for your Docker API |
+| **API Key** | `<YOUR_EVOLUTION_API_KEY>` | Authentication for your Docker API |
 | **Instance Name** | `dhd-crm-mpvtxwbu-ujwki9` | Evolution API instance identifier |
 | **Phone** | `18768412776` | WhatsApp number linked to this instance |
 | **Active Provider** | `evolution` | Tells the app to use Evolution API instead of Green API |
@@ -228,7 +228,7 @@ If something doesn't work:
 3. **Test Evolution API directly:**
    ```bash
    curl -X POST "http://76.13.31.176:32768/message/send" \
-     -H "apikey: WWX3An6vhvi3xY91YczNGZJjsx6pAF9a" \
+     -H "apikey: <YOUR_EVOLUTION_API_KEY>" \
      -H "Content-Type: application/json" \
      -d '{"instance":"dhd-crm-mpvtxwbu-ujwki9","number":"18768412776@c.us","text":"test"}'
    ```

@@ -10,6 +10,6 @@ services:
       EVOLUTION_APIKEY: evolution_sec_abc123xyz789
       EVOLUTION_PORT: 3001
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://evolution_user:Evolution@2024Secure123@db.vatsonbvjkyzxqrnderr.supabase.co:5432/postgres
-      DATABASE_ENCRYPTION_KEY: dhd-crm-encryption-key-2024
+      DATABASE_CONNECTION_URI: postgresql://evolution_user:${SUPABASE_DB_PASSWORD}@db.vatsonbvjkyzxqrnderr.supabase.co:5432/postgres
+      DATABASE_ENCRYPTION_KEY: ${DATABASE_ENCRYPTION_KEY}
     restart: unless-stopped
