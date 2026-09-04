@@ -265,7 +265,7 @@ parseable by AI tools and harness systems.
       "purpose": "BrightBean Studio REST API proxy: social media accounts, workspace status, per-account analytics",
       "actions": ["status (default)", "accounts", "analytics"],
       "envVariables": ["BRIGHTBEAN_API_KEY", "BRIGHTBEAN_API_URL (optional, defaults to https://studio.brightbean.xyz/api/v1)"],
-      "note": "API key is read from the app_settings table (setting_key BRIGHTBEAN_API_KEY, password type — masked in the Settings UI) with the env var as fallback; DB wins over env. Returns { success: true, configured: false } when no key is set so the UI can show the setup guide. BrightBean path quirk: /me/ and /accounts/ need trailing slashes, /analytics/accounts/{id} must not."
+      "note": "API key is read from the app_settings table (setting_key BRIGHTBEAN_API_KEY, password type — masked in the Settings UI) with the env var as fallback; DB wins over env. Returns { success: true, configured: false } when no key is set so the UI can show the setup guide. BrightBean path quirk: /me/ and /accounts/ need trailing slashes, /analytics/accounts/{id} must not. API key resolves env-first, app_settings fallback (Stage 1 Step 2)."
     },
     {
       "file": "api/settings.ts",
@@ -280,8 +280,8 @@ parseable by AI tools and harness systems.
     },
     {
       "file": "api/users.ts",
-      "purpose": "User profile management: list, get, update",
-      "dependsOn": ["user_profiles Supabase table"]
+      "purpose": "Supabase auth + user management. login/refresh public (return accessToken). setupStatus public boolean. ALL other actions require Authorization: Bearer access token verified server-side; role loaded from user_profiles. owner/manager: list, invite, update, remove, resetPassword, listDevices, linkDevice. teamDirectory: any authenticated user (id+name). changePassword: self-service via token identity. createOwner: public only while zero owners exist. Temp passwords NEVER returned in responses.",
+      "dependsOn": ["user_profiles Supabase table", "Supabase Auth admin API"]
     },
     {
       "file": "api/recordings.ts",
@@ -298,6 +298,10 @@ parseable by AI tools and harness systems.
     {
       "file": "src/lib/supabase-service.ts",
       "purpose": "Additional Supabase service layer"
+    },
+    {
+      "file": "src/lib/auth.ts",
+      "purpose": "getAccessToken()/authHeaders() - reads persisted Supabase access token (localStorage dhd_auth) for Authorization: Bearer headers on authenticated API calls"
     },
     {
       "file": "src/utils/cn.ts",

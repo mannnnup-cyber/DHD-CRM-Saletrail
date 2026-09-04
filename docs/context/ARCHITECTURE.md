@@ -18,11 +18,34 @@ component will throw a runtime error (e.g., "Ye.from is not a function").
 fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call with
 `.catch(() => [])`, so failures are silent but non-crashing.
 
+## Security Model (Stage 1 containment, 2026-09)
+
+- `api/users.ts` enforces server-side auth: privileged actions require a
+  Supabase access token (verified via `auth.getUser`) and the caller's role is
+  loaded from `user_profiles`. Frontend role claims are never trusted.
+  owner/manager required for list/invite/update/remove/resetPassword/
+  listDevices/linkDevice; changePassword is self-service via token identity;
+  createOwner is public only while zero owners exist; login/refresh are the
+  only public actions. Temporary passwords are never returned in responses.
+- Secret credentials resolve **env-first, `app_settings` fallback**
+  (Evolution key, BrightBean key, Resend key, IMAP credentials). The Evolution
+  API *URL* intentionally stays DB-wins (non-secret, Settings-UI managed).
+- Frontend sends `Authorization: Bearer <accessToken>` on user-management
+  calls via the `src/lib/auth.ts` helper.
+- KNOWN OPEN ITEMS (Stage 1 in progress): production RLS still permissive
+  (`USING (true)` policies — DB anonymously readable/writable); all API
+  handlers except users/recordings still use the anon-key Supabase client;
+  handler flip to service-role + RLS lockdown is the next containment step.
+  Git history still contains old secrets (rotation is the control; rewrite
+  scheduled last). Webhook signature checks fail open (WooCommerce) or are
+  absent (WhatsApp).
+
 ## Frontend
 
 - Entry point: `src/main.tsx`
 - App shell and route table: `src/App.tsx`
-- Auth context (demo login): `src/context/AuthContext.tsx`
+- Auth context (real Supabase auth via `/api/users?action=login`, session
+  persisted in localStorage `dhd_auth` incl. access token): `src/context/AuthContext.tsx`
 - Sync context (companion app calls): `src/context/SyncContext.tsx`
 - Data context (CRM state, mutations): `src/context/DataContext.tsx`
 - Thin AppContext shell (backward compat): `src/context/AppContext.tsx`
@@ -91,7 +114,11 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 - Two providers supported for outbound messaging: **Green API** and **Evolution API**.
 - Both providers can receive inbound messages via webhook (format auto-detected).
 - Green API: uses env vars `GREENAPI_INSTANCE_ID` and `GREENAPI_TOKEN`.
-- Evolution API: hosted on Railway. Uses `EVOLUTION_API_URL` and optional `EVOLUTION_API_KEY`.
+- Evolution API: self-hosted Docker at `http://76.13.31.176:8080` (server port
+  changed from :32768 in Sep 2026). Uses `EVOLUTION_API_URL` and
+  `EVOLUTION_API_KEY` (env-first, DB fallback). Instance: `dhd-crm-wa`, linked
+  phone 18765202038. Baileys integration: outbound WhatsApp calls NOT
+  supported (inbound CALL events only).
 - Active send provider controlled by `WHATSAPP_ACTIVE_PROVIDER` app_setting.
 - Inbound webhook: `POST /api/whatsapp` (no action param) — auto-detects provider format.
 

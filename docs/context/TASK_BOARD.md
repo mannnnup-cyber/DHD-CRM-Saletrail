@@ -131,6 +131,29 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 
 ---
 
+## Stage 1 — Security Emergency Containment (2026-09)
+
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| Security + architecture baseline audit | AI | Done | P0s: public service-role key, anon-readable DB, users.ts takeover chain, app_settings secrets, fail-open webhooks, dead cron |
+| Step 0 - backups + baseline | AI+Owner | Done | pg_dump trio + REST export + git bundle in the Administrator dhd-backups folder (OUTSIDE repo; contains secrets) |
+| Step 1 - Git HEAD secret containment | AI | Done | 6c8b0d7: .env.production untracked, docs sanitized, .gitignore hardened |
+| Step 2 - env-first secret precedence | AI | Done | f6857da: Evolution/BrightBean/Resend/IMAP keys env-to-DB fallback |
+| Step 3 - users.ts takeover containment | AI | Done (owner verify pending) | cc39569: JWT + role enforcement; owner must test login, team tab, change-password, rep denial |
+| Owner: reconnect YouTube in BrightBean Studio | Owner | Pending | Token expired again 2026-09-04 |
+| Steps 4-6 - RLS lockdown | AI+Owner | Pending | Flip all handlers to service-role (behavior-neutral), then drop USING (true) policies (rollback = schema dump in dhd-backups) |
+| Steps 7-12 - rotate compromised credentials | Owner+AI | Pending | Supabase service-role (locate Vercel-integration storage first), Evolution, BrightBean, Resend, OpenAI, IMAP/Gmail (verify credential type first) |
+| Step 13 - WC_WEBHOOK_SECRET + delete junk app_settings rows | Owner+AI | Pending | No active Woo webhook today (only disabled Make.com) |
+| Step 14 - CRON_SECRET + cron header fix | Owner+AI | Pending | Automation never ran; header check must read Authorization Bearer |
+| Step 15 - final probes | AI | Pending | anon reads must return empty; takeover probes 401 |
+| Step 16 - git history rewrite (filter-repo) | Owner+AI | Pending | LAST; 273ea13 message contains Evolution key; force-push + re-clone |
+| Stage 2 - full API auth redesign, app_settings migration, staging | AI | Pending | Encrypted secret storage decision needed |
+| Fix pre-existing: WooCommerce REST 403 | Team | Pending | Store rejects stored consumer key |
+| Fix pre-existing: Resend outbound (domain verification?) | Owner | Pending | |
+| Disable evolution_user DB role | Owner | Pending | Role exists with publicly-known password (was in docker-compose.yml) |
+
+---
+
 ## Product Backlog
 
 | Task | Owner | Status | Notes |

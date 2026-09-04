@@ -4,6 +4,71 @@ Entries are newest first. Each entry covers a development session or sprint.
 
 ---
 
+## 2026-09-02 to 2026-09-04 — Security Audit + Stage 1 Emergency Containment
+
+A full security/architecture baseline audit found critical exposures (public
+repo with service-role key since 2026-06-05; anonymous-readable/writable
+production database via `USING (true)` RLS policies; unauthenticated
+account-takeover chain in `api/users.ts`; live secrets readable from
+`app_settings` with the anon key; fail-open webhooks; dead automation cron).
+Stage 1 containment was then executed step by step. Full audit report and the
+revised Stage 1 runbook live in the workspace handoff, not in this repo.
+
+### WhatsApp repair (2026-09-02, pre-Stage-1)
+- Evolution API server moved to `http://76.13.31.176:8080` (old :32768 dead);
+  `.env.production` and `app_settings` updated; instance `dhd-crm-wa` relinked
+  to phone 18765202038 via pairing code (QR was WhatsApp-rate-limited).
+- Webhook registered correctly (`POST /webhook/set/{instance}`, body wrapped in
+  `{"webhook": {...}}`, UPPERCASE event names).
+- `482858f` fix: status check used `/instance/{name}/connectionState`; real
+  route is `/instance/connectionState/{name}` (404 → "unknown" in UI).
+- `11a1e9a` fix: delete action used `DELETE /instance/{name}`; real route is
+  `/instance/delete/{name}`. `initiateCall` now returns a clear
+  "not supported" error (Baileys cannot place outbound calls).
+
+### Step 1 — Git HEAD secret containment (`6c8b0d7`)
+- `.env.production` untracked (tracked since `273ea13` with live service-role,
+  Evolution and BrightBean keys); local copy kept, now gitignored.
+- `.gitignore`: `.env` + `.env.*` + `!.env.example`; `supabase/.temp/`.
+- `EVOLUTION_API_SETUP.md` sanitized (6 live keys → placeholders);
+  `docker-compose.yml` secrets → env-var references; `migrate.js/.mjs`
+  hardcoded anon key → process.env.
+- Git history rewrite still pending (scheduled last); commit `273ea13`
+  message itself contains the Evolution key.
+
+### Step 2 — Env-first secret precedence (`f6857da`)
+- Resolution flipped to `process.env` → `app_settings` fallback for:
+  Evolution API key (URL intentionally stays DB-wins), BrightBean key,
+  Resend key (send + reply), and IMAP host/port/user/password/TLS (env
+  support newly added). OpenAI was already env-first (untouched).
+- Enables future rotation without writing secrets back into `app_settings`.
+
+### Step 3 — Takeover containment (`cc39569`)
+- `api/users.ts`: new `authenticate()` verifies the Supabase access token via
+  `auth.getUser` and loads role from `user_profiles` (frontend claims never
+  trusted). owner/manager required for `list`, `invite`, `update`, `remove`,
+  `resetPassword`, `listDevices`, `linkDevice`. `changePassword` is
+  self-service (identity from token, body id/email ignored). `createOwner` is
+  public only while zero owners exist. `login`/`refresh` remain the only
+  public actions. Temp passwords are never returned in API responses.
+- New endpoints: `setupStatus` (public boolean), `teamDirectory`
+  (authenticated, id+name) for the WhatsApp rep-assignment dropdown.
+- Frontend: `src/lib/auth.ts` token helper; AuthContext persists
+  `accessToken`; Settings/WhatsApp/Sidebar send `Authorization: Bearer`;
+  Login setup check uses `setupStatus`.
+- Live-verified: all unauthenticated probes now 401; CRM health unchanged.
+- OWNER VERIFICATION PENDING at time of writing: owner login, Settings team
+  tab + one management action, Sidebar change-password, rep-denial check.
+
+### Known pre-existing failures (not Stage-1 regressions)
+- WooCommerce REST sync 403 (store rejects stored consumer key).
+- Outbound Resend email fails (suspected domain verification; unconfirmed).
+- Automation cron never ran (CRON_SECRET unset + header mismatch) — fix
+  scheduled in Stage 1 Step 14.
+- YouTube BrightBean token repeatedly expires (reconnect in Studio).
+
+---
+
 ## 2026-09-01
 
 ### Social Media Module (BrightBean Studio integration)
