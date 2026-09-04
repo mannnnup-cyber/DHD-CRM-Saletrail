@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive, CornerUpLeft, Info, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
+import { authHeaders } from '../lib/auth';
 
 // WhatsApp API is handled by backend /api/whatsapp (Evolution API / Baileys)
 // This avoids CORS issues and keeps credentials secure
@@ -251,7 +252,7 @@ export default function WhatsApp() {
 
   // Load team members from DB (replaces hardcoded array)
   useEffect(() => {
-    fetch('/api/users?action=list')
+    fetch('/api/users?action=teamDirectory', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         if (d.success && d.users?.length) {

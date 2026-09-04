@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { authHeaders } from '../lib/auth';
 import {
   Save, Shield, Smartphone, Globe, Mail, Bot, Link2, CheckCircle, XCircle, Loader2, Eye, EyeOff, MessageCircle,
   Users, UserPlus, Trash2, Crown, UserCheck, KeyRound, X, Copy, AlertCircle
@@ -413,7 +414,7 @@ const Settings: React.FC = () => {
   const loadTeam = async () => {
     setTeamLoading(true);
     try {
-      const r = await fetch('/api/users?action=list');
+      const r = await fetch('/api/users?action=list', { headers: authHeaders() });
       const data = await r.json();
       if (data.success) setTeamMembers(data.users || []);
     } catch {}
@@ -424,7 +425,7 @@ const Settings: React.FC = () => {
     setDevicesLoading(true);
     try {
       const [devR, fwdR] = await Promise.all([
-        fetch('/api/users?action=listDevices'),
+        fetch('/api/users?action=listDevices', { headers: authHeaders() }),
         fetch('/api/whatsapp?action=getForwardStatus').catch(() => ({ ok: false })),
       ]);
       const devData = await devR.json();
@@ -540,7 +541,7 @@ const Settings: React.FC = () => {
     try {
       const r = await fetch('/api/users?action=linkDevice', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           deviceId,
           userId: deviceAssignments[deviceId] || null,
@@ -561,7 +562,7 @@ const Settings: React.FC = () => {
     try {
       const r = await fetch('/api/users?action=update', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ id: memberId, role: editRoleValue })
       });
       const data = await r.json();
@@ -585,7 +586,7 @@ const Settings: React.FC = () => {
     try {
       const r = await fetch('/api/users?action=invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ name: inviteName, email: inviteEmail, role: inviteRole })
       });
       const data = await r.json();
@@ -611,7 +612,7 @@ const Settings: React.FC = () => {
     try {
       const r = await fetch('/api/users?action=remove', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ id })
       });
       const data = await r.json();
@@ -626,7 +627,7 @@ const Settings: React.FC = () => {
     try {
       const r = await fetch('/api/users?action=resetPassword', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ id: member.id })
       });
       const data = await r.json();
@@ -648,7 +649,7 @@ const Settings: React.FC = () => {
     try {
       const r = await fetch('/api/users?action=createOwner', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ name: ownerName, email: ownerEmail, password: ownerPassword })
       });
       const data = await r.json();

@@ -55,6 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const session = JSON.parse(raw);
             session.expiresAt = data.expiresAt;
             session.refreshToken = data.refreshToken;
+            if (data.accessToken) session.accessToken = data.accessToken;
             localStorage.setItem(SESSION_KEY, JSON.stringify(session));
             scheduleRefresh(data.expiresAt, data.refreshToken);
           }
@@ -114,6 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setMustChangePassword(mcp);
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         user: data.user,
+        accessToken: data.accessToken,
         expiresAt: data.expiresAt,
         refreshToken: data.refreshToken,
         mustChangePassword: mcp

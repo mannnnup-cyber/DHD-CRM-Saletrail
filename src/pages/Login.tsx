@@ -27,10 +27,10 @@ const Login: React.FC = () => {
 
   // Check if any owner account exists
   useEffect(() => {
-    fetch('/api/users?action=list')
+    fetch('/api/users?action=setupStatus')
       .then(r => r.json())
       .then(d => {
-        setNeedsSetup(!d.success || (d.users || []).length === 0);
+        setNeedsSetup(!!d.needsSetup);
         setCheckingSetup(false);
       })
       .catch(() => setCheckingSetup(false));

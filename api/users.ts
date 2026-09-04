@@ -17,6 +17,46 @@ const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 const generateTempPassword = () =>
   Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '!';
 
+// ─── Authentication / authorization ──────────────────────────────────────────
+// Verifies the caller's Supabase access token server-side and loads their role
+// from user_profiles. Frontend role claims are never trusted. Returns null
+// after writing the 401/403 response when the caller is not permitted.
+
+interface Caller { userId: string; email: string; role: string }
+
+async function authenticate(
+  req: VercelRequest,
+  res: VercelResponse,
+  allowedRoles?: string[]
+): Promise<Caller | null> {
+  const header = (req.headers['authorization'] as string) || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  const { data: userData, error: jwtError } = await supabaseAuth.auth.getUser(token);
+  if (jwtError || !userData?.user) {
+    res.status(401).json({ success: false, error: 'Invalid or expired session. Please log in again.' });
+    return null;
+  }
+  const { data: profile } = await supabaseAdmin
+    .from('user_profiles')
+    .select('id, email, role, is_active')
+    .eq('id', userData.user.id)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (!profile) {
+    res.status(403).json({ success: false, error: 'Account not found or inactive' });
+    return null;
+  }
+  if (allowedRoles && !allowedRoles.includes(profile.role)) {
+    res.status(403).json({ success: false, error: 'Insufficient permissions' });
+    return null;
+  }
+  return { userId: profile.id, email: profile.email, role: profile.role };
+}
+
 // ─── Email helpers ────────────────────────────────────────────────────────────
 
 const sendEmail = async (to: string, subject: string, html: string) => {
@@ -89,12 +129,8 @@ const sendResetEmail = (to: string, name: string, tempPassword: string) =>
     ${loginButton()}
   </div>`);
 
-// ─── Warning helper ───────────────────────────────────────────────────────────
-
-const emailFailedWarning = (reason: string | undefined, status: number | undefined, email: string, password: string) => {
-  const label = !reason || reason === 'no_key' ? 'No email provider configured' : `Email failed (${status || reason})`;
-  return `${label}. Share these credentials manually — Email: ${email} / Password: ${password}`;
-};
+// ─── Warning helper ──────────────────────────────────────────────────────────
+// (Removed emailFailedWarning — it embedded plaintext passwords in API text.)
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -131,6 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({
           success: true,
           user: { id: profile.id, name: profile.name, email: profile.email, role: profile.role },
+          accessToken: authData.session.access_token,
           expiresAt: authData.session.expires_at,
           refreshToken: authData.session.refresh_token,
           mustChangePassword: profile.must_change_password || false
@@ -147,14 +184,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         return res.json({
           success: true,
+          accessToken: data.session.access_token,
           expiresAt: data.session.expires_at,
           refreshToken: data.session.refresh_token
         });
       }
 
+      // ── Public bootstrap probe (no user data exposed) ─────────────────────
+      case 'setupStatus': {
+        const { count } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('is_active', true);
+        return res.json({ success: true, needsSetup: (count || 0) === 0 });
+      }
+
+      // ── Minimal directory for authenticated pages (id + name only) ───────
+      case 'teamDirectory': {
+        const caller = await authenticate(req, res);
+        if (!caller) return;
+        const { data, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, name')
+          .eq('is_active', true)
+          .order('created_at', { ascending: true });
+        if (error) return res.json({ success: false, error: error.message });
+        return res.json({ success: true, users: data || [] });
+      }
+
       // ── Team management ─────────────────────────────────────────────────────
 
       case 'list': {
+        const caller = await authenticate(req, res, ['owner', 'manager']);
+        if (!caller) return;
         const { data, error } = await supabaseAdmin
           .from('user_profiles')
           .select('id, name, email, role, companion_installed, whatsapp_connected, is_active, created_at')
@@ -166,6 +228,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'invite': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const caller = await authenticate(req, res, ['owner', 'manager']);
+        if (!caller) return;
         const { name, email, role } = req.body;
         if (!name || !email || !role) return res.status(400).json({ success: false, error: 'name, email and role are required' });
 
@@ -219,9 +283,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : await sendInviteEmail(email, name, role, tempPassword);
 
         if (!emailResult.sent) {
+          // Credentials are only delivered by email — never returned in the API
+          // response. If delivery fails, re-invite (or reset password) once email
+          // delivery is working to issue the user fresh credentials.
           return res.json({
-            success: true, userId: invitedUserId, wasReactivated, tempPassword,
-            warning: emailFailedWarning(emailResult.reason, (emailResult as any).status, email, tempPassword)
+            success: true, userId: invitedUserId, wasReactivated,
+            warning: 'Account created, but the credential email could not be delivered. Once email sending is fixed, use Reset Password (or re-invite) to issue credentials — passwords are never shown here.'
           });
         }
 
@@ -230,6 +297,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'update': {
         if (req.method !== 'PUT') return res.status(405).json({ error: 'PUT required' });
+        const caller = await authenticate(req, res, ['owner', 'manager']);
+        if (!caller) return;
         const { id, name, role } = req.body;
         if (!id) return res.status(400).json({ success: false, error: 'id is required' });
 
@@ -244,6 +313,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'remove': {
         if (req.method !== 'DELETE') return res.status(405).json({ error: 'DELETE required' });
+        const caller = await authenticate(req, res, ['owner', 'manager']);
+        if (!caller) return;
         const { id } = req.body;
         if (!id) return res.status(400).json({ success: false, error: 'id is required' });
 
@@ -265,6 +336,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'resetPassword': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const caller = await authenticate(req, res, ['owner', 'manager']);
+        if (!caller) return;
         const { id } = req.body;
         if (!id) return res.status(400).json({ success: false, error: 'id is required' });
 
@@ -282,31 +355,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const emailResult = await sendResetEmail(profile.email, profile.name, tempPassword);
         if (!emailResult.sent) {
+          // New password is only delivered by email — never returned in the API response.
           return res.json({
-            success: true, tempPassword,
-            warning: `Password reset but email failed. Share manually — Email: ${profile.email} / New Password: ${tempPassword}`
+            success: true,
+            warning: 'Password was reset, but the email could not be delivered. The new password was NOT changed to anything shown here — retry the reset once email sending is working.'
           });
         }
-        return res.json({ success: true, tempPassword });
+        return res.json({ success: true });
       }
 
       case 'changePassword': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
-        const { id, email, currentPassword, newPassword } = req.body;
-        if (!id || !email || !currentPassword || !newPassword) {
-          return res.status(400).json({ success: false, error: 'All fields required' });
+        // Self-service only: identity comes from the verified token, never the
+        // body, so a caller can only change their own password.
+        const caller = await authenticate(req, res);
+        if (!caller) return;
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) {
+          return res.status(400).json({ success: false, error: 'currentPassword and newPassword are required' });
         }
-        if (newPassword.length < 8) return res.json({ success: false, error: 'New password must be at least 8 characters' });
+        if (newPassword.length < 8) return res.status(400).json({ success: false, error: 'New password must be at least 8 characters' });
 
-        const { error: verifyError } = await supabaseAuth.auth.signInWithPassword({ email, password: currentPassword });
+        const { error: verifyError } = await supabaseAuth.auth.signInWithPassword({ email: caller.email, password: currentPassword });
         if (verifyError) return res.json({ success: false, error: 'Current password is incorrect' });
 
-        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(id, { password: newPassword });
+        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(caller.userId, { password: newPassword });
         if (updateError) return res.json({ success: false, error: updateError.message });
 
         // Clear the must-change flag after successful change
         await supabaseAdmin.from('user_profiles')
-          .update({ must_change_password: false, updated_at: new Date().toISOString() }).eq('id', id);
+          .update({ must_change_password: false, updated_at: new Date().toISOString() }).eq('id', caller.userId);
 
         return res.json({ success: true });
       }
@@ -314,6 +392,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // ── Devices ─────────────────────────────────────────────────────────────
 
       case 'listDevices': {
+        const caller = await authenticate(req, res, ['owner', 'manager']);
+        if (!caller) return;
         const { data, error } = await supabaseAdmin
           .from('devices')
           .select('device_id, phone_number, device_name, device_model, app_version, user_id, is_active, last_heartbeat, sim_count')
@@ -324,6 +404,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'linkDevice': {
         if (req.method !== 'PUT') return res.status(405).json({ error: 'PUT required' });
+        const caller = await authenticate(req, res, ['owner', 'manager']);
+        if (!caller) return;
         const { deviceId, userId, deviceName } = req.body;
         if (!deviceId) return res.status(400).json({ success: false, error: 'deviceId required' });
 
@@ -354,11 +436,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'createOwner': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        // Bootstrap-only: when an owner already exists this endpoint requires an
+        // owner/manager token (and still refuses). Public access is only
+        // permitted on a fresh install with zero owners, for first-run setup.
+        const { data: existing } = await supabaseAdmin.from('user_profiles').select('id').eq('role', 'owner').single();
+        if (existing) {
+          const caller = await authenticate(req, res, ['owner', 'manager']);
+          if (!caller) return;
+          return res.json({ success: false, error: 'Owner account already exists' });
+        }
         const { email, password, name } = req.body;
         if (!email || !password || !name) return res.status(400).json({ success: false, error: 'email, password and name required' });
-
-        const { data: existing } = await supabaseAdmin.from('user_profiles').select('id').eq('role', 'owner').single();
-        if (existing) return res.json({ success: false, error: 'Owner account already exists' });
 
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email, password, email_confirm: true

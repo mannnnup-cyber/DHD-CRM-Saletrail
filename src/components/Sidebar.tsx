@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { authHeaders } from '../lib/auth';
 import {
   LayoutDashboard, Phone, CheckCircle2, ChartPie, FilePenLine,
   UserPlus, ShoppingCart, MessageSquare, Users,
@@ -70,8 +71,8 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
     try {
       const r = await fetch('/api/users?action=changePassword', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: user?.id, email: user?.email, currentPassword: cpCurrent, newPassword: cpNew })
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ currentPassword: cpCurrent, newPassword: cpNew })
       });
       const data = await r.json();
       if (data.success) {
