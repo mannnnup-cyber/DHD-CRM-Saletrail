@@ -151,13 +151,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Shadow module-level env-var constants with DB-backed values so the
-  // Evolution API URL/key can be updated from the Settings UI without
-  // touching Vercel env vars. Falls back to env var if not in app_settings.
+  // Secrets prefer server env (Vercel) with app_settings as fallback, so rotated
+  // credentials can live in Vercel without being rewritten into the database.
+  // The non-secret Evolution API URL keeps DB-wins so the Settings UI can
+  // repoint the server without a redeploy.
   // eslint-disable-next-line @typescript-eslint/no-shadow
   const EVOLUTION_API_URL = await getSetting('EVOLUTION_API_URL', process.env.EVOLUTION_API_URL || '');
   // eslint-disable-next-line @typescript-eslint/no-shadow
-  const EVOLUTION_API_KEY = await getSetting('EVOLUTION_API_KEY', process.env.EVOLUTION_API_KEY || '');
+  const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || await getSetting('EVOLUTION_API_KEY', '');
 
   // Handle webhook POST from WhatsApp providers (Green API or Evolution API)
   if (req.method === 'POST' && !req.query.action) {

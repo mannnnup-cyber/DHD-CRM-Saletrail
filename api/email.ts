@@ -427,11 +427,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const bodySettings: Record<string, string> = req.body?.settings || {};
         const dbSettings = Object.keys(bodySettings).length > 0 ? bodySettings : await getSettings();
 
-        const IMAP_HOST = dbSettings['IMAP_HOST'] || '';
-        const IMAP_PORT = parseInt(dbSettings['IMAP_PORT'] || '993');
-        const IMAP_USER = dbSettings['IMAP_USER'] || '';
-        const IMAP_PASSWORD = dbSettings['IMAP_PASSWORD'] || '';
-        const IMAP_USE_TLS = dbSettings['IMAP_USE_TLS'] !== 'false';
+        // Secret credentials prefer server env (Vercel) with app_settings as
+        // fallback, so rotated credentials never need to be stored in the DB.
+        // Non-secret IMAP host/port/user also accept env for completeness.
+        const IMAP_HOST = process.env.IMAP_HOST || dbSettings['IMAP_HOST'] || '';
+        const IMAP_PORT = parseInt(process.env.IMAP_PORT || dbSettings['IMAP_PORT'] || '993');
+        const IMAP_USER = process.env.IMAP_USER || dbSettings['IMAP_USER'] || '';
+        const IMAP_PASSWORD = process.env.IMAP_PASSWORD || dbSettings['IMAP_PASSWORD'] || '';
+        const IMAP_USE_TLS = (process.env.IMAP_USE_TLS ?? dbSettings['IMAP_USE_TLS']) !== 'false';
         const AI_ANALYSIS_ENABLED = dbSettings['AI_ANALYSIS_ENABLED'] !== 'false';
 
         if (!IMAP_HOST || !IMAP_USER || !IMAP_PASSWORD) {
@@ -719,7 +722,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'send': {
         // Send email via Resend (get API key from database settings)
         const settings = await getSettings();
-        const RESEND_API_KEY = settings['RESEND_API_KEY'] || '';
+        const RESEND_API_KEY = process.env.RESEND_API_KEY || settings['RESEND_API_KEY'] || '';
 
         if (!RESEND_API_KEY) {
           return res.status(400).json({
@@ -791,7 +794,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Get settings from database
         const settings = await getSettings();
-        const RESEND_API_KEY = settings['RESEND_API_KEY'] || '';
+        const RESEND_API_KEY = process.env.RESEND_API_KEY || settings['RESEND_API_KEY'] || '';
         const DEFAULT_FROM_EMAIL = settings['DEFAULT_FROM_EMAIL'] || 'sales@saletrail.com';
         const DEFAULT_FROM_NAME = settings['DEFAULT_FROM_NAME'] || 'DHD Sales';
 

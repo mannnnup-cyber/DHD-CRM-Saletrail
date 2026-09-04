@@ -16,16 +16,19 @@ let _bbKeyCache: { value: string | null; expires: number } = { value: null, expi
 
 async function getBrightBeanKey(): Promise<string | null> {
   if (Date.now() < _bbKeyCache.expires) return _bbKeyCache.value;
-  let value: string | null = null;
-  try {
-    const { data } = await supabase!
-      .from('app_settings')
-      .select('setting_value')
-      .eq('setting_key', 'BRIGHTBEAN_API_KEY')
-      .maybeSingle();
-    value = (data?.setting_value as string) || null;
-  } catch { /* fall through to env */ }
-  if (!value) value = ENV_BB_API_KEY || null;
+  // Server env (Vercel) wins; app_settings is the fallback so rotated keys
+  // never need to be written back into the database.
+  let value: string | null = ENV_BB_API_KEY || null;
+  if (!value) {
+    try {
+      const { data } = await supabase!
+        .from('app_settings')
+        .select('setting_value')
+        .eq('setting_key', 'BRIGHTBEAN_API_KEY')
+        .maybeSingle();
+      value = (data?.setting_value as string) || null;
+    } catch { /* no env and no DB value */ }
+  }
   _bbKeyCache = { value, expires: Date.now() + 5000 };
   return value;
 }
