@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as cheerio from 'cheerio';
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
-const _key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const _key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = _url && _key ? createClient(_url, _key) : null;
 
 function normalizePhone(raw: string): string {

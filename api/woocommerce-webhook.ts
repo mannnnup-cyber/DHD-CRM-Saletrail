@@ -4,7 +4,7 @@ import { createHmac } from 'crypto';
 
 // Self-contained Supabase client — does NOT import from src/lib/supabase (Vite-only)
 const _supabaseUrl = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
-const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const _supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = _supabaseUrl && _supabaseKey ? createClient(_supabaseUrl, _supabaseKey) : null;
 
 const WC_WEBHOOK_SECRET = process.env.WC_WEBHOOK_SECRET || '';

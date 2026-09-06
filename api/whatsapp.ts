@@ -34,7 +34,7 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; ema
 // (that file uses import.meta.env which is Vite-only and crashes in serverless)
 
 const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
-const _supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const _supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // 5-minute in-memory cache for release info
 let _releaseCache: { fetchedAt: number; version: string | null; downloadUrl: string; publishedAt: string | null } | null = null;
