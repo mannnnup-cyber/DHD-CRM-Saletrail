@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
-const _key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const _key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = _url && _key ? createClient(_url, _key) : null;
 
 // ---------------------------------------------------------------------------
@@ -681,7 +681,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 // Uses service role key for call_insights write access
 // ---------------------------------------------------------------------------
 const _adminUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || '';
-const _adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const _adminKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const supabaseAdmin = _adminUrl && _adminKey ? createClient(_adminUrl, _adminKey) : null;
 
 function analyzeBasicSentiment(text: string): { sentiment: string; score: number } {
