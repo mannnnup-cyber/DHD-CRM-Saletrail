@@ -4,11 +4,13 @@
 
 - **Work Packet ID:** `WP-001`
 - **Title:** Diagnose Recurring WhatsApp Inbound Webhook Failure
-- **Status:** `Planned`
+- **Status:** `In Progress`
 - **Priority:** `P0`
 - **Owner:** Principal Architect / DHD
-- **Assigned Agent(s):** `follops-lead` to delegate primarily to `follops-integrations`; QA mandatory; Security mandatory for any implementation because this is a public webhook/integration path
+- **Assigned Agent(s):** `follops-integrations` (delegated by `follops-lead`); QA mandatory; Security mandatory for any implementation because this is a public webhook/integration path
 - **Dependencies:** None
+- **Branch/Worktree:** `WP-001-whatsapp` (from master @ `981d03a`)
+- **Delegated:** 2026-09-11 by `follops-lead`
 
 ## Objective
 
