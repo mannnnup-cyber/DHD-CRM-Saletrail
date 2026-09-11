@@ -51,7 +51,7 @@ This project is indexed by GitNexus as **DHD-CRM-Saletrail** (972 symbols, 1287 
 ## Always Do
 
 - **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST run `gitnexus_detect_changes()` when available** before committing; otherwise perform `git diff/status` scope verification and report the limitation (command unavailable in this environment).
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
 - When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
 - When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
@@ -61,7 +61,7 @@ This project is indexed by GitNexus as **DHD-CRM-Saletrail** (972 symbols, 1287 
 - NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
 - NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+- NEVER commit changes without scope verification (use `gitnexus_detect_changes()` when available; otherwise `git diff/status` with limitation reported).
 
 ## Resources
 
@@ -160,7 +160,13 @@ Security does NOT need to run for purely cosmetic low-risk changes unless one of
 | follops-qa | `sonnet` | Independent verification |
 | follops-security | `opus` | Adversarial review, must not miss issues |
 
-**Note:** Model selection is set at invocation time (not in agent definition files).
+**Model Routing Policy (unverified)</strong>
+
+The environment's Agent invocation returned HTTP 400 for `model: "sonnet"`; no exact gateway model identifiers (`sonnet`, `fable`, `opus`) have been verified against this gateway.
+
+Use the current session/default routed model. Per-agent model preferences (`sonnet` for lead/backend/integrations/qa; `fable` for frontend; `opus` for security) are recommendations only until exact gateway model identifiers are verified by the environment.
+
+**Note:** Model selection is set at invocation time (not in agent definition files). Do not modify OmniRouter/Gateway configuration.
 
 ## Work Packet Workflow
 
