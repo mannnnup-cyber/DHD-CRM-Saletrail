@@ -1,8 +1,8 @@
-# Architecture
+# Architecture — FollOps
 
 ## Runtime Shape
 
-DHD CRM SalesTrail is a React 19, TypeScript, Vite 7, and Tailwind CSS application
+FollOps is a React 19, TypeScript, Vite 7, and Tailwind CSS application
 deployed as a Vercel-compatible frontend with serverless API handlers under `api/`.
 The app uses hash-based routing through `react-router-dom`. Route definitions live
 in `src/App.tsx`. Navigation labels and role filtering live in `src/components/Sidebar.tsx`.
@@ -18,27 +18,26 @@ component will throw a runtime error (e.g., "Ye.from is not a function").
 fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call with
 `.catch(() => [])`, so failures are silent but non-crashing.
 
-## Security Model (Stage 1 containment, 2026-09)
+## Security Model (Stage 1 Containment — 2026-09, Completed)
 
 - `api/users.ts` enforces server-side auth: privileged actions require a
   Supabase access token (verified via `auth.getUser`) and the caller's role is
   loaded from `user_profiles`. Frontend role claims are never trusted.
   owner/manager required for list/invite/update/remove/resetPassword/
   listDevices/linkDevice; changePassword is self-service via token identity;
-  createOwner is public only while zero owners exist; login/refresh are the
-  only public actions. Temporary passwords are never returned in responses.
+  createOwner is public only while zero owners exist. Temporary passwords are
+  never returned in responses.
 - Secret credentials resolve **env-first, `app_settings` fallback**
   (Evolution key, BrightBean key, Resend key, IMAP credentials). The Evolution
   API *URL* intentionally stays DB-wins (non-secret, Settings-UI managed).
 - Frontend sends `Authorization: Bearer <accessToken>` on user-management
   calls via the `src/lib/auth.ts` helper.
-- KNOWN OPEN ITEMS (Stage 1 in progress): production RLS still permissive
-  (`USING (true)` policies — DB anonymously readable/writable); all API
-  handlers except users/recordings still use the anon-key Supabase client;
-  handler flip to service-role + RLS lockdown is the next containment step.
-  Git history still contains old secrets (rotation is the control; rewrite
-  scheduled last). Webhook signature checks fail open (WooCommerce) or are
-  absent (WhatsApp).
+- Server privileged credential precedence:
+  `SUPABASE_SECRET_KEY` → `SUPABASE_SERVICE_ROLE_KEY` → anon fallback
+- **P0 OPEN:** Legacy `SUPABASE_SERVICE_ROLE_KEY` (public git history since
+  `273ea13`) remains ENABLED as fallback — owner decision to defer disabling.
+  Credential remediation is NOT complete until this lands.
+- Webhook signature checks fail open (WooCommerce) or are absent (WhatsApp).
 
 ## Frontend
 
@@ -84,8 +83,9 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 | `api/woocommerce-webhook.ts` | WooCommerce webhook receiver |
 | `api/email.ts` | IMAP email sync and compose |
 | `api/settings.ts` | app_settings read/write with secret masking |
-| `api/users.ts` | User profile management |
+| `api/users.ts` | User profile management (auth + roles) |
 | `api/recordings.ts` | Call recording configuration |
+| `api/social.ts` | BrightBean Studio REST API proxy |
 
 ## Automation Engine
 
@@ -125,32 +125,29 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 ## Social Media Integration
 
 - **BrightBean Studio** (https://studio.brightbean.xyz) — free hosted, open-source
-  (AGPL-3.0) social media management platform. Used for composing, scheduling,
-  approving, and publishing posts; the CRM does not publish posts itself.
-- The CRM integrates read-only via BrightBean's REST API (`{APP_URL}/api/v1/`,
-  bearer-key auth). `api/social.ts` proxies `status`/`accounts`/`analytics`.
-  The API key lives in `app_settings` (key `BRIGHTBEAN_API_KEY`, password type,
+  (AGPL-3.0) social media management platform. CRM proxies its REST API via `api/social.ts`.
+- API key lives in `app_settings` (key `BRIGHTBEAN_API_KEY`, password type,
   masked in Settings) with `process.env.BRIGHTBEAN_API_KEY` as fallback —
-  DB values win over env, same pattern as the Evolution API settings.
-- The `/social` page shows a setup guide when the key is not configured, and
-  connected accounts + per-account analytics when it is. Composing/scheduling
-  happens in Studio via external links (deep-link phase 2: `POST /api/v1/posts`).
+  DB wins over env, same pattern as Evolution API settings.
+- Known issue: BrightBean `/accounts/` returns HTTP 500 from studio.brightbean.xyz
+  since 2026-09-07 (key accepted; `/me/` works). YouTube token still needs owner reconnect.
 
 ## Integrations
 
-| Integration | Purpose |
-|------------|---------|
-| Supabase | Database, tables, realtime subscriptions |
-| Green API | WhatsApp send/receive (primary) |
-| Evolution API | WhatsApp send/receive (secondary, Railway) |
-| WooCommerce | Order/customer sync |
-| IMAP | Email inbox sync |
-| BrightBean Studio | Social media scheduling/publishing (free hosted plan); CRM proxies its REST API via `api/social.ts` |
-| Vercel | Deployment, serverless API runtime, daily cron |
-| Android Companion App | GSM call sync from rep devices |
-| GitNexus | Codebase indexing for AI-assisted development |
-| Context7 | Up-to-date framework/library docs |
-| OpenAI / Anthropic Claude | AI enrichment and email analysis |
+| Integration | Purpose | Status |
+|------------|---------|--------|
+| Supabase | Database, tables, realtime subscriptions | Active — RLS lockdown applied |
+| Green API | WhatsApp send/receive (primary) | Active |
+| Evolution API | WhatsApp send/receive (secondary, Railway) | Active (Docker) |
+| WooCommerce | Order/customer sync | Broken — REST 403 |
+| IMAP | Email inbox sync | Active |
+| BrightBean Studio | Social media scheduling/publishing | Partial — `/accounts/` 500 |
+| Vercel | Deployment, serverless API runtime, daily cron | Active |
+| Android Companion App | GSM call sync from rep devices | Active |
+| GitNexus | Codebase indexing for AI-assisted development | Active |
+| Context7 | Up-to-date framework/library docs | Active |
+| OpenAI / Anthropic Claude | AI enrichment and email analysis | Active |
+| Resend | Outbound email | Broken — domain verification? |
 
 ## Environment Variables
 

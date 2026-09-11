@@ -4,6 +4,45 @@ Entries are newest first. Each entry covers a development session or sprint.
 
 ---
 
+## 2026-09-06 to 2026-09-07 — Stage 1: Verification, Handler Flip, RLS Lockdown, Secret-Key Path
+
+Step 3 owner-verification executed live via throwaway temp accounts (created
++ deleted via admin API): all unauth users.ts probes 401 (incl. createOwner
+with full fake body), sales_rep denied 403 on every management action,
+manager allowed, changePassword self-service confirmed. No real users touched.
+
+- `ef1745b` — handler flip: all 9 anon-key API handlers now prefer
+  `SUPABASE_SERVICE_ROLE_KEY` (anon chain kept as runtime fallback).
+  Smoke-tested incl. synthetic webhook write.
+- 2026-09-07 — RLS lockdown applied via direct SQL (session pooler):
+  RLS enabled on ALL 38 public tables (16 previously had RLS fully disabled,
+  incl. app_settings/user_profiles/whatsapp_messages), all 29 `USING (true)`
+  policies dropped. Single transaction; post-state verified 38/38 enabled,
+  0 policies. Anon probes: reads empty on 16 tables, INSERT rejected 42501.
+  Full 12-path app smoke suite passed incl. synthetic inbound WhatsApp write
+  through service-role client. Rollback file:
+  `dhd-backups/rollback-rls-lockdown-20260907.sql` (29 CREATE POLICY +
+  16 DISABLE, generated from live pre-lock inventory; cross-checked against
+  the Sep-3 schema dump — exact 29/29 match).
+- `2933dbd` — secret-key compatibility: all 11 privileged DB clients prefer
+  `SUPABASE_SECRET_KEY || SUPABASE_SERVICE_ROLE_KEY || <anon fallback>`
+  (crm.ts has two clients). No other changes; smoke suite passed.
+- Owner created new `sb_secret_...` key, added it to Vercel as
+  `SUPABASE_SECRET_KEY` (Production/Preview/Development), redeployed.
+  Full smoke suite + anon RLS probes passed on the new deployment;
+  credential source confirmed `SUPABASE_SECRET_KEY` (definitive proof
+  arrives when legacy key is disabled).
+- **DEFERRED P0 (owner decision 2026-09-07): the legacy
+  `SUPABASE_SERVICE_ROLE_KEY` (in public git history since 273ea13) remains
+  ENABLED as fallback.** Disabling it + old-key invalidation probe is an
+  open P0. Supabase credential remediation is NOT complete until then.
+- Known upstream issue (unrelated to these changes, classified separately):
+  BrightBean `/accounts/` returns HTTP 500 from studio.brightbean.xyz since
+  2026-09-07 (key accepted; `/me/` works). YouTube token still needs owner
+  reconnect in Studio.
+
+---
+
 ## 2026-09-02 to 2026-09-04 — Security Audit + Stage 1 Emergency Containment
 
 A full security/architecture baseline audit found critical exposures (public
