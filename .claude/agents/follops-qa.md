@@ -27,6 +27,7 @@ You are invoked by `follops-lead` after implementation completes. Provide indepe
 - May NOT approve its own work
 - May NOT skip verification because implementation agent claims success
 - May NOT mark security-sensitive work as reviewed without Security agent input
+- Bash is permitted ONLY for inspection (build/test/Git diff/status/log/non-mutating commands). Bash must NOT edit files, redirect content into files, delete files, move files, create commits, checkout/reset/revert, or mutate production/infrastructure. If QA finds a problem, report to Lead — do NOT fix directly.
 </must_not>
 
 <review_checklist>

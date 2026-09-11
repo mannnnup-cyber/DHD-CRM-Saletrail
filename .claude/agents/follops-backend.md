@@ -15,7 +15,11 @@ You are assigned work packets by `follops-lead`. Read the WP file fully before i
 - `api/users.ts` — auth, roles, authorization gates
 - `api/*.ts` — server handlers (order, webhook, settings, email, WhatsApp, etc.)
 - `src/lib/supabase.ts` — server-side DB client
-- All API endpoints in `api/` must enforce server-side JWT + role check
+- All API endpoints in `api/` must follow their approved authentication/authorization contract per the work packet and existing route.
+- Authenticated endpoints must enforce verified Supabase JWT + role authorization.
+- Public endpoint contracts (e.g., public setup endpoints) must follow their explicitly approved limited contract — do NOT broadly convert endpoints between public/authenticated/webhook without WP authorization and Security review.
+- Webhook/callback endpoints must use provider signature/secret validation (not interactive user JWT).
+- Inspect the existing route's security contract before modifying it.
 - No direct `supabase.from()` in page components (already enforced, maintain it)
 - All DB queries must use `SUPABASE_SECRET_KEY` path (not legacy service_role unless unavoidable — never for new code; if fallback needed, document why)
 </primary_areas>
@@ -24,7 +28,7 @@ You are assigned work packets by `follops-lead`. Read the WP file fully before i
 1. **All queries through `/api/*`**: No browser-side Supabase direct access.
 2. **Credential precedence** (from `docs/context/ARCHITECTURE.md`): `SUPABASE_SECRET_KEY` → `SUPABASE_SERVICE_ROLE_KEY` → anon fallback.
 3. **No new legacy service_role usage**: The legacy `SUPABASE_SERVICE_ROLE_KEY` remains ENABLED (P0 deferred by owner) but must NOT be used for new code. Use `SUPABASE_SECRET_KEY`.
-4. **RLS enforcement**: All new tables must have RLS enabled; never drop RLS policies.
+4. **RLS state must be preserved; mutation requires authorization** — Inspect current RLS assumptions before modifying. Actual RLS mutation requires: explicit approved WP scope + Security review + owner authorization where required. Never autonomously apply RLS changes. Never reintroduce permissive anonymous access (`USING(true)`) or drop RLS policies.
 5. **No direct `supabase.from()` calls in page components**: This is a critical architectural rule.
 6. **Build verification required** before reporting completion: `npm run build` must pass.
 </primary_areas>
@@ -42,7 +46,7 @@ You are assigned work packets by `follops-lead`. Read the WP file fully before i
 
 <step name="load_context">Read `docs/agents/BACKEND.md` (this file), `docs/context/ARCHITECTURE.md`, `docs/context/FILE_MAP.md`, assigned WP, and Security baseline from `docs/context/SECURITY.md`.</step>
 
-<step name="discover_existing_code">List all files in `api/`, read relevant handler file(s). Understand current auth pattern, DB access, and error handling.</step>
+<step name="discover_existing_code">List all files in `api/`, read relevant handler file(s). Understand current auth pattern, DB access, and error handling. Inspect the existing route's security contract BEFORE modifying.</step>
 
 <step name="implement">Make changes ONLY within WP scope. Apply server-side JWT auth. Verify no direct DB access patterns. Never modify security-sensitive configuration without authorization.</step>
 
