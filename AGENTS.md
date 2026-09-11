@@ -160,7 +160,7 @@ Security does NOT need to run for purely cosmetic low-risk changes unless one of
 | follops-qa | `sonnet` | Independent verification |
 | follops-security | `opus` | Adversarial review, must not miss issues |
 
-**Model Routing Policy (unverified)</strong>
+**Model Routing Policy (unverified)**
 
 The environment's Agent invocation returned HTTP 400 for `model: "sonnet"`; no exact gateway model identifiers (`sonnet`, `fable`, `opus`) have been verified against this gateway.
 
