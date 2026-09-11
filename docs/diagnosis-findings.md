@@ -1,11 +1,11 @@
 # WP-001 Diagnostic Findings — WhatsApp Webhook Failure Investigation
 **Date:** 2026-09-11
 **Agent:** follops-integrations
-**Status:** Diagnosis Complete — Root Cause Identified
+**Status:** Diagnosis Complete — Leading Hypothesis Pending Live Verification
 
 ## Executive Summary
 
-**Root Cause Identified:** Failure Layer **B — Webhook Registration** + **C — Callback Delivery**
+**Leading Hypothesis Pending Live Verification:** Failure Layer **B — Webhook Registration** + **C — Callback Delivery**
 
 The Evolution API instance may be running and connected (Layer A), but the webhook configuration is either:
 1. Not registered at all
