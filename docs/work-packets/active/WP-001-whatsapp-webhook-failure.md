@@ -234,3 +234,45 @@ Status: Blocked
 QA: NEEDS-EVIDENCE
 Security: PASS + ESCALATE
 Evidence: docs/diagnosis-findings.md
+
+## Live Verification Attempt (2026-09-11)
+
+### Setup
+- Work Packet: WP-001
+- Branch/Worktree: WP-001-whatsapp @ c5a9660
+- Owner confirms real inbound WhatsApp traffic is arriving on the DHD sales number (phone redacted per constraints).
+- Layer A (customer message arrival at WhatsApp number) treated HEALTHY per owner confirmation.
+- No customer message content or phone numbers recorded; timestamps/classification only.
+
+### Read-only diagnostics attempted
+1. Evolution API webhook endpoint (`/webhook/find/{instanceName}`) returns HTTP 401 without apikey (expected). Webhook config not retrievable from this environment without secret.
+2. Public callback endpoint `POST /api/whatsapp` reachable per code analysis (lines 164-402). No live POST observed from this environment.
+3. Webhook registration events (from source): `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `CONNECTION_UPDATE`, `QRCODE_UPDATED`, `CALL` (lines 509-555).
+4. `syncEvolutionMessages` code path exists (lines 1853-2059) and can upsert missing messages into DB; execution requires authenticated session or apikey (secret).
+
+### First unobservable layer
+**Layer B (Webhook registration) / Layer C (Callback delivery)** — cannot observe live webhook config or POST attempts from this environment without:
+- (a) Evolution API auth (apikey) — secret exposure prohibited per constraints, OR
+- (b) Vercel function logs showing recent `POST /api/whatsapp` attempts and HTTP status, OR
+- (c) Owner-provided redacted webhook config (configured, url domain, events, lastMessageAt).
+
+### Required owner action (exact)
+Fetch live webhook configuration for instance `dhd-crm-wa` via Evolution UI/API (authenticated) and provide the following (no secrets, redacted as needed):
+- `configured`: true/false
+- `url`: redacted domain only (e.g. `https://*.vercel.app/api/whatsapp`)
+- `events`: list (e.g. `MESSAGES_UPSERT`, …)
+- `lastMessageAt`: timestamp of latest inbound message persisted in DB
+- Confirm from Vercel dashboard whether recent `POST /api/whatsapp` invocations exist and their HTTP status codes (e.g. 200 vs 4xx/5xx) with timestamps.
+- Optionally, run **Sync Messages** from WhatsApp UI and report count of recovered messages (no content).
+
+### Constraints preserved
+- No production code edited
+- No Evolution instance deletion/recreation/disconnect/QR reset
+- No credential rotation
+- No RLS mutation
+- No legacy `SUPABASE_SERVICE_ROLE_KEY` disable (deferred P0 preserved)
+- No master merge; no deploy
+- No customer message content or phone numbers exposed
+
+### Status
+WP-001 BLOCKED AT LAYER B — OWNER ACTION REQUIRED: Provide redacted live webhook config + Vercel POST logs as specified above.
