@@ -8,8 +8,9 @@
 - Authoritative Git Root: `C:/Users/Administrator/dhd crm sale trail/DHD-CRM-Saletrail`
 - Baseline origin/master SHA: `6f0ef857ac7e57d56904d1e992f43e5af95ce60d`
 - Branch: `planning/phase1-packets`
-- HEAD: `<to_be_set>`
-- Divergence vs origin/master: 0 / 0
+- HEAD: 0bd6ec5 (pre-refinement planning branch)
+- Divergence vs origin/master: 1 ahead / 0 behind
+- Previous planning SHA (before refinement): 0bd6ec5
 - Worktree: single (verified; no nested .git conflict)
 - Preflight Verdict: PASS
 - Source-evidence: `git ls-tree -r origin/master --name-only`; `git grep <term> origin/master`; `git show origin/master:<path>` — not working-tree assumption.
@@ -47,6 +48,28 @@ Design the minimum canonical interaction/event contract that can support Unified
 - `contacts`, `interactions`, `calls`, `tasks`, `emails`, `call_transcripts`, `transcription_jobs`, `users`: EXIST — reuse; do NOT require migration for base Inbox pipeline.
 - New structures likely needed (plan only — not implemented here): unified inbox message store (linking raw message to interaction); AI Brain event log; Action Queue table; potential `events` normalization table.
 - DB migration NOT assumed necessary for planning; will be verified before any implementation (preflight step 9: `git ls-tree` / `git grep` against `origin/master` plus schema verification).
+
+## Canonical Contract — Full Field Definition (planning, not implemented)
+Fields: source/channel; provider; external/provider ID; nullable contact ID; direction; message/event type; occurred_at; received_at; content/content reference; media references; related entity type/ID; raw-source reference; metadata; processing state; deduplication/idempotency key; authority/approval; audit reference (hash/provenance only; raw content retained only under approved retention).
+
+Universal (all): source_identifier, occurred_at, direction, event_type, contact_id (nullable), content_ref, metadata, processing_state, idempotency_key, audit_ref.
+Messaging-only (Inbox): provider, provider_external_id, message_format, media_refs, raw_source_ref, received_at.
+Business-event-only (Timeline/AI/Action): event_subtype, business_entity_type, business_entity_id, outcome, related_interaction_id, approval_state, authority_level.
+
+## Contact Resolution Service (reusable stage — explicit outcomes only)
+- Matched existing contact (verified identity).
+- Confidently matched through normalized identity.
+- Unresolved.
+- Ambiguous / requires human resolution.
+No invented match; always record resolution method and confidence.
+
+## Idempotency / Deduplication
+- Webhook retries: idempotency_key derived from provider + external_id + occurred_at.
+- Sync/replay jobs: same; duplicate events rejected; first-write wins.
+- No duplicate `interactions` / `events` created for same raw message.
+
+## Persistence / Data Flow Findings (read-only; adapter/projection possible initially)
+Existing structures verified on `origin/master`: `contacts`, `interactions`, `calls`, `tasks`, `emails`, `call_transcripts`, `transcription_jobs`, `users` (DB); `api/whatsapp.ts` (webhook/reception); `api/email.ts`, `api/social.ts` (reception); `api/crm.ts` (interactions/calls); `api/recordings.ts` (transcription/Companion). Canonical layer can initially project over these without new tables if mapping is clean; new unified store / AI event log / Action Queue proposed only when proven necessary.
 
 ## Dependencies
 - WP-SEC-FOUNDATION (prerequisites (A)-(F) — webhook auth + AI audit + device auth + rate limit/CSP + PII + RLS containment at 38/38).

@@ -32,14 +32,46 @@ Claims below verified via `git show origin/master:docs/context/SECURITY.md`, `gi
 - Production backup/baseline (`2026-09`) — pg_dump trio + REST export + git bundle.
 - Account-takeover containment (`api/users.ts`) (`cc39569`) — unauth 401; rep denial 403; manager allow 200.
 
-### Verified Remaining Vulnerabilities (must not be hidden by "done" claims)
-1. **P0 — Compromised Legacy Supabase `service_role` Key (DEFERRED BY OWNER)** — in public git history; legacy `SUPABASE_SERVICE_ROLE_KEY` still referenced/fallback in code (`api/`. handlers). No rotation authorized in this packet.
-2. **Git-history secret exposure** — `.env.production` untracked now, but prior commits contain secrets; requires history-rewrite authorization (not granted; escalated to owner).
-3. **Webhooks / external integrations — authentication gaps:** Evolution (WhatsApp/GreenAPI), BrightBean, WooCommerce webhook paths (`src/pages/WooCommerce.tsx`) — need signature/secret verification review (not mutated here).
-4. **Recording / device authentication** — `api/recordings.ts` (Companion/Whisper/transcription); device-level access not fully enforced; PII/AI audit trail partial.
-5. **PII / AI audit requirements** — `api/email.ts`, `api/recordings.ts` (AI pipeline: gpt-4o-mini / whisper-1) — audit logging of model inputs/outputs and data retention policy not documented fully.
-6. **Rate limiting / CSP** — not fully configured; Webhook and AI endpoints exposed without documented throttling or content-security policies.
-7. **`evolution_user` concern** — exposed identity / credential exposure risk (referenced in security docs); requires verification.
+## Security Gates (separated by phase — Call Intelligence/device-security does NOT block ordinary Inbox development)
+
+### Gate A — Required Before Development (Inbox / framework extensions)
+- Webhook auth verified for Evolution/WhatsApp (`api/whatsapp.ts`), Email (`api/email.ts`), Social (`api/social.ts`), WooCommerce.
+- JWT / role enforcement (`api/users.ts`) at `401/403/200` verified.
+- RLS containment at 38/38 verified (do not drop policies).
+- `SUPABASE_SECRET_KEY` preferred over legacy `SUPABASE_SERVICE_ROLE_KEY` in new paths (legacy fallback preserved — owner authorization required to disable).
+- No new credential exposure; `.env.production` untracked; docs sanitized.
+
+### Gate B — Required Before Production Activation (Unified Inbox live)
+- Rate limiting + CSP defined for `/api/email`, `/api/whatsapp` webhook, `/api/recordings` ingestion.
+- Contact Resolution service verified (matched / confidently matched / unresolved / ambiguous) — no invented match.
+- Idempotency / deduplication for webhook retries and sync jobs verified.
+- WP-001 (WhatsApp webhook behavior) resolved or explicitly deferred — not altered by this security packet.
+
+### Gate C — Required Before Sensitive AI / Call Intelligence Processing
+- AI audit uses privacy-aware metadata model (NOT routine raw log of AI inputs/outputs). Default audit: provider/model, purpose, actor/system trigger, contact/event references, timestamp, authority level, approval state, outcome/error, identifiers/hashes. Raw customer messages, transcripts, prompts, outputs retained ONLY where approved data-retention requirement justifies.
+- Device/auth on recordings (`api/recordings.ts` 478 lines, Companion/Whisper/transcription_tables) verified.
+- PII handling policy approved for Call Intelligence + AI Brain pipeline.
+
+### Gate D — Required Before Autonomous AI Actions
+- Approval-state mechanism defined (approved / pending / rejected) with human-in-the-loop for detection/state changes.
+- Action Queue (from WP-INBOX contract) requires explicit authority level and approval record before autonomous send/reply/assign.
+- No autonomous action without approval-state verification — security gate enforced at framework layer (`follops-lead.md`).
+
+## Proposed Independently Executable Security Child Packets (planning only — not implemented)
+- WP-SEC-AUTH: Webhook / auth / JWT verification (Gate A/B prerequisites).
+- WP-SEC-AI-AUDIT: Privacy-aware audit model + data-retention policy (Gate C).
+- WP-SEC-DEVICE: Recording / Companion / device-level access + transcription access (Gate C, not blocking Gate A/B).
+- WP-SEC-AUTONOMOUS: Approval-state + authority-level gates for AI actions (Gate D — depends on WP-INBOX contract).
+- WP-SEC-CRED: Owner-authorized rotation of legacy `SUPABASE_SERVICE_ROLE_KEY`, RLS mutation authorization documentation, Git-history rewrite authorization (explicit — not performed).
+
+## Verified Remaining Vulnerabilities (preserved — not hidden by "done")
+1. P0 legacy service-role (deferred — owner authorization required; do NOT disable without approval).
+2. Git-history secret exposure (rewrite requires owner authorization; not performed).
+3. Webhook/auth gaps (Evolution/WhatsApp, BrightBean, WooCommerce — verification needed, not mutation).
+4. Recording/device auth partial (`api/recordings.ts`).
+5. PII / AI audit partial — replaced with metadata model above.
+6. Rate limit / CSP missing — prerequisite for Gate B.
+7. `evolution_user` concern (exposed identity/credential risk) — verify, do not suppress.
 
 ### Accepted / Deferred Risks (explicit, not implicit)
 - **Legacy service-role exception (handled, not hidden):** `SUPABASE_SERVICE_ROLE_KEY` kept as fallback; owner explicitly deferred rotation (per `SECURITY.md` and `follops-lead.md` prohibited-actions: "May NOT disable the legacy `SUPABASE_SERVICE_ROLE_KEY` — that's a deferred P0 owner decision"). No authorization to disable in this packet.

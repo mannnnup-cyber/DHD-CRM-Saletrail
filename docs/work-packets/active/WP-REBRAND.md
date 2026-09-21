@@ -8,8 +8,9 @@
 - Authoritative Git Root: `C:/Users/Administrator/dhd crm sale trail/DHD-CRM-Saletrail`
 - Baseline origin/master SHA: `6f0ef857ac7e57d56904d1e992f43e5af95ce60d`
 - Branch: `planning/phase1-packets`
-- HEAD: `<to_be_set>`
-- Divergence vs origin/master: 0 / 0
+- HEAD: 0bd6ec5 (pre-refinement planning branch)
+- Divergence vs origin/master: 1 ahead / 0 behind
+- Previous planning SHA (before refinement): 0bd6ec5
 - Preflight Verdict: PASS
 - Source-evidence: `git show origin/master:docs/context/BRAND.md`; `git grep -i -n 'DHD\|SaleTrail\|FollOps' origin/master -- '*.md' '*.tsx' '*.ts' '*.env*' '*.json'` — not working-tree inference alone.
 
