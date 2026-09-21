@@ -48,7 +48,7 @@ Agent framework (.claude/agents/): ACTIVE at origin/master (6 files); FollOps na
 Verified at origin/master via git show / grep (read-only):
 - api/recordings.ts: 478 lines. Header: "Handles recording uploads from companion app and transcription queue management." Endpoints include upload, transcription queue (transcription_jobs), call_transcripts insert/update.
 - Companion integration ACTIVE: api/crm.ts 1131 (`companion_installed` select); 1189 (update); api/users.ts 222/427/429; api/whatsapp.ts 54 (download URL to DHD-CRM-Companion releases), 2305 (update companion_installed), 2448 (COMPANION_APP_DOWNLOAD_URL setting), 2777 (Companion polls device commands).
-- Transcription implementation: api/recordings.ts 417 (WHISPER_API_URL = openai.com/v1/audio/transcriptions); 429 (model whistle-1); 448 (insert call_transcripts with provider='openai', model_used='whisper-1').
+- Transcription implementation: api/recordings.ts 417 (WHISPER_API_URL = openai.com/v1/audio/transcriptions); 429 (model whisper-1); 448 (insert call_transcripts with provider='openai', model_used='whisper-1').
 - Tables verified via source + grep: transcription_jobs, call_transcripts, call_insights (analytics). Not fabricated.
 - Supabase Storage: recording_url field in schema; private/secure storage implied by existing endpoint design.
 Design (future work, NOT implemented): Companion app (Android) -> private upload -> transcription (Whisper/openai, provider-replaceable design) -> AI analysis (sentiment/extract keywords — existing in crm.ts 719-734) -> Contact Timeline (link to master contact via identity resolution). CallVault: EXTERNAL ONLY — Android both-side capture research reference; never stated as internal feature.
@@ -69,10 +69,19 @@ No webhook auth mutation in this document; no credential rotation; no production
 - BrightBean / social adapter: design future; existing social endpoint preserved.
 - Interaction / contact model: verified through crm.ts and schema references.
 
-=== 5. UNIFIED INBOX (DESIGNED FROM VERIFIED COMPONENTS) ===
-Existing verified channels: WhatsApp (api/whatsapp.ts 2928), Email (api/email.ts + OpenAI), Social (api/social.ts), WooCommerce (api/woocommerce.ts / webhook), Contacts (contacts table via resolveContact), Interactions (interactions / call_transcripts / tasks / deals / orders).
-Canonical design (future packet, NOT implemented): Conversation model + Message model + ChannelAdapter interface; adapter per source (WhatsApp adapter, Email adapter, Social/BrightBean adapter, WooCommerce adapter); normalizer (provider_message_id, from/to keys, timestamp, body, attachments); store links to master contacts via identity resolution (email/phone match to contacts.id); Inbox = open/unread/assigned/overdue conversations; Timeline = full Contact Timeline from all sources (calls + interactions + orders + quotes + messages + tasks).
-Identity resolution: master contacts record; match on normalized email + normalized phone; new contact creation on unmatched inbound; update last_contacted_at on match.
+=== 5. UNIFIED INBOX (SEPARATE CHANNELS FROM BUSINESS EVENTS) ===
+Distinction (verified from existing architecture, not conflated):
+  - Conversation / Messaging Channels → Unified Inbox (response-required): WhatsApp (api/whatsapp.ts), Email (api/email.ts), Social / BrightBean (api/social.ts). Adapter per channel normalizes to conversational units.
+  - Business / Transaction Sources → Contact Timeline + AI Brain (not messaging channels): WooCommerce orders/invoices (api/woocommerce.ts), Quotes (deals/quotes table), Calls (api/recordings.ts + call_transcripts), Tasks (api/tasks.ts), Interactions (interactions table), Orders, Events.
+  - Business events MAY create inbox/action items (e.g., order.created → create task / notify; quote.expiring → suggest follow-up) but the source is not a message channel.
+Canonical normalization layer (target architecture — defines pipeline, not implementation):
+  Source → Normalize → Contact Resolution → Interaction / Event → AI Brain → Suggested / Approved Action
+  - Source: channel message (WhatsApp/Email/Social) OR business event (WooCommerce/Quote/Call/Task).
+  - Normalize: canonical fields (from/to, timestamp, body/content, provider_message_id for idempotency, attachments, event_type for business sources).
+  - Contact Resolution: match to master contacts record (email + phone normalized); create new if unmatched; update last_contacted_at.
+  - Interaction / Event: write to interactions / call_transcripts / tasks / orders / quotes / timeline (depending on source type — message vs event).
+  - AI Brain: analyze summarized context; extract intent / task / opportunity; draft response / suggest action / recommend next-best-action.
+  - Suggested / Approved Action: output must specify authority (Suggest/Approve/Auto); action registry entry determines execution rules (see section 6 — AI Tool Registry).
 Future channels: Instagram/Facebook (via BrightBean/social adapter), SMS, voicemail (after Call Intelligence completed).
 Distinction preserved: Inbox = response-required; Timeline = complete history.
 
@@ -83,6 +92,19 @@ Verified existing AI at origin/master (NOT scattered guesses):
   - AI model reference: ai_model='rule-based' at insert (line 448) — indicates current transcription insight layer is rule-based, not LLM — document accurately.
   - No centralized orchestration layer exists; no business-event framework; no provider registry.
 Design (future packet): Centralized AI service interface + event-driven orchestration; provider registry (OpenAI, Anthropic, local — replaceable); business events defined: message.received (inbox adapter), call.transcribed (recordings complete), order.created (WooCommerce), quote.expiring (deal), contact.updated (CRM), task.completed (pipeline). Capabilities: summarization (conversation/call/deal), intent extraction, task extraction, opportunity detection (lead score), response drafting (Suggest only — never auto-send), next-best-action (reminder/follow-up/task), customer intelligence (timeline aggregation). Provider replaceable: interface defines analyze()/generate()/summarize(); implementations registered; default configurable.
+=== 7. AI TOOL / ACTION REGISTRY (TARGET ARCHITECTURE — NOT IMPLEMENTATION) ===
+Purpose: enforce Suggest/Approve/Auto authority per tool; every AI action routed through registry before execution.
+Each tool definition: input schema, permitted roles, authority level (Suggest / Approve / Auto), approval requirement, audit requirements, reversibility.
+Illustrative future tools (architectural examples only — NOT implementation authorization):
+  - create_task: input {contact_id, title, due_date, priority}; roles admin/manager/rep; Suggest/Approve; audit task creation; reversible (cancel).
+  - draft_reply: input {message, tone, contact_id}; roles rep/manager; Suggest; audit draft text; reversible (discard).
+  - send_reply: input {conversation_id, body, channel}; roles manager/admin; Approve; audit send; reversible only via recall within provider window (verify).
+  - create_quote: input {deal_id, items, amount}; roles manager; Approve; audit quote creation; reversible before acceptance.
+  - assign_conversation: input {conversation_id, agent_id}; roles manager; Suggest/Approve; audit assignment; reversible.
+  - schedule_followup: input {contact_id, when, type}; roles rep/manager; Suggest/Approve; audit schedule; reversible before scheduled time.
+  - retrieve_order: input {order_id, contact_id}; roles rep/manager/auto; Suggest (read-only); audit access; reversible n/a (read).
+  - update_contact: input {contact_id, field, value}; roles manager/admin; Approve; audit change; reversible via undo/versioning if supported.
+Registry rules: AI output must reference registry tool; authority mismatch -> escalate; unknown tool -> no action; registry itself protected (admin-only mutation); audit log appended per action.
 
 === 7. AI ACTION SAFETY (POLICY — NOT IMPLEMENTED) ===
 Authority levels:
@@ -100,8 +122,17 @@ Acknowledged P0 exceptions (not reinvented, not hidden):
   - CSP header: missing (documented).
   - PII audit logging: missing (documented; required before AI processes customer content at scale).
   - Webhook auth: api/whatsapp.ts uses GREENAPI token env; HMAC/signature verification recommended (future packet), NO mutation now.
-Private recording storage: Supabase Storage + bucket RLS (when enabled — NOTE: RLS mutation explicitly denied; document need); signed short-lived URLs; Companion device auth (device token + user session); retention/access policy (defined per-channel, audited, admin-approval for deletion).
-AI / transcription provider boundaries: audio -> Whisper/openai only under contract; output text stored in private DB; customer PII excluded from provider training prompts; provider retention policy documented; no cross-provider data mixing.
+Private recording storage (current state vs target — DO NOT INFER FROM ENDPOINT DESIGN ALONE):
+  - VERIFIED at origin/master: api/recordings.ts handles uploads; Supabase Storage referenced (recording_url in schema); endpoint accepts uploads.
+  - NOT VERIFIED / REQUIRES EXPLICIT CHECK: signed/short-lived URL mechanism; bucket access policy (RLS); authorization check before download; retention period enforcement; access audit logging; encryption-at-rest specifics; device-level authorization binding.
+  - TARGET ARCHITECTURE (until verified): private bucket with strict RLS; signed URLs with expiry tied to user+device session; retention policy defined per-channel (recording retention period, deletion requires admin + audit); access logged per download; Companion device auth enforced before any storage operation.
+  - DO NOT state "secure/private" as verified solely because endpoint exists or recording_url field exists.
+Data-minimization policy (replaces blanket "excluded" claim — defined until verified):
+  - Only the minimum information necessary for the specific AI task may be sent to any AI/transcription provider (e.g., transcript text + call_id for sentiment; message body + contact_id for intent extraction; never full contact record, financial data, or unrelated interaction history unless explicitly required by the task).
+  - Sensitive-data categories must be explicitly classified: PII (name, email, phone, address), financial (deal/invoice values, payment info), legal/contract (terms, agreement text), health/medical, authentication (passwords, tokens), customer message content (full thread context beyond task scope).
+  - Provider retention / training policy: must be documented per provider (OpenAI Whisper, OpenAI chat, Anthropic, local); prohibit training use of customer data unless explicitly contracted; verify provider's data-deletion / retention terms; do not assume exclusion — verify contract terms.
+  - Access controls: AI-processed data must reside in same access-controlled DB (contacts/interactions scoped to user/org); no AI output exposed to unprivileged roles.
+  - Audit: every AI input/output pair logged with task type, data categories included, provider, approval status, user, timestamp — required before any production AI expansion.
 Companion device authentication: device registers to user; recording access only via signed URL tied to device + user session; revocation on disable/replace.
 No credential rotation performed; no webhook auth mutation; no RLS mutation.
 
@@ -122,12 +153,13 @@ Security / Auth     | EXTEND    | Document gaps; add rate-limit/CSP/audit/HMAC; 
 
 === 10. IMPLEMENTATION ROADMAP (FUTURE PACKETS — NOT IMPLEMENTED) ===
 Packets (separate; WP-001 untouched):
-  WP-ARCH-A: Rebrand (UI/docs + localStorage rename schedule; no DB rename now; technical IDs preserved)
-  WP-CALL-INT: Call Intelligence extension (Companion -> private storage -> Whisper -> AI -> Timeline; depends on device auth design)
-  WP-INBOX: Unified Inbox (Conversation/Message + adapters + identity resolution; independent of call intelligence)
-  WP-AI-BRAIN: Centralized AI (service layer + business events + provider registry + safety rules; uses inbox events + transcription events)
-  WP-SEC: Security hardening (rate limit / CSP / PII audit / webhook HMAC / device auth; parallel, requires PA approval)
-Dependencies: WP-ARCH-A (parallel) -> WP-INBOX -> WP-AI-BRAIN; WP-CALL-INT (parallel to inbox, feeds AI); WP-SEC (parallel all).
+  WP-ARCH-A: Rebrand (UI/docs + localStorage rename schedule; no DB rename now; technical IDs preserved) — INDEPENDENT, may proceed in parallel with all others.
+  WP-INBOX: Unified Inbox (Conversation/Message + adapters + identity resolution; canonical normalization layer) — must complete interaction/event contract before WP-AI-BRAIN Core.
+  WP-CALL-INT: Call Intelligence extension (Companion -> private storage -> Whisper -> AI -> Timeline; depends on device auth design AND security hardening first).
+  WP-AI-BRAIN: Centralized AI (service layer + business events + provider registry + safety rules) — depends on canonical interaction/event contract (WP-INBOX), NOT on full Inbox UI completion; uses inbox events + transcription events.
+  WP-SEC: Security foundation/hardening (rate limit / CSP / PII audit / webhook HMAC / device auth) — MUST PRECEDE sensitive AI / call-recording production expansion; parallel prerequisite.
+Dependencies: WP-SEC (prerequisite, parallel start) -> WP-INBOX (interaction/event contract) -> WP-AI-BRAIN Core; WP-CALL-INT (parallel to inbox, feeds AI, gated by WP-SEC); WP-ARCH-A (independent).
+
 WP-001 WhatsApp webhook failure: SEPARATE — blocked at Layer B/C; requires owner evidence (redacted webhook state + Vercel POST log) before fix; this document does NOT unblock.
 
 === 11. VERIFICATION / QA / SECURITY SIGN-OFF (READ-ONLY AGAINST origin/master) ===
