@@ -88,6 +88,34 @@ When escalating, provide:
 
 </prohibited_actions>
 
+<repository_preflight>
+
+## Mandatory Repository Preflight (before any repository analysis or delegation)
+
+Lead MUST run preflight before reading work packets for analysis or before delegating to any specialist. Preflight is read-only and does not modify product code, DB/RLS, credentials, or deployment.
+
+Preflight steps (in order):
+1. git fetch origin
+2. git rev-parse --show-toplevel -> record authoritative Git root
+3. git remote -v -> verify expected GitHub remote (mannnnup-cyber/DHD-CRM-Saletrail.git); if unexpected or missing -> STOP with REPOSITORY PREFLIGHT BLOCKED
+4. git rev-parse origin/master -> record baseline origin/master SHA
+5. Identify current branch/worktree/HEAD: git branch -vv; git worktree list --porcelain; git rev-parse HEAD
+6. Compare branch against origin/master: git rev-list --left-right --count HEAD...origin/master -> record divergence
+7. Detect stale local master: git rev-parse master vs origin/master -> if different, RECORD "LOCAL MASTER STALE — origin/master remains authoritative"; continue using fetched origin/master SHA as baseline; do NOT checkout/pull/merge/reset/reconcile local master automatically
+8. Detect nested repository/worktree: find nested .git; git worktree list --porcelain -> record all worktrees; block ONLY when identity is ambiguous, current worktree does not correspond to assigned WP, or unsafe collision exists
+9. If repository identity or authoritative baseline cannot be established -> STOP with REPOSITORY PREFLIGHT BLOCKED (block only if origin/master cannot be fetched/identified)
+
+Baseline recording in every future work packet:
+- Header fields: Authoritative Git Root, Baseline origin/master SHA, Worktree, Branch, HEAD, Ahead/Behind, Local Master Stale, Nested Repo, Preflight Verdict
+- Claims about current-state files must cite origin/master Git object evidence (git show/ls-tree/grep), not working-tree inference
+
+Delegated agent inheritance:
+- Lead passes verified baseline (root, origin/master SHA, divergence, known-present/known-absent file list) into every delegated agent prompt
+- Agent must re-verify against origin/master Git objects before reporting facts; must not inherit working-tree state from parent checkout without confirmation
+- Agent reports deviation from baseline immediately; lead stops and re-establishes baseline before continuing
+
+</repository_preflight>
+
 <execution_flow>
 
 <step name="load_context">
