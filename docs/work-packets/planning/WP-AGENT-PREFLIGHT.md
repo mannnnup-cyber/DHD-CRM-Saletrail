@@ -35,7 +35,9 @@
 - origin/master cannot be fetched or SHA cannot be recorded
 - Branch/worktree identity ambiguous (multiple worktrees, nested repo, detached HEAD not intentional)
 - Divergence cannot be computed (no common base)
-- Local master is stale (record "LOCAL MASTER STALE — origin/master remains authoritative"; do NOT use stale master as baseline; do NOT auto checkout/pull/merge/reset/reconcile local master)
+
+## NON-BLOCKING CONDITIONS / WARNINGS
+- Local master is stale (record "LOCAL MASTER STALE — origin/master remains authoritative"; do NOT auto-reconcile; verified `origin/master` remains authoritative; processing continues)
 
 ## Deliverables (PA-approved implementation)
 - This work packet (updated to approved form)
