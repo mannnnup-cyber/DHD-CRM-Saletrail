@@ -103,7 +103,8 @@ Preflight steps (in order):
 6. Compare branch against origin/master: git rev-list --left-right --count HEAD...origin/master -> record divergence
 7. Detect stale local master: git rev-parse master vs origin/master -> if different, RECORD "LOCAL MASTER STALE — origin/master remains authoritative"; continue using fetched origin/master SHA as baseline; do NOT checkout/pull/merge/reset/reconcile local master automatically
 8. Detect nested repository/worktree: find nested .git; git worktree list --porcelain -> record all worktrees; block ONLY when identity is ambiguous, current worktree does not correspond to assigned WP, or unsafe collision exists
-9. If repository identity or authoritative baseline cannot be established -> STOP with REPOSITORY PREFLIGHT BLOCKED (block only if origin/master cannot be fetched/identified)
+9. Verify current-state claims using origin/master Git objects: `git show origin/master:<path>`, `git ls-tree -r origin/master --name-only`, `git grep <term> origin/master` — do not infer from working-tree state
+10. If repository identity or authoritative baseline cannot be established -> STOP with REPOSITORY PREFLIGHT BLOCKED (block only if origin/master cannot be fetched/identified)
 
 Baseline recording in every future work packet:
 - Header fields: Authoritative Git Root, Baseline origin/master SHA, Worktree, Branch, HEAD, Ahead/Behind, Local Master Stale, Nested Repo, Preflight Verdict

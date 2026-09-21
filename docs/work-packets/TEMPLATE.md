@@ -77,15 +77,15 @@ How to revert if this work fails:
 
 ## Repository Baseline (recorded by Lead during mandatory preflight)
 
-- **Authoritative Git Root:** `C:/Users/Administrator/dhd crm sale trail/DHD-CRM-Saletrail`
-- **Baseline origin/master SHA:** `86061398cfb4857aaf4486fd40b207c81e0e645d`
-- **Worktree:** single; C:/Users/Administrator/dhd crm sale trail/DHD-CRM-Saletrail
-- **Branch:** `WP-ARCHITECTURE-REVALIDATED` (example — replace with assigned WP branch)
-- **HEAD:** `dbee92197d4d16ee408217004d7d5497e7c100a9` (example — replace with current HEAD)
-- **Ahead/Behind (branch vs origin/master):** `3 ahead / 0 behind`
-- **Local Master Stale:** `f604ba7 [origin/master: behind 256] — LOCAL MASTER STALE — origin/master remains authoritative`
-- **Nested Repo:** none detected
-- **Preflight Verdict:** PASS (stale local master tolerated; single worktree; remote verified; origin/master 86061398cfb authoritative)
+- **Authoritative Git Root:** `<repo_absolute_path>`
+- **Baseline origin/master SHA:** `<verified_origin_master_sha>`
+- **Worktree:** `<worktree_path>` (record all; verify assignment matches assigned WP)
+- **Branch:** `<assigned_wp_branch>`
+- **HEAD:** `<current_head_sha>`
+- **Ahead/Behind (branch vs origin/master):** `<ahead> ahead / <behind> behind`
+- **Local Master Stale:** `<record_if_different> — LOCAL MASTER STALE — origin/master remains authoritative` (non-blocking; do NOT auto-reconcile)
+- **Nested Repo:** `<none_or_path>` (block only if ambiguous/mismatch/unsafe)
+- **Preflight Verdict:** `PASS` | `BLOCKED — <reason>`
 
 ## Definition of Done
 
