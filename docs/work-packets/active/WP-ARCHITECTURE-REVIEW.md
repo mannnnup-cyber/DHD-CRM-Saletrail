@@ -50,7 +50,7 @@ Verified at origin/master via git show / grep (read-only):
 - Companion integration ACTIVE: api/crm.ts 1131 (`companion_installed` select); 1189 (update); api/users.ts 222/427/429; api/whatsapp.ts 54 (download URL to DHD-CRM-Companion releases), 2305 (update companion_installed), 2448 (COMPANION_APP_DOWNLOAD_URL setting), 2777 (Companion polls device commands).
 - Transcription implementation: api/recordings.ts 417 (WHISPER_API_URL = openai.com/v1/audio/transcriptions); 429 (model whisper-1); 448 (insert call_transcripts with provider='openai', model_used='whisper-1').
 - Tables verified via source + grep: transcription_jobs, call_transcripts, call_insights (analytics). Not fabricated.
-- Supabase Storage: recording_url field in schema; private/secure storage implied by existing endpoint design.
+- Supabase Storage: recording_url field in schema; endpoint accepts uploads. Storage privacy/security NOT verified (signed URLs, bucket access policy, authorization, retention are TARGET ARCHITECTURE until explicitly tested — see section 8).
 Design (future work, NOT implemented): Companion app (Android) -> private upload -> transcription (Whisper/openai, provider-replaceable design) -> AI analysis (sentiment/extract keywords — existing in crm.ts 719-734) -> Contact Timeline (link to master contact via identity resolution). CallVault: EXTERNAL ONLY — Android both-side capture research reference; never stated as internal feature.
 Reuse vs build:
   - REUSE: Companion device auth framework (users/whatsapp), transcription_tables, Whisper API integration (recordings.ts), sentiment analysis (crm.ts), storage upload endpoint.
@@ -106,7 +106,7 @@ Illustrative future tools (architectural examples only — NOT implementation au
   - update_contact: input {contact_id, field, value}; roles manager/admin; Approve; audit change; reversible via undo/versioning if supported.
 Registry rules: AI output must reference registry tool; authority mismatch -> escalate; unknown tool -> no action; registry itself protected (admin-only mutation); audit log appended per action.
 
-=== 7. AI ACTION SAFETY (POLICY — NOT IMPLEMENTED) ===
+=== 8. AI ACTION SAFETY (POLICY — NOT IMPLEMENTED) ===
 Authority levels:
   - Suggest: AI produces draft/summary/recommendation; HUMAN review required; NO automatic send/update/deletion.
   - Approve: HUMAN explicitly approves; action executes; audit log entry required.
@@ -116,7 +116,7 @@ Role permissions: AI suggestions visible to assigned role; auto-restricted by ro
 Audit trail: timestamp, user, AI action ID, input context hash, result, approval status, channel, contact reference — required for ALL AI-touching actions; must log before execution.
 Always-human-approval: send any customer message; modify deal/invoice/quote value; delete contact/interaction/task/recording; change webhook/auth/RLS/credentials; export customer data; approve AI-drafted financial/legal content.
 
-=== 8. SECURITY AND DATA (VERIFIED GAPS + TRUST BOUNDARIES) ===
+=== 9. SECURITY AND DATA (VERIFIED GAPS + TRUST BOUNDARIES) ===
 Acknowledged P0 exceptions (not reinvented, not hidden):
   - Rate limiting: missing on /api/auth/* (documented; fix in future packet, NOT now).
   - CSP header: missing (documented).
@@ -136,7 +136,7 @@ Data-minimization policy (replaces blanket "excluded" claim — defined until ve
 Companion device authentication: device registers to user; recording access only via signed URL tied to device + user session; revocation on disable/replace.
 No credential rotation performed; no webhook auth mutation; no RLS mutation.
 
-=== 9. PRESERVE VS REFACTOR VS EXTEND VS BUILD (VERIFIED SUBSYSTEMS) ===
+=== 10. PRESERVE VS REFACTOR VS EXTEND VS BUILD (VERIFIED SUBSYSTEMS) ===
 Subsys              | Verdict   | Evidence (from origin/master)
 --------------------|-----------|---------------------------------------------------
 WhatsApp webhook    | PRESERVE  | api/whatsapp.ts 2928 lines active; GreenAPI/Vercel; WP-001 blocked at B/C — separate.
@@ -151,7 +151,7 @@ Unified Inbox       | EXTEND    | Channel adapters build on existing APIs; canon
 UI / Brand (DHD->FollOps)| REFACTOR | BRAND.md defines; UI copy + localStorage keys change; DB names preserved.
 Security / Auth     | EXTEND    | Document gaps; add rate-limit/CSP/audit/HMAC; do NOT rotate.
 
-=== 10. IMPLEMENTATION ROADMAP (FUTURE PACKETS — NOT IMPLEMENTED) ===
+=== 11. IMPLEMENTATION ROADMAP (FUTURE PACKETS — NOT IMPLEMENTED) ===
 Packets (separate; WP-001 untouched):
   WP-ARCH-A: Rebrand (UI/docs + localStorage rename schedule; no DB rename now; technical IDs preserved) — INDEPENDENT, may proceed in parallel with all others.
   WP-INBOX: Unified Inbox (Conversation/Message + adapters + identity resolution; canonical normalization layer) — must complete interaction/event contract before WP-AI-BRAIN Core.
@@ -162,7 +162,7 @@ Dependencies: WP-SEC (prerequisite, parallel start) -> WP-INBOX (interaction/eve
 
 WP-001 WhatsApp webhook failure: SEPARATE — blocked at Layer B/C; requires owner evidence (redacted webhook state + Vercel POST log) before fix; this document does NOT unblock.
 
-=== 11. VERIFICATION / QA / SECURITY SIGN-OFF (READ-ONLY AGAINST origin/master) ===
+=== 12. VERIFICATION / QA / SECURITY SIGN-OFF (READ-ONLY AGAINST origin/master) ===
 QA (independent verification executed via bash / git objects, not working-tree assumption):
   - 10 claims verified PASS against git ls-tree / git show / git grep (recordings.ts 478, crm.ts 1204, whatsapp.ts 2928, BRAND.md present, agents 6 files, companion_installed, transcription_tables, whisper-1, divergence 3|0).
   - Incorrect claims removed: MISSING files (5), 421-line claim, 0/255 divergence claim, Companion BUILD-NEW-only claim, CallVault internal claim.
