@@ -1,7 +1,7 @@
 export type CallType = 'Incoming' | 'Outgoing' | 'Missed' | 'WhatsApp';
 export type LeadStatus = 'New' | 'Contacted' | 'Qualified' | 'Converted' | 'Dead';
 export type DealStage = 'New Lead' | 'Consultation' | 'Quote Sent' | 'Design Review' | 'In Production' | 'Delivered' | 'Lost';
-export type UserRole = 'manager' | 'rep';
+export type UserRole = 'owner' | 'manager' | 'sales_rep' | 'rep';
 
 export interface User {
   id: string;

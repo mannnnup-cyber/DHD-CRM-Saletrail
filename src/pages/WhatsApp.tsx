@@ -175,7 +175,7 @@ export default function WhatsApp() {
   const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
   const [chatFilter, setChatFilter] = useState<'all' | 'individual' | 'groups'>('all');
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'mine' | 'unassigned'>(() =>
-    state.user?.role === 'sales_rep' as any ? 'mine' : 'all'
+    (state.user?.role) === 'sales_rep' ? 'mine' : 'all'
   );
   const [allCalls, setAllCalls] = useState<any[]>([]);
   const [callFilter, setCallFilter] = useState<'all' | 'mine' | 'missed' | 'today'>('all');
@@ -1706,7 +1706,7 @@ export default function WhatsApp() {
                   All
                 </button>
 
-                {state.user?.role !== 'sales_rep' as any && (
+                {(state.user?.role) !== 'sales_rep' && (
                   <button
                     onClick={() => setAssignmentFilter(assignmentFilter === 'mine' ? 'all' : 'mine')}
                     className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
@@ -1719,7 +1719,7 @@ export default function WhatsApp() {
                   </button>
                 )}
 
-                {state.user?.role !== 'sales_rep' as any && (
+                {(state.user?.role) !== 'sales_rep' && (
                   <button
                     onClick={() => setAssignmentFilter(assignmentFilter === 'unassigned' ? 'all' : 'unassigned')}
                     className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${

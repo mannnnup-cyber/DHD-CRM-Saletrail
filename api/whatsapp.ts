@@ -1046,6 +1046,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      // @ts-expect-error intentional fallthrough per Evolution API handler
       case 'sendFile': {
         req.body.mediaBase64 = req.body.fileBase64;
         req.body.mediaType = req.body.mimeType || 'application/octet-stream';
