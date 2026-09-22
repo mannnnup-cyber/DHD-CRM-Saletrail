@@ -1126,7 +1126,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         return res.json({ success: true, messageId, provider: activeProvider });
-      }
       };
 
       case 'sendFile': {
