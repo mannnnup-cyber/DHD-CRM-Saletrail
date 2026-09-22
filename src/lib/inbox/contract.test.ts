@@ -3,7 +3,7 @@ describe('Idempotency', () => {
   it('identical provider event replay -> same key', () => {
     const a = idempotencyStrategies.evolution_whatsapp({ evolutionId: 'e1' });
     const b = idempotencyStrategies.evolution_whatsapp({ evolutionId: 'e1' });
-    expect(a.key).toBe('e1'); expect(a.key).toBe(b.key);
+    expect(a.key).toBe('evolution_whatsapp:e1'); expect(a.key).toBe(b.key);
   });
   it('distinct events -> different keys', () => {
     expect(idempotencyStrategies.evolution_whatsapp({ evolutionId: 'e1' }).key).not.toBe(idempotencyStrategies.evolution_whatsapp({ evolutionId: 'e2' }).key);
