@@ -20,7 +20,7 @@ const FEATURES = [
 const STEPS = [
   { n: '1', title: 'Download the APK',      body: 'Tap the Download button below. Your browser will download the APK file.' },
   { n: '2', title: 'Allow unknown sources', body: 'Open the downloaded file. If prompted, tap "Allow from this source" — this is safe, it\'s your own company app.' },
-  { n: '3', title: 'Install & open',        body: 'Follow the on-screen install steps, then open "DHD CRM Companion" from your app drawer.' },
+  { n: '3', title: 'Install & open',        body: 'Follow the on-screen install steps, then open "FollOps Companion" from your app drawer.' },
   { n: '4', title: 'Scan the QR code',      body: 'In the app go to Settings → tap "Scan QR" → scan the QR code shown on this page. Your webhook URL is configured instantly.' },
   { n: '5', title: 'Grant permissions',     body: 'Allow Call Log and Microphone permissions when the app asks. Both are required for sync and recording.' },
   { n: '6', title: 'Make a call & sync',    body: 'Make any call, then tap Sync Now on the Home screen. Done — your call will appear in Call Logs.' },
@@ -46,7 +46,7 @@ export default function CompanionApp() {
           <Smartphone className="text-white" size={38} />
         </div>
         <div className="flex-1 text-center sm:text-left">
-          <h1 className="text-2xl font-bold text-white">DHD CRM Companion</h1>
+          <h1 className="text-2xl font-bold text-white">FollOps Companion</h1>
           <p className="text-[#8b949e] mt-1 text-sm leading-relaxed">
             Android app for sales reps. Syncs call logs, records calls, and feeds AI coaching insights straight to this CRM — automatically.
           </p>
@@ -99,7 +99,7 @@ export default function CompanionApp() {
           </div>
           <img
             src={QR_URL}
-            alt="QR code — scan to download DHD CRM Companion APK"
+            alt="QR code — scan to download FollOps Companion APK"
             className="rounded-xl border border-[#30363d]"
             width={220}
             height={220}

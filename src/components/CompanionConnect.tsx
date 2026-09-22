@@ -10,11 +10,11 @@ interface CompanionConnectProps {
 
 /**
  * Shows the GSM call-sync webhook URL plus a scannable QR code so the
- * DHD CRM Companion Android app can be configured by scanning instead of
+ * FollOps Companion Android app can be configured by scanning instead of
  * typing the long URL.
  *
  * The QR encodes a small JSON payload: { type, webhookUrl } so the app can
- * validate it is a genuine DHD CRM link before applying it.
+ * validate it is a genuine FollOps link before applying it.
  */
 const CompanionConnect: React.FC<CompanionConnectProps> = ({ asModal = false, onClose }) => {
   const webhookUrl = `${window.location.origin}/api/whatsapp?action=addGSMCall`;

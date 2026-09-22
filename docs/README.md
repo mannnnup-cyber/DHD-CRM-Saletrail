@@ -1,4 +1,4 @@
-# DHD CRM SalesTrail - Technical Documentation
+# FollOps SalesTrail - Technical Documentation
 
 > AI workflow note: before AI-assisted planning or coding, read the guard-rail
 > docs in `docs/context/` and the root `AGENTS.md`. These files define the
@@ -22,7 +22,7 @@
 
 ## Project Overview
 
-**DHD CRM SalesTrail** is a comprehensive Customer Relationship Management (CRM) system built for Dirty Hand Designs, a Jamaican company. It provides a complete sales pipeline management solution with features for managing leads, deals, calls, tasks, and team performance.
+**FollOps SalesTrail** is a comprehensive Customer Relationship Management (CRM) system built for Dirty Hand Designs, a Jamaican company. It provides a complete sales pipeline management solution with features for managing leads, deals, calls, tasks, and team performance.
 
 ### Key Features
 
