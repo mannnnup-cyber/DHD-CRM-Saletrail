@@ -21,10 +21,16 @@ describe('Idempotency', () => {
     const r = idempotencyStrategies.evolution_whatsapp({});
     expect(r.safe).toBe(false); expect(r.key).toBeNull();
   });
-  it('cross-source identical IDs namespaced (no collision)', () => {
-    const w = idempotencyStrategies.evolution_whatsapp({ messageId: 'X', timestamp: 't' });
+  it('same stable external ID X across all three sources -> all keys differ', () => {
+    const w = idempotencyStrategies.evolution_whatsapp({ evolutionId: 'X' });
     const e = idempotencyStrategies.email({ messageId: 'X' });
-    expect(w.key).not.toBe(e.key); expect(w.source).not.toBe(e.source);
+    const s = idempotencyStrategies.social({ externalId: 'X' });
+    expect(w.key).not.toBe(e.key);
+    expect(e.key).not.toBe(s.key);
+    expect(w.key).not.toBe(s.key);
+    expect(w.key).toBe('evolution_whatsapp:X');
+    expect(e.key).toBe('email:X');
+    expect(s.key).toBe('social:X');
   });
 });
 describe('Contact Resolution', () => {
