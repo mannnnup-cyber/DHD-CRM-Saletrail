@@ -9,16 +9,16 @@ export interface SourceAdapter {
 // Source-specific deterministic idempotency strategies (documented fallback)
 export const idempotencyStrategies: Record<string, (raw: Record<string, unknown>) => IdempotencyResult> = {
   evolution_whatsapp: (raw) => {
-    if (raw.evolutionId) return { key: String(raw.evolutionId), source: 'evolution_whatsapp', derivedFrom: ['evolutionId'], safe: true };
-    if (raw.messageId && raw.timestamp) return { key: `wa-${String(raw.messageId)}-${String(raw.timestamp)}`, source: 'evolution_whatsapp', derivedFrom: ['messageId','timestamp'], safe: true };
+    if (raw.evolutionId) return { key: `evolution_whatsapp:${String(raw.evolutionId)}`, source: 'evolution_whatsapp', derivedFrom: ['evolutionId'], safe: true };
+    if (raw.messageId && raw.timestamp) return { key: `evolution_whatsapp:wa-${String(raw.messageId)}-${String(raw.timestamp)}`, source: 'evolution_whatsapp', derivedFrom: ['messageId','timestamp'], safe: true };
     return { key: null, source: 'evolution_whatsapp', derivedFrom: [], safe: false };
   },
   email: (raw) => {
-    if (raw.messageId) return { key: String(raw.messageId), source: 'email', derivedFrom: ['messageId'], safe: true };
+    if (raw.messageId) return { key: `email:${String(raw.messageId)}`, source: 'email', derivedFrom: ['messageId'], safe: true };
     return { key: null, source: 'email', derivedFrom: [], safe: false };
   },
   social: (raw) => {
-    if (raw.externalId) return { key: String(raw.externalId), source: 'social', derivedFrom: ['externalId'], safe: true };
+    if (raw.externalId) return { key: `social:${String(raw.externalId)}`, source: 'social', derivedFrom: ['externalId'], safe: true };
     return { key: null, source: 'social', derivedFrom: [], safe: false };
   },
 };
