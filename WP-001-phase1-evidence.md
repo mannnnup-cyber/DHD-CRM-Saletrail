@@ -79,3 +79,13 @@ PREREQUISITE BEFORE CONTINUING TRACE:
 RESTRICTIONS OBSERVED: No webhook mutation (/webhook/set not called). No reconnect. No QR. No rotation. No RLS. No deployment. Evidence/research only.
 
 END FORMAT: WP-001 TRACE BLOCKED — PROVIDER-SIDE LAYER A EVIDENCE + WEBHOOK EVENTS/ENABLED REQUIRED (not invented; needs owner confirmation of endpoint + PA-approved diagnostic enhancement or direct read)
+
+--- DEPLOYMENT + POST-DEPLOY VERIFICATION (PA-approved ec5137d) ---
+- Deployed commit: ec5137d43ade823d6770313db7422eab606aca09 (WP-001-whatsapp-fresh)
+- Deployed to production environment (only diagnostic enhancement — api/whatsapp.ts webhookInfo + evidence + test); NO master merge; NO other mutation.
+- Production webhookInfo (read-only, only permitted fields recorded; no headers/token/raw provider response exposed):
+  success=True; configured=True; url=https://dhd-crm-saletrail.vercel.app/api/whatsapp; webhookUrl=https://dhd-crm-saletrail.vercel.app/api/whatsapp; lastMessageAt=2026-09-05T04:16:10+00:00; enabled=None; events=None; webhookByEvents=None; webhookBase64=None
+- Interpretation gate: enabled != true (null); events missing MESSAGES_UPSERT (null) -> LAYER B FAILURE IDENTIFIED.
+- QA limitation recorded: src/lib/inbox/contract.test.ts duplicates mapping logic rather than executing actual webhookInfo handler — contract intent only, not full endpoint coverage. Does not block diagnostic deployment.
+- No /webhook/set, reconnect, QR, rotation, RLS/service-role change, deployment of unrelated changes.
+- Controlled message test NOT executed — deferred to PA authorization after Layer B failure resolved.
