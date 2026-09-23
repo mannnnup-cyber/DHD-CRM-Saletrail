@@ -1,10 +1,10 @@
-# WP-001 — Diagnose Recurring WhatsApp Inbound Webhook Failure
+# WP-001 â Diagnose Recurring WhatsApp Inbound Webhook Failure
 
 ## Metadata
 
 - **Work Packet ID:** `WP-001`
 - **Title:** Diagnose Recurring WhatsApp Inbound Webhook Failure
-- **Status:** `In Progress`
+- **Status:** `Review` (NOT Done  blocked on live verification; QA verdict NEEDS-EVIDENCE; Security PASS + ESCALATE pre-existing webhook gap)
 - **Priority:** `P0`
 - **Owner:** Principal Architect / DHD
 - **Assigned Agent(s):** `follops-integrations` (delegated by `follops-lead`); QA mandatory; Security mandatory for any implementation because this is a public webhook/integration path
@@ -39,16 +39,16 @@ Known facts supplied by the owner and previously verified in the repository:
 
 Trace the complete inbound path and identify the exact failure layer:
 
-`WhatsApp → Evolution instance → Evolution receives message → Evolution webhook registration/events → public FollOps /api/whatsapp callback → event/payload parser → Supabase whatsapp_messages/write path → API/UI refresh`
+`WhatsApp â Evolution instance â Evolution receives message â Evolution webhook registration/events â public FollOps /api/whatsapp callback â event/payload parser â Supabase whatsapp_messages/write path â API/UI refresh`
 
 Classify the failure as one or more of:
 
-- **A — Session/provider:** WhatsApp/Evolution is not actually receiving the inbound message despite reported connection.
-- **B — Webhook registration:** Evolution receives it but webhook is absent, disabled, stale, or missing required events.
-- **C — Callback delivery:** Evolution attempts callback to wrong/unreachable URL or receives non-success HTTP response.
-- **D — FollOps webhook handler:** callback reaches FollOps but event/payload is rejected, misclassified, or fails parsing.
-- **E — Persistence:** payload parses but Supabase/database write fails.
-- **F — Presentation:** message is stored but FollOps API/UI does not display it.
+- **A â Session/provider:** WhatsApp/Evolution is not actually receiving the inbound message despite reported connection.
+- **B â Webhook registration:** Evolution receives it but webhook is absent, disabled, stale, or missing required events.
+- **C â Callback delivery:** Evolution attempts callback to wrong/unreachable URL or receives non-success HTTP response.
+- **D â FollOps webhook handler:** callback reaches FollOps but event/payload is rejected, misclassified, or fails parsing.
+- **E â Persistence:** payload parses but Supabase/database write fails.
+- **F â Presentation:** message is stored but FollOps API/UI does not display it.
 
 ## Scope
 
@@ -118,11 +118,11 @@ Classify the failure as one or more of:
 
 Likely inspection scope (not authorization to edit all files):
 
-- `api/whatsapp.ts` — Evolution actions, webhook receiver, parsing, persistence/sync behavior
-- `src/pages/WhatsApp.tsx` — connection/webhook health display, reconnect and sync flows
-- `docs/context/INTEGRATIONS.md` — Evolution/WhatsApp integration state
-- `docs/context/ARCHITECTURE.md` — route/data-flow constraints
-- `docs/context/SECURITY.md` — webhook/security baseline and open items
+- `api/whatsapp.ts` â Evolution actions, webhook receiver, parsing, persistence/sync behavior
+- `src/pages/WhatsApp.tsx` â connection/webhook health display, reconnect and sync flows
+- `docs/context/INTEGRATIONS.md` â Evolution/WhatsApp integration state
+- `docs/context/ARCHITECTURE.md` â route/data-flow constraints
+- `docs/context/SECURITY.md` â webhook/security baseline and open items
 - Relevant Evolution helper/config modules discovered through `FILE_MAP.md`/GitNexus
 
 ## Testing Requirements
@@ -151,7 +151,7 @@ Likely inspection scope (not authorization to edit all files):
 
 ## Acceptance Criteria
 
-1. The first failing layer A–F is identified with concrete evidence, or the packet is marked Blocked with the exact missing diagnostic/evidence required.
+1. The first failing layer AâF is identified with concrete evidence, or the packet is marked Blocked with the exact missing diagnostic/evidence required.
 2. The actual Evolution webhook configuration and required event registration are verified against the running/current provider contract.
 3. A real fresh inbound test message is used to prove whether webhook delivery is functioning; stale-hours UI state alone is not used as proof.
 4. No Evolution instance deletion/recreation, QR reset, credential rotation, RLS mutation, Git history rewrite, or unrelated security change occurs.
@@ -210,3 +210,69 @@ If code changes are made:
 ## Security Review
 
 (To be filled by `follops-security` for any implementation/security-sensitive finding.)
+
+--- LEAD FINAL RECORD (2026-09-11) ---
+Status: Review (NOT Done â blocked on live verification; QA verdict NEEDS-EVIDENCE; Security PASS + ESCALATE pre-existing webhook gap)
+Work Packet: WP-001 â Diagnose Recurring WhatsApp Inbound Webhook Failure
+Branch/Worktree: WP-001-whatsapp (from master @ 981d03a; branch pushed to origin; no master merge)
+
+--- LEAD FINAL RECORD (2026-09-11) ---
+Status: Review (NOT Done - blocked on live verification; QA verdict NEEDS-EVIDENCE; Security PASS + ESCALATE pre-existing webhook gap)
+Work Packet: WP-001 - Diagnose Recurring WhatsApp Inbound Webhook Failure
+Branch/Worktree: WP-001-whatsapp (from master @ 981d03a; branch pushed to origin; no master merge; master preserved)
+Implementation Report: Diagnosis-only; zero production code edited (api/whatsapp.ts, WhatsApp.tsx, any source unchanged). No code mutation in master or worktree production paths. WP-001-whatsapp/docs/diagnosis-findings.md produced. Build PASS (vite v7.2.4, exit 0; no regression). Root Cause Classification: Layer B (Webhook Registration - volatile after Evolution container/restart) + Layer C (Callback Delivery - no persistence verification). Evidence: static/code-analysis only (api/whatsapp.ts lines 164-555 webhook receiver, 469-507 webhookInfo, 509-555 setWebhook, 410-467 status; WhatsApp.tsx reconnect/gap banner lines 1464-1484). No live test performed: live webhookInfo result not saved; Evolution restart/re-registration not executed; live POST /api/whatsapp with controlled payload not confirmed; Vercel delivery log not captured; DB whatsapp_messages persistence not verified; syncEvolutionMessages recovery not tested. Root cause NOT fully proven by runtime evidence.
+QA Review (follops-qa - verdict NEEDS-EVIDENCE): PASS for diagnosis work; FAIL to claim fully proven root cause. Acceptance criteria NOT met: AC 2 (live webhook config missing), AC 3 (fresh inbound message not traced), AC 6 (root cause not proven with evidence). Exact missing evidence: (a) live webhookInfo after reconnect; (b) controlled inbound WhatsApp message with Evolution receipt proof; (c) Vercel POST /api/whatsapp log with 200 response; (d) DB persistence query (whatsapp_messages insert); (e) UI refresh; (f) syncEvolutionMessages recovery. Block code fix until all present.
+Security Review (follops-security - verdict PASS): PASS - no code changed; no new secrets; no auth mutation; no RLS mutation; legacy SUPABASE_SERVICE_ROLE_KEY preserved (deferred P0); no webhook contract weakened; no fail-open; no credential exposed. ESCALATE (pre-existing, not worsened): public /api/whatsapp endpoint has NO webhook signature/auth validation (line 164-402; no HMAC/signature check; attacker with endpoint URL can POST fake payload). P0 open per docs/context/SECURITY.md + INTEGRATIONS.md. Must NOT be silently redesigned outside approved scope. Requires explicit owner authorization for any webhook-auth mutation.
+Evidence Classification: Code-analysis / static inspection only. Explicit missing live evidence listed above. No production database or live Evolution API access shown.
+Limitations: No Evolution container restart/re-registration; no Vercel production log; no DB query results; no controlled test message; no webhookInfo live response; no syncEvolutionMessages test; Evolution API version/container tag not verified at runtime.
+Root Cause: B + C (classification only; not fully proven without live evidence per AC 6). Layer A (session): NOT root cause. Layer D (handler): NOT cause. Layer E (persistence): NOT testable. Layer F (presentation): NOT cause.
+Next Action (Blocked - status Review, NOT Done): Before any fix/merge: (1) Live Evolution webhookInfo after reconnect - save result; (2) Send controlled inbound message from separate number - capture Vercel POST + DB insert; (3) Confirm UI refresh; (4) Confirm syncEvolutionMessages recovery; (5) Verify build/type checks if minimal fix approved after evidence. Once proven, propose WP-002. No code edit / deployment / master merge until verification passes QA + Security (if webhook/auth change, Security must clear explicitly).
+Proposed Follow-up WP-002 (separate, not started): Permanent webhook self-healing/restart-resilience - auto webhook verification post-reconnect + periodic health poll (e.g., 5 min) + sync trigger after restart + webhookInfo verification after autoConfigureWebhook. Requires its own work packet + QA + Security review (if endpoint/auth changed). NOT part of WP-001.
+Constraints Confirmed: No production code edited (verified: only docs/diagnosis-findings.md + docs/work-packets/active/ record); no security mutation; no RLS mutation; no credential rotation; legacy service_role NOT disabled (deferred P0 preserved); no Git history rewrite; no duplicate WP-001 in active/; no overlapping active work; master @ 981d03a preserved; branch WP-001-whatsapp separate; no deployment; no production data deletion; no live test falsely claimed.
+# Status update
+Status: Blocked
+QA: NEEDS-EVIDENCE
+Security: PASS + ESCALATE
+Evidence: docs/diagnosis-findings.md
+
+## Live Verification Attempt (2026-09-11)
+
+### Setup
+- Work Packet: WP-001
+- Branch/Worktree: WP-001-whatsapp @ c5a9660
+- Owner confirms real inbound WhatsApp traffic is arriving on the DHD sales number (phone redacted per constraints).
+- Layer A (customer message arrival at WhatsApp number) treated HEALTHY per owner confirmation.
+- No customer message content or phone numbers recorded; timestamps/classification only.
+
+### Read-only diagnostics attempted
+1. Evolution API webhook endpoint (`/webhook/find/{instanceName}`) returns HTTP 401 without apikey (expected). Webhook config not retrievable from this environment without secret.
+2. Public callback endpoint `POST /api/whatsapp` reachable per code analysis (lines 164-402). No live POST observed from this environment.
+3. Webhook registration events (from source): `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `CONNECTION_UPDATE`, `QRCODE_UPDATED`, `CALL` (lines 509-555).
+4. `syncEvolutionMessages` code path exists (lines 1853-2059) and can upsert missing messages into DB; execution requires authenticated session or apikey (secret).
+
+### First unobservable layer
+**Layer B (Webhook registration) / Layer C (Callback delivery)** — cannot observe live webhook config or POST attempts from this environment without:
+- (a) Evolution API auth (apikey) — secret exposure prohibited per constraints, OR
+- (b) Vercel function logs showing recent `POST /api/whatsapp` attempts and HTTP status, OR
+- (c) Owner-provided redacted webhook config (configured, url domain, events, lastMessageAt).
+
+### Required owner action (exact)
+Fetch live webhook configuration for instance `dhd-crm-wa` via Evolution UI/API (authenticated) and provide the following (no secrets, redacted as needed):
+- `configured`: true/false
+- `url`: redacted domain only (e.g. `https://*.vercel.app/api/whatsapp`)
+- `events`: list (e.g. `MESSAGES_UPSERT`, …)
+- `lastMessageAt`: timestamp of latest inbound message persisted in DB
+- Confirm from Vercel dashboard whether recent `POST /api/whatsapp` invocations exist and their HTTP status codes (e.g. 200 vs 4xx/5xx) with timestamps.
+- Optionally, run **Sync Messages** from WhatsApp UI and report count of recovered messages (no content).
+
+### Constraints preserved
+- No production code edited
+- No Evolution instance deletion/recreation/disconnect/QR reset
+- No credential rotation
+- No RLS mutation
+- No legacy `SUPABASE_SERVICE_ROLE_KEY` disable (deferred P0 preserved)
+- No master merge; no deploy
+- No customer message content or phone numbers exposed
+
+### Status
+WP-001 BLOCKED AT LAYER B — OWNER ACTION REQUIRED: Provide redacted live webhook config + Vercel POST logs as specified above.
