@@ -498,7 +498,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               configured: !!currentUrl,
               url: currentUrl,
               webhookUrl,
-              lastMessageAt
+              lastMessageAt,
+              // WP-001 diagnostic: non-secret webhook config only (PA-approved)
+              enabled: data?.enabled ?? data?.webhook?.enabled ?? null,
+              events: data?.events ?? data?.webhook?.events ?? null,
+              webhookByEvents: data?.webhookByEvents ?? data?.webhook?.webhookByEvents ?? null,
+              webhookBase64: data?.webhookBase64 ?? data?.webhook?.webhookBase64 ?? null,
             });
           }
         } catch (e) { /* ignore */ }

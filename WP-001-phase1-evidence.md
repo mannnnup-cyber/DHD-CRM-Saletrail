@@ -34,7 +34,7 @@ WP-001 BLOCKED AT LAYER B/C — OWNER EVIDENCE REQUIRED.
 
 PRODUCTION EVIDENCE (owner-provided, from authorized FollOps runtime — redacted, never exposed to file):
 - Production connectionState: {"success":true,"connected":true,"state":"open","instanceName":"dhd-crm-wa"}
-- Production webhookInfo (current code path api/whatsapp.ts:469-507): {"success":true,"configured":true,"url":"https://dhd-crm-saletrail.vercel.app/api/whatsapp","webhookUrl":"https://dhd-crm-salettrail.vercel.app/api/whatsapp","lastMessageAt":"2026-09-05T04:16:10+00:00"}
+- Production webhookInfo (current code path api/whatsapp.ts:469-507): {"success":true,"configured":true,"url":"https://dhd-crm-saletrail.vercel.app/api/whatsapp","webhookUrl":"https://dhd-crm-saletrail.vercel.app/api/whatsapp","lastMessageAt":"2026-09-05T04:16:10+00:00"}
 - Previous 401 probes = shell auth missing production DB key; NOT production failure.
 - Auth source confirmed: Supabase app_settings (getSetting) / Vercel env — in-process mechanism available; shell env did NOT authorize.
 

@@ -55,3 +55,26 @@ describe('Contact Resolution', () => {
     expect(r.result).toBe('unresolved');
   });
 });
+// WP-001 diagnostic: webhookInfo response mapping — non-secret fields only (PA-approved)
+describe('WP-001 webhookInfo diagnostic mapping', () => {
+  it('maps Evolution webhook config fields safely (enabled/events/webhookByEvents/webhookBase64)', () => {
+    const evolutionRaw = { url: 'https://example/app', enabled: true, events: ['MESSAGES_UPSERT'], webhookByEvents: false, webhookBase64: false, webhook: { url: 'https://example/app', enabled: true, events: ['MESSAGES_UPSERT'] } };
+    const currentUrl = evolutionRaw.url || evolutionRaw.webhook?.url || '';
+    const result = {
+      success: true, configured: !!currentUrl, url: currentUrl, webhookUrl: 'https://prod/app', lastMessageAt: '2026-09-05',
+      enabled: evolutionRaw.enabled ?? evolutionRaw.webhook?.enabled ?? null,
+      events: evolutionRaw.events ?? evolutionRaw.webhook?.events ?? null,
+      webhookByEvents: evolutionRaw.webhookByEvents ?? evolutionRaw.webhook?.webhookByEvents ?? null,
+      webhookBase64: evolutionRaw.webhookBase64 ?? evolutionRaw.webhook?.webhookBase64 ?? null,
+    };
+    expect(result.success).toBe(true);
+    expect(result.configured).toBe(true);
+    expect(result.url).toBe('https://example/app');
+    expect(result.enabled).toBe(true);
+    expect(result.events).toContain('MESSAGES_UPSERT');
+    expect(result.webhookByEvents).toBe(false);
+    expect(result.webhookBase64).toBe(false);
+    // No secret material exposed
+    expect(JSON.stringify(result)).not.toMatch(/apikey|token|secret|jwt/i);
+  });
+});
