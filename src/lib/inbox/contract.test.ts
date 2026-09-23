@@ -64,8 +64,8 @@ describe('WP-001 webhookInfo diagnostic mapping', () => {
       success: true, configured: !!currentUrl, url: currentUrl, webhookUrl: 'https://prod/app', lastMessageAt: '2026-09-05',
       enabled: evolutionRaw.enabled ?? evolutionRaw.webhook?.enabled ?? null,
       events: evolutionRaw.events ?? evolutionRaw.webhook?.events ?? null,
-      webhookByEvents: evolutionRaw.webhookByEvents ?? evolutionRaw.webhook?.webhookByEvents ?? null,
-      webhookBase64: evolutionRaw.webhookBase64 ?? evolutionRaw.webhook?.webhookBase64 ?? null,
+      webhookByEvents: evolutionRaw.webhookByEvents ?? (evolutionRaw as any).webhook?.webhookByEvents ?? null,
+      webhookBase64: evolutionRaw.webhookBase64 ?? (evolutionRaw as any).webhook?.webhookBase64 ?? null,
     };
     expect(result.success).toBe(true);
     expect(result.configured).toBe(true);
