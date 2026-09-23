@@ -820,7 +820,7 @@ async function fireTask(
     completed: false,
     priority: priority || 'medium',
     assigned_to: assignedTo || null,
-  }).select('id').single().catch(() => ({ data: null }));
+  }).select('id').single();
   await sb.from('automation_runs').insert({
     rule_id: ruleId, entity_type: entityType, entity_id: entityId, task_id: task?.id ?? null, status: 'completed',
   });
@@ -948,7 +948,7 @@ async function runAutomation(_req: VercelRequest, res: VercelResponse) {
               if (await wasRecentlyFired(supabase, rule.id, 'phone', phone, rule.cooldown_hours)) continue;
               const { data: newContact } = await supabase.from('contacts').insert({
                 name: `New Lead (${phone})`, phone: call.phone_number, source: 'MANUAL', status: 'NEW',
-              }).select('id').single().catch(() => ({ data: null }));
+              }).select('id').single();
               const title = interpolate(rule.action_config.title ?? 'Call back new lead: {{name}}', { name: phone });
               const desc = rule.action_config.description ?? '';
               await fireTask(supabase, rule.id, 'phone', phone, title, rule.action_config.priority ?? 'high', newContact?.id ?? null, desc, call.rep_id ?? null);
@@ -979,7 +979,7 @@ async function runAutomation(_req: VercelRequest, res: VercelResponse) {
               const displayName = msg.sender_name || `WhatsApp ${phone}`;
               const { data: newContact } = await supabase.from('contacts').insert({
                 name: displayName, phone, source: 'WHATSAPP', status: 'NEW',
-              }).select('id').single().catch(() => ({ data: null }));
+              }).select('id').single();
               const title = interpolate(rule.action_config.title ?? 'Reply to new WhatsApp lead: {{name}}', { name: displayName });
               const desc = rule.action_config.description ?? '';
               await fireTask(supabase, rule.id, 'wa_chat', chatId, title, rule.action_config.priority ?? 'high', newContact?.id ?? null, desc, null);

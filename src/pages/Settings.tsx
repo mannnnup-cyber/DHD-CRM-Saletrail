@@ -426,7 +426,7 @@ const Settings: React.FC = () => {
     try {
       const [devR, fwdR] = await Promise.all([
         fetch('/api/users?action=listDevices', { headers: authHeaders() }),
-        fetch('/api/whatsapp?action=getForwardStatus').catch(() => ({ ok: false })),
+        fetch('/api/whatsapp?action=getForwardStatus').catch(() => ({ ok: false, json: async () => ({ success: false }) } as Response)),
       ]);
       const devData = await devR.json();
       const fwdData = fwdR.ok ? await fwdR.json() : { success: false };

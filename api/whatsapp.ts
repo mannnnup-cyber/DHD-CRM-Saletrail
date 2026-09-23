@@ -1046,12 +1046,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      case 'sendFile': {
-        req.body.mediaBase64 = req.body.fileBase64;
-        req.body.mediaType = req.body.mimeType || 'application/octet-stream';
-      }
-        // falls through to sendMedia
-      case 'sendMedia': {
+      // Shared Evolution media-send execution — pre-refactor behavior preserved
+      const executeEvolutionSendMedia = async () => {
+
         // Send images, videos, or documents via Evolution API
         const { chatId, mediaBase64, mediaType, fileName, caption, mimeType } = req.body;
         if (!chatId || !mediaBase64 || !mediaType || !fileName) {
@@ -1129,6 +1126,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         return res.json({ success: true, messageId, provider: activeProvider });
+      };
+
+      case 'sendFile': {
+        req.body.mediaBase64 = req.body.fileBase64;
+        req.body.mediaType = req.body.mimeType || 'application/octet-stream';
+        return await executeEvolutionSendMedia();
+      }
+      case 'sendMedia': {
+        return await executeEvolutionSendMedia();
+        // Original semantics preserved via shared helper above
       }
 
       case 'searchMessages': {

@@ -148,6 +148,7 @@ interface Chat {
   assignedToUserId?: string;
   phone: string;
   status: 'active' | 'resolved' | 'pending';
+  contactId?: string;
 }
 
 interface Message {
@@ -174,7 +175,7 @@ export default function WhatsApp() {
   const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
   const [chatFilter, setChatFilter] = useState<'all' | 'individual' | 'groups'>('all');
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'mine' | 'unassigned'>(() =>
-    state.user?.role === 'sales_rep' ? 'mine' : 'all'
+    (state.user?.role) === 'sales_rep' ? 'mine' : 'all'
   );
   const [allCalls, setAllCalls] = useState<any[]>([]);
   const [callFilter, setCallFilter] = useState<'all' | 'mine' | 'missed' | 'today'>('all');
@@ -863,7 +864,7 @@ export default function WhatsApp() {
         const formattedMsg: Message = {
           id: msg.provider_message_id || msg.id,
           text: msg.body || '',
-          timestamp: rawTs,
+          timestamp: String(rawTs),
           fromMe: msg.direction === 'outbound',
           status: 'read',
           type: msg.message_type || msg.type || 'text',
@@ -1118,7 +1119,7 @@ export default function WhatsApp() {
           if (selectedChatIds.has(chat.id)) {
             return {
               ...chat,
-              ...(updates.status && { status: updates.status }),
+              ...(updates.status && { status: updates.status as 'active' | 'resolved' | 'pending' }),
               ...(updates.assignedTo && { assignedTo: updates.assignedTo })
             };
           }
@@ -1705,7 +1706,7 @@ export default function WhatsApp() {
                   All
                 </button>
 
-                {state.user?.role !== 'sales_rep' && (
+                {(state.user?.role) !== 'sales_rep' && (
                   <button
                     onClick={() => setAssignmentFilter(assignmentFilter === 'mine' ? 'all' : 'mine')}
                     className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
@@ -1718,7 +1719,7 @@ export default function WhatsApp() {
                   </button>
                 )}
 
-                {state.user?.role !== 'sales_rep' && (
+                {(state.user?.role) !== 'sales_rep' && (
                   <button
                     onClick={() => setAssignmentFilter(assignmentFilter === 'unassigned' ? 'all' : 'unassigned')}
                     className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
@@ -2167,9 +2168,9 @@ export default function WhatsApp() {
                           <div className={`flex items-center gap-1 mt-1 ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
                             <span className="text-[10px] opacity-70" title={msg.timestamp ? new Date(msg.timestamp).toLocaleString() : ''}>{formatMessageTime(msg.timestamp)}</span>
                             {msg.fromMe && (
-                              msg.status === 'read' ? <CheckCheck className="w-3 h-3 text-blue-300" title="Read" /> :
-                              msg.status === 'delivered' ? <CheckCheck className="w-3 h-3 opacity-70" title="Delivered" /> :
-                              <Check className="w-3 h-3 opacity-70" title="Sent" />
+                              msg.status === 'read' ? <CheckCheck className="w-3 h-3 text-blue-300" /> :
+                              msg.status === 'delivered' ? <CheckCheck className="w-3 h-3 opacity-70" /> :
+                              <Check className="w-3 h-3 opacity-70" />
                             )}
                           </div>
                           </div>{/* end inner padding */}
