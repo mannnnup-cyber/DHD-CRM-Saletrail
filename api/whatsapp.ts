@@ -1711,6 +1711,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      case 'reconnectInstance': {
+        const { instanceName, pairingCode } = req.body;
+        if (!instanceName) {
+          return res.status(400).json({ success: false, error: 'instanceName required' });
+        }
+        if (!EVOLUTION_API_URL) {
+          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
+        }
+
+        try {
+          const stateUrl = new URL(`/instance/connectionState/${instanceName}`, EVOLUTION_API_URL).toString();
+          const stateRes = await fetch(stateUrl, {
+            method: 'GET',
+            headers: EVOLUTION_API_KEY ? { 'apikey': EVOLUTION_API_KEY } : {},
+            signal: AbortSignal.timeout(15000)
+          });
+
+          if (!stateRes.ok) {
+            return res.status(400).json({ success: false, error: 'Instance not found or reconnect failed' });
+          }
+
+          const statusData = await stateRes.json();
+          const state = statusData?.instance?.state || statusData?.state || 'unknown';
+          const authenticated = state === 'open' || state === 'connected';
+          const phone = statusData?.instance?.phone || statusData?.phone || null;
+
+          if (authenticated) {
+            await setSetting('EVOLUTION_INSTANCE_NAME', instanceName);
+            if (phone) await setSetting('EVOLUTION_PHONE', phone);
+          }
+
+          return res.json({
+            success: true,
+            authenticated,
+            phone,
+            instanceName,
+            state,
+            message: authenticated ? 'Reconnected successfully' : 'State: ' + state
+          });
+        } catch (err: any) {
+          console.error('[reconnectInstance] Error:', err.message);
+          return res.status(500).json({ success: false, error: err.message });
+        }
+      }
+
       case 'webhookConfig': {
         // Returns webhook configuration info for Evolution API
         const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');

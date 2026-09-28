@@ -95,10 +95,25 @@ const Settings: React.FC = () => {
   const [whatsAppPhoneLinked, setWhatsAppPhoneLinked] = useState<string | null>(null);
   const [whatsAppPolling, setWhatsAppPolling] = useState(false);
   const [whatsAppScanning, setWhatsAppScanning] = useState(false);
+  const [pairingCode, setPairingCode] = useState<string>('');
+  const [reconnecting, setReconnecting] = useState<boolean>(false);
+
+  const checkWhatsAppReconnectStatus = async () => {
+    const instance = localValues['EVOLUTION_INSTANCE_NAME'];
+    if (!instance) return;
+    try {
+      const r = await fetch('/api/whatsapp?action=status');
+      const data = await r.json();
+      if (data.success && !data.connected && data.instanceName === instance) {
+        setMessage({ type: 'info', text: 'WhatsApp disconnected. Reconnect with pairing code below.' });
+      }
+    } catch (e) {}
+  };
 
   // Load settings from database
   useEffect(() => {
     loadSettings();
+    checkWhatsAppReconnectStatus();
   }, []);
 
   // Initialize WhatsApp linked state from settings
@@ -273,6 +288,37 @@ const Settings: React.FC = () => {
 
   const handleToggle = (key: keyof typeof settings) => {
     updateSettings({ [key]: !settings[key] });
+  };
+
+  const handleReconnectWithPairing = async () => {
+    if (!pairingCode || !whatsAppInstanceName) {
+      setMessage({ type: 'error', text: 'Instance name and pairing code required' });
+      return;
+    }
+    setReconnecting(true);
+    setMessage(null);
+
+    try {
+      const r = await fetch('/api/whatsapp?action=reconnectInstance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instanceName: whatsAppInstanceName, pairingCode })
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        setMessage({ type: 'success', text: 'Reconnected: ' + (data.phone || 'WhatsApp linked') });
+        setPairingCode('');
+        setShowWhatsAppModal(false);
+        setTimeout(() => loadSettings(), 1000);
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Reconnect failed' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Reconnect error' });
+    } finally {
+      setReconnecting(false);
+    }
   };
 
   // WhatsApp Evolution API handlers
