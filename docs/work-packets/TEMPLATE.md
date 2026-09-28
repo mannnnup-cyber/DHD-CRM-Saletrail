@@ -75,6 +75,18 @@ How to revert if this work fails:
 - [ ] Rollback step 1
 - [ ] Rollback step 2
 
+## Repository Baseline (recorded by Lead during mandatory preflight)
+
+- **Authoritative Git Root:** `<repo_absolute_path>`
+- **Baseline origin/master SHA:** `<verified_origin_master_sha>`
+- **Worktree:** `<worktree_path>` (record all; verify assignment matches assigned WP)
+- **Branch:** `<assigned_wp_branch>`
+- **HEAD:** `<current_head_sha>`
+- **Ahead/Behind (branch vs origin/master):** `<ahead> ahead / <behind> behind`
+- **Local Master Stale:** `<record_if_different> — LOCAL MASTER STALE — origin/master remains authoritative` (non-blocking; do NOT auto-reconcile)
+- **Nested Repo:** `<none_or_path>` (block only if ambiguous/mismatch/unsafe)
+- **Preflight Verdict:** `PASS` | `BLOCKED — <reason>`
+
 ## Definition of Done
 
 - [ ] All acceptance criteria met
