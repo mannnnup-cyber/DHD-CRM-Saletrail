@@ -3,8 +3,9 @@
 **Status:** READ-ONLY DIAGNOSTIC — NO PRODUCTION MUTATION
 **Role:** FollOps Lead (diagnostic coordination)
 **Date:** 2026-10-05
-**Branch:** WP-OPS-STABILIZATION (new audit packet; not merged to master)
+**Branch:** WP-OPS-STABILIZATION (new audit packet; pushed; not merged to master)
 **Authoritative master (fetched):** `d76e0dbe11eefe0547582e80b751a0da47853d38` (matches expected green master)
+**Remote audit branch SHA:** `ca8e9125b5a67398cd030c6d641ac4081afbc85a`
 
 ---
 
@@ -73,10 +74,29 @@ Static repository analysis (no Vercel admin/tool access verified for route-level
 **PARTIAL.** `pollWhatsAppStatus` retries on error every 1s but caps at >10 attempts; not unbounded. `loadChats` has no retry — relies on 30s interval. `sendEmail` (Resend) has no retry loop; fails once per call. No retry loop on `/api/email` endpoint found.
 
 ### Vercel Route-Level Usage Verified?
-**NO.** Vercel tooling/log access not exercised. Route-level invocation counts not obtained. Static suspects only — runtime evidence unavailable.
+**NOT VERIFIED.** Vercel CLI present (v52.0.0) but unauthenticated in this environment; no `vercel logs`, `vercel analytics`, or dashboard access exercised. Route-level invocation counts not obtained. Static suspects only — runtime evidence unavailable. Owner/PA must supply via Vercel dashboard, API, or logs.
+
+### Vercel Usage Period
+**UNKNOWN.** The 2.4M invocations / 1.2M CDN requests dashboard figures have no attached billing-period start/end in the repository. The audit cannot establish the period. Upper-bound arithmetic below is per-interval rates, not period totals.
+
+### Polling Arithmetic (from actual code)
+
+| Mechanism | Interval | Requests/hr | Requests/day / open tab | Multiple components? | Stops when page closed? | Failure/retry behavior |
+|---|---|---|---|---|---|---|
+| WhatsApp `loadChats` (`WhatsApp.tsx` chat-list `setInterval`) | 30s | 120 | 2,880 | Yes — any open WhatsApp tab issues same `GET /api/whatsapp?action=chatsFromDb` (+ fallback `syncHistory`/`chats`) | Yes — `clearInterval` on unmount | None — relies on 30s interval |
+| WhatsApp verify flow `pollWhatsAppStatus` (`Settings.tsx` + `WhatsApp.tsx`) | 1s recursive `setTimeout` | 3,600 if stuck | 86,400 if stuck | One per verify session | Yes — self-terminates at `attempt > 30` (reduced from 120); UI error cap `attempt > 10` | Retries on every error until cap |
+| Sidebar `fetchUnread` (`Sidebar.tsx`) | 60s | 60 | 1,440 | One per open app (sidebar mounted) | Yes — `clearInterval` on unmount | None |
+| AuthContext refresh (`AuthContext.tsx`) | ~60s + token expiry | ~60 | ~1,440 | One per authenticated session | Yes — timeout exits; logout on second failure | One retry after 60s on network blip, then logout |
+| Vercel cron (`vercel.json`) | Daily 09:00 | — | 1 | N/A | N/A | None |
+
+**Arithmetic for 2.4M / 1.2M plausibility:**
+- 1 open WhatsApp tab × 30s poll = 2,880/day. To reach 2.4M function invocations/day purely from this poll: 2,400,000 / 2,880 ≈ 833 concurrent open tabs/users. **Plausible only with many concurrent open tabs/users or additional unmeasured sources (Supabase real-time, static asset CDN, other functions).**
+- The audit CANNOT confirm the billing period the 2.4M covers. If period is 30 days: 80,000/day average — 28 open tabs at 30s poll, or combination. If period is 1 day: 833 concurrent tabs. **Period UNKNOWN.**
+- No single mechanism proven to be the source without Vercel route-level data.
+- CDN requests (1.2M) likely include static assets; only a subset are function invocations.
 
 ### Conclusion (OPS-01)
-- 2.4M invocations / 1.2M CDN requests are **plausibly** explained by: many concurrent open WhatsApp tabs (30s poll) + open auth sessions + sidebar refresh across multiple users/browsers + CDN caching of static assets (not all function invocations). No single runaway loop proven.
+- 2.4M invocations / 1.2M CDN requests are **plausibly** explained by a combination of many concurrent open WhatsApp tabs (30s poll) + open auth sessions + sidebar refresh across users/browsers + CDN caching of static assets (not all function invocations). No single runaway loop proven.
 - Greatest reduction: review whether WhatsApp page is left open by multiple users/agents; consider reducing `loadChats` interval or using Supabase real-time subscription (already used for new messages inside open chats) rather than 30s polling for list refresh.
 - No production deployment required for audit conclusion.
 
@@ -124,7 +144,9 @@ Static repository analysis (no Vercel admin/tool access verified for route-level
 | I. application bug | Sequence is structured (password set, then email) — not a logic bug | Not the primary cause |
 | J. other | — | — |
 
-**VERDICT:** **DOMAIN VERIFICATION NOT PROVEN. RESEND FAILURE CLASSIFICATION NOT PROVEN.** Repository documentation repeatedly notes suspected domain verification failure but no proof (DNS records, Resend dashboard, delivery webhook) was produced in this audit. No production secrets or logs exposed; no env values printed.
+**VERDICT:** **DOMAIN VERIFICATION NOT PROVEN. RESEND FAILURE CLASSIFICATION NOT PROVEN.** Repository documentation repeatedly notes suspected domain verification failure (`docs/context/INTEGRATIONS.md`, `docs/agents/INTEGRATIONS.md`) but no proof (DNS records, Resend dashboard, delivery webhook, Vercel logs) was produced in this audit. No production secrets or logs exposed; no env values printed.
+- Production log inspection for actual `api_error` status/body: NOT AVAILABLE (no Vercel log access exercised; no Resend dashboard access). `RESEND FAILURE ROOT CAUSE NOT PROVEN`.
+- Domain verification for `dirtyhanddesigns.com` in Resend: **NOT VERIFIED** (no DNS/provider tooling exercised). `RESEND DOMAIN VERIFICATION NOT PROVEN`.
 
 ### Recommended Target Architecture (no implementation in this audit)
 
@@ -141,13 +163,25 @@ Static repository analysis (no Vercel admin/tool access verified for route-level
 
 ## OPS-03 — WHATSAPP WP-001 REVALIDATION
 
-### WP-001 Current State (from `docs/work-packets/active/WP-001-whatsapp-webhook-failure.md` + branch)
+### WP-001 Current State (reconciled from evidence files + branch)
 
-- Status: `Review` (NOT Done — blocked on live verification)
-- Priority: P0
-- Branch `WP-001-whatsapp-fresh` (remote `origin/WP-001-whatsapp-fresh @ 7b6979b`) changed 7 files (~460 insertions) vs master (webhook sanitizer + tests + docs) — **PRESERVED, NOT MUTATED**.
-- Evidence SHA `3ba1fda52f6c0ae8de4e1426ddc48860d8181c82` present.
-- Diagnostic conclusion (existing doc): need evidence of MESSAGES_UPSERT registration, webhook delivery reaching FollOps, whether failure is webhook-registration vs delivery vs Evolution-side.
+- **Packet status:** `In Progress` (per WP-001 doc metadata; NOT "blocked on live verification" only)
+- **Priority:** P0
+- **Branch HEAD:** `WP-001-whatsapp-fresh` remote `origin/WP-001-whatsapp-fresh @ 7b6979b6336c4243780e823fb28be071bc11dadb`; local `WP-001-whatsapp-fresh` not present (remote only).
+- **Branch relationship to master:** 7 files changed, 460 insertions / 16 deletions vs master (`src/lib/wp001/webhookSanitizer.*`, tests, docs).
+- **Production diagnostic already deployed:** NONE — this packet is read-only diagnostic; no production deployment.
+- **Verified Evolution state (owner-supplied, unmodified):** `{success:true, connected:true, state:"open", instanceName:"dhd-crm-wa"}` — proves authentication, NOT webhook health.
+- **Verified webhook URL (owner-supplied, unmodified):** `https://dhd-crm-saletrail.vercel.app/api/whatsapp` — configured; does NOT prove delivery reaching FollOps.
+- **lastMessageAt evidence:** `2026-09-05T04:16:10+00:00` — stale relative to current date; no new inbound message proven since.
+- **Unresolved Layer A/B/C distinction (per WP-001 classification):**
+  - Layer A (session/provider): NOT root cause — connectionState open/authenticated.
+  - Layer B (webhook registration): PRIMARY hypothesis — webhook missing/stale after Evolution restart.
+  - Layer C (callback delivery): SECONDARY — URL may be stale or events missing (esp. MESSAGES_UPSERT).
+  - Layer D (handler parsing): NOT cause — handler correctly parses Evolution v2 Baileys format.
+  - Layer E (persistence): NOT testable — no messages reaching handler.
+  - Layer F (presentation): NOT cause — UI correctly shows gap warning.
+- **Latest PA-reviewed diagnostic status:** Diagnosis complete per `docs/diagnosis-findings.md`; leading hypothesis = Layer B + C pending live verification. Next approved step: verify MESSAGES_UPSERT registration + webhook POST evidence + lastMessageAt vs actual inbound time. **NO reconnect / webhook-set / instance recreation / QR rescan / credential rotation performed in this audit.**
+- Evidence SHA `3ba1fda52f6c0ae8de4e1426ddc48860d8181c82` present and branch preserved untouched.
 
 ### Owner-Supplied Production Evidence (interpreted correctly)
 
@@ -174,13 +208,13 @@ Per existing packet: verify MESSAGES_UPSERT registration status via Evolution AP
 
 ## CROSS-SYSTEM CONCLUSION
 
-| System | Failure / Observation | Likely independent? | Relationship to others |
-|---|---|---|---|
-| OPS-01 Vercel usage | High invocation / CDN totals; plausible multi-tab polling + auth refresh; no proven runaway loop | Independent of email failure; partially related to WhatsApp via open-tab polling (user-driven) | WhatsApp open tabs increase load; not caused by WhatsApp failure |
-| OPS-02 Email/Resend | Broken outbound; domain verification unproven; password reset sends plaintext temp | Independent of Vercel usage (unless resource exhaustion causes API timeouts — not isolated) | No direct dependency |
-| OPS-03 WhatsApp WP-001 | Webhook delivery unproven; reconnect needed; evidence preserved | Independent of email; contributes to load only when users keep page open for reconnect attempts | Possible: users reopening WhatsApp increases `loadChats` load |
+| System | Failure / Observation | Classification |
+|---|---|---|
+| OPS-01 Vercel usage | High invocation / CDN totals; plausible multi-tab polling + auth refresh; no proven runaway loop | **NO EVIDENCE OF RELATION** (independent of email failure) |
+| OPS-02 Email/Resend | Broken outbound; domain verification unproven; password reset sends plaintext temp | **NO EVIDENCE OF RELATION** (independent of Vercel usage) |
+| OPS-03 WhatsApp WP-001 | Webhook delivery unproven; reconnect needed; evidence preserved | **POSSIBLY RELATED** (WhatsApp open tabs contribute to load; not root cause of overload) |
 
-**Direction of causality:** Most likely **independent failures** (B) with **partial load interaction** (WhatsApp use increases polling, not failure causing overload). No evidence of one root cause (e.g., resource exhaustion causing all three). No evidence of webhook recursion or email retry loop driving volume.
+**Conclusion:** Three independent failures (OPS-01, OPS-02, OPS-03) with partial load interaction (WhatsApp use increases load but does not cause failure). No evidence of single root cause, webhook recursion, or email retry loop driving volume.
 
 ---
 
@@ -199,19 +233,21 @@ Per existing packet: verify MESSAGES_UPSERT registration status via Evolution AP
 
 ## QA VERDICT
 
-- Static analysis completed: YES (grep over `src/`, `api/`, `vercel.json`).
-- No production code modified: CONFIRMED (`APPLICATION CODE CHANGED: NO`).
-- No deployment performed: CONFIRMED (`PRODUCTION DEPLOYED: NO`).
-- No Vercel plan/config changed: CONFIRMED (`VERCEL PLAN CHANGED: NO`).
-- No WhatsApp/Evolution mutation: CONFIRMED (`EVOLUTION MUTATED: NO`; no reconnect, no webhook-set, no instance recreation, no QR rescan).
-- No email provider mutation: CONFIRMED (`EMAIL PROVIDER MUTATED: NO`; no DNS change, no key rotation, no Brevo switch executed).
-- No Supabase mutation: CONFIRMED (`SUPABASE MUTATED: NO`; RLS and service-role not changed; no user reset executed).
-- WP-001 branch intact: CONFIRMED (branch `WP-001-whatsapp-fresh` remote preserved; local `WP-001-whatsapp` untouched; evidence SHA present).
-- Route-level Vercel usage: NOT VERIFIED (stated explicitly).
-- Runaway loop: NOT PROVEN (exit conditions exist; no unbounded loops found).
-- Webhook recursion: NOT PROVEN.
-- Resend failure classification: NOT PROVEN (suspected domain verification; no proof produced).
-- Cross-system causality: Independent failures with partial load interaction — not a single root cause.
+- Static analysis completed: YES (grep over `src/`, `api/`, `vercel.json`)
+- No production code modified: CONFIRMED (`APPLICATION CODE CHANGED: NO`)
+- No deployment performed: CONFIRMED (`PRODUCTION DEPLOYED: NO`)
+- No Vercel plan/config changed: CONFIRMED (`VERCEL PLAN CHANGED: NO`)
+- No WhatsApp/Evolution mutation: CONFIRMED (`EVOLUTION MUTATED: NO`; no reconnect, no webhook-set, no instance recreation, no QR rescan)
+- No email provider mutation: CONFIRMED (`EMAIL PROVIDER MUTATED: NO`; no DNS change, no key rotation, no Brevo switch executed)
+- No Supabase mutation: CONFIRMED (`SUPABASE MUTATED: NO`; RLS and service-role not changed; no user reset executed)
+- WP-001 branch intact: CONFIRMED (branch `WP-001-whatsapp-fresh` remote preserved; local `WP-001-whatsapp` untouched; evidence SHA present)
+- Route-level Vercel usage: NOT VERIFIED (no logs/analytics accessed)
+- Runaway loop proven: NO (exit conditions exist; no unbounded loops found)
+- Webhook recursion: NOT PROVEN
+- Resend failure classification: NOT PROVEN (suspected domain verification; no proof produced)
+- Domain verification status: **RESEND DOMAIN VERIFICATION NOT PROVEN**
+- Cross-system relationship: **NO EVIDENCE OF RELATION** (independent failures with partial load interaction)
+- QA verdict: PASS
 
 ---
 
@@ -222,6 +258,7 @@ Per existing packet: verify MESSAGES_UPSERT registration status via Evolution AP
 - Webhook endpoint: `api/whatsapp.ts` is public webhook receiver — security review remains separate (referenced in WP-001 doc); no authentication/signature changes made.
 - Credential rotation / exposure remediation: NOT EXPANDED into this audit (existing unresolved security work kept separate per instruction).
 - Public integration endpoints: reviewed read-only; no mutation.
+- Security verdict: PASS
 
 ---
 
@@ -265,19 +302,19 @@ WP-001 BRANCH/BRANCH EVIDENCE MUTATED: NO
 ## REPORT ITEMS (from instruction §8 / §10)
 
 1. Authoritative origin/master SHA: `d76e0dbe11eefe0547582e80b751a0da47853d38`
-2. Audit branch: `WP-OPS-STABILIZATION` (new; not pushed; local packet in `docs/work-packets/active/`)
-3. Remote commit SHA (audit doc not yet pushed): to be pushed separately; branch is local documentation only
+2. Audit branch: `WP-OPS-STABILIZATION` (pushed)
+3. Remote commit SHA: `ca8e9125b5a67398cd030c6d641ac4081afbc85a`
 4. Exact files changed: `docs/work-packets/active/WP-OPS-STABILIZATION.md` only
-5. Vercel top request-volume suspects: WhatsApp `loadChats` (30s), Sidebar unread (60s), Auth refresh (~60s), WhatsApp verify (self-terminating 1s), Vercel cron (1/day)
-6. Runaway loop proven: NO (exit conditions present; no unbounded loop found)
-7. Email failure classification: NOT PROVEN (suspected domain verification; not demonstrated from repo/runtime; no production secrets or logs exposed)
-8. Resend / Brevo / SMTP / Supabase Auth recommendation: Provider abstraction + Supabase Auth recovery for reset; Brevo as alternative transactional if domain verified; do not recommend based on price alone
-9. Password-reset architecture recommendation: Replace plaintext-temp-email with Supabase Auth expiring-reset-link flow (user chooses password after link); separate auth email from CRM correspondence
-10. WP-001 current conclusion: Branch preserved; evidence SHA present; diagnostic blocked on live verification (MESSAGES_UPSERT / webhook delivery); reconnect NOT performed
+5. Vercel top request-volume suspects: WhatsApp `loadChats` (30s, 2,880/day/tab), Sidebar unread (60s, 1,440/day), Auth refresh (~60s, ~1,440/day), WhatsApp verify (self-terminating 1s), Vercel cron (1/day)
+6. Runaway loop proven: NO (exit conditions present; no unbounded loops found)
+7. Email failure classification: NOT PROVEN (suspected domain verification; no production log access; `RESEND FAILURE ROOT CAUSE NOT PROVEN`)
+8. Domain verification status: `RESEND DOMAIN VERIFICATION NOT PROVEN`
+9. Resend / Brevo / SMTP / Supabase Auth recommendation: Provider abstraction + Supabase Auth recovery for reset; Brevo as alternative transactional if domain verified; do not recommend based on price alone
+10. WP-001 current conclusion: Branch preserved; evidence SHA present; diagnosis complete leading hypothesis Layer B + C; reconnect NOT performed; MESSAGES_UPSERT/webhook POST evidence pending live verification
 11. WhatsApp related to Vercel usage: Partial (open tabs cause polling load) — not a root-cause relationship; no evidence failure causes overload
-12. QA verdict: PASS (read-only; static analysis complete; no mutations; known unknowns documented)
-13. Security verdict: PASS (no secret exposure; reset not executed; webhook not modified; separate security work not expanded)
+12. QA verdict: PASS
+13. Security verdict: PASS
 14. Owner actions needed: Confirm domain verification; confirm WP-001 live verification; check multi-tab usage; approve reset redesign; request Vercel analytics if needed
 15. Zero production mutation confirmed: YES (explicit confirmations above)
 
-FOLLOPS OPERATIONAL AUDIT COMPLETE — PA REVIEW REQUIRED
+FOLLOPS OPERATIONAL AUDIT EVIDENCE COMPLETE — PA REVIEW REQUIRED
