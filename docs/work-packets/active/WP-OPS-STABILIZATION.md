@@ -47,21 +47,21 @@ Static repository analysis (no Vercel admin/tool access verified for route-level
 | `src/pages/WhatsApp.tsx` | WhatsApp.tsx | mount: checkWebhookStatus / loadChats / loadEvolutionConfig / syncContactNames (fire-and-forget POST) | `/api/whatsapp` | Once at mount | Yes (page open) | No | catch(()=>{}) silent | Low |
 | `src/pages/WhatsApp.tsx` | WhatsApp.tsx | `setTimeout` scroll + toast clearing | UI only | 100ms / 5s | Yes | No | No | Client-side only |
 
-### Request-Volume Estimates (reasonable upper-bound)
+### Request-Volume Estimates (from actual code intervals)
 
-- WhatsApp page open, 1 tab: 30s chat poll = 120/hr; webhook/check ~once per interaction; mount sync = 1. **~120–240 req/hr per open tab** (mostly `/api/whatsapp` + Supabase real-time).
-- WhatsApp verify/scan flow: 1s poll x 10 attempts = ~10 req; self-terminating. Not sustained.
-- Sidebar unread: 60s = 60/hr per open session.
-- Auth refresh: ~1/min per authenticated session.
-- Daily Vercel cron: 1 invocation/day.
+- WhatsApp page open, 1 tab: `loadChats` 30s interval = 120/hr; webhook/check ~once per interaction; mount sync = 1. **~120–240 req/hr per open tab** (mostly `/api/whatsapp` + Supabase real-time).
+- WhatsApp verify/scan flow: 1s recursive `setTimeout` × 10-30 attempts (cap >30) = ~10-30 req during verify session; self-terminating. Not sustained.
+- Sidebar unread: 60s = 60/hr per open session (mounts on load, unmounts on close).
+- AuthContext refresh: token-expiry-5min (`msUntilRefresh = expiresAt - now - 5min`), **NOT fixed 60s**; only triggers near token expiry boundary based on actual session duration. Error fallback: 60s retry once, then logout. This is **NOT** ~1/min.
+- Daily Vercel cron: 1 invocation/day (09:00 UTC) to CRM automation.
 - **No recurring frontend poll to `/api/email`, `/api/users`, `/api/recordings`, `/api/crm`** found outside automation cron.
 
 ### Top 5 Highest-Volume Suspects (static)
 
 1. WhatsApp `loadChats` 30s interval (`WhatsApp.tsx:953`) — per-tab, persistent while page open.
 2. Sidebar unread 60s interval (`Sidebar.tsx:109`) — per open session.
-3. AuthContext refresh ~60s / token-margin (`AuthContext.tsx`) — per authenticated session.
-4. WhatsApp `pollWhatsAppStatus` recursive 1s (`Settings.tsx`) — only active during manual verify; self-terminating at >10 attempts.
+3. AuthContext refresh event-driven near token expiry (`AuthContext.tsx`) — depends on session duration, not fixed 60s; low-frequency while session active.
+4. WhatsApp `pollWhatsAppStatus` recursive 1s (`Settings.tsx`) — only active during manual verify; self-terminating at attempt >30.
 5. Vercel daily cron (`vercel.json`) — 1/day to CRM automation.
 
 ### Evidence of Accidental Loop?
@@ -96,8 +96,9 @@ Static repository analysis (no Vercel admin/tool access verified for route-level
 - CDN requests (1.2M) likely include static assets; only a subset are function invocations.
 
 ### Conclusion (OPS-01)
-- 2.4M invocations / 1.2M CDN requests are **plausibly** explained by a combination of many concurrent open WhatsApp tabs (30s poll) + open auth sessions + sidebar refresh across users/browsers + CDN caching of static assets (not all function invocations). No single runaway loop proven.
-- Greatest reduction: review whether WhatsApp page is left open by multiple users/agents; consider reducing `loadChats` interval or using Supabase real-time subscription (already used for new messages inside open chats) rather than 30s polling for list refresh.
+- 2.4M invocations / 1.2M CDN requests root cause: **NOT PROVEN** (VERCEL OVERAGE ROOT CAUSE: NOT PROVEN). Route-level usage unavailable (Vercel CLI unauthenticated in this environment); identified polling contributes load but has not quantitatively explained the observed total.
+- Identified polling is a candidate contributor (see arithmetic above), not a proven explanation. Period for 2.4M/1.2M figures: UNKNOWN.
+- Greatest reduction candidate: review whether WhatsApp page remains open by multiple users/agents; consider reducing `loadChats` interval or event-driven updates (Supabase real-time already used for open-chat messages).
 - No production deployment required for audit conclusion.
 
 ---
@@ -124,7 +125,7 @@ Static repository analysis (no Vercel admin/tool access verified for route-level
    > "Password was reset, but the email could not be delivered. The new password was NOT changed to anything shown here — retry the reset once email sending is working."
 
 **ASSESSMENTS:**
-- Lockout risk: LOW (password changed to known temp; user can log in with it, then must change).
+- Lockout risk: HIGH when email delivery fails (Supabase password changed before delivery; random temp password exists only server-side and is never returned through the API; user does not know the new password and the previous password has already been invalidated).
 - Security risk of emailing plaintext temp: HIGH — temporary password exposed in email, no expiration, transmitted in plaintext.
 - Retry semantics: NONE for email; password already changed regardless of delivery.
 - Auditable: Partial — Supabase auth log + Resend response; no delivery webhook confirmation.
@@ -155,7 +156,7 @@ Static repository analysis (no Vercel admin/tool access verified for route-level
 - Conceptual separation: INBOUND = IMAP (existing mailbox); TRANSACTIONAL OUTBOUND = Resend/Brevo/SMTP for password invites/notifications; AUTH-SPECIFIC = Supabase Auth recovery flow; CRM HUMAN CORRESPONDENCE = existing mailbox SMTP if viable.
 - **Concrete recommendation (preliminary, requires owner confirmation):**
   - Do NOT switch provider solely on price.
-  - For password reset: move to Supabase Auth recovery flow (expiring reset link/token, user chooses new password, no plaintext temp email). Eliminates security risk regardless of provider.
+  - For password reset: move to a secure expiring-recovery-link design (administrator initiates reset; system creates expiring recovery link/token; user receives link; user chooses new password; password is NOT changed until user completes reset). This avoids the lockout scenario and eliminates plaintext temp-password email. **Supabase Auth compatibility must be verified before implementation; recommended design is preserved but NOT implemented.**
   - For transactional email (invites, notifications): evaluate Brevo as alternative to broken Resend, but only after domain verification and delivery testing; maintain provider abstraction so future switch is low-cost.
   - Domain verification must be proven (DNS + provider dashboard) before declaring provider fixed.
 
