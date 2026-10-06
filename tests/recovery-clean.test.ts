@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Mock @supabase/supabase-js BEFORE importing the endpoint
+// Config: deterministically provide Supabase env before module initialization
+process.env.SUPABASE_PROJECT_URL = 'https://test.supabase.co';
+process.env.VITE_SUPABASE_URL = 'https://test.supabase.co';
+process.env.SUPABASE_ANON_KEY = 'anon-test';
+process.env.VITE_SUPABASE_ANON_KEY = 'anon-test';
+process.env.SUPABASE_SECRET_KEY = 'service-test';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-test';
+
 let mockGetUser = vi.fn();
 let mockFrom = vi.fn();
 
@@ -15,123 +22,83 @@ vi.mock('@supabase/supabase-js', () => ({
 import handler from '../api/recovery-clear';
 
 function resMock() {
-  const res: any = {
+  const r: any = {
     _status: 200,
     _json: null,
-    status: function(c: number) { this._status = c; return this; },
-    json: function(b: any) { this._json = b; return this; },
+    status(c: number) { this._status = c; return this; },
+    json(b: any) { this._json = b; return this; },
   };
-  return res as VercelResponse;
+  return r as VercelResponse;
 }
 
 function reqMock(overrides: Partial<VercelRequest> = {}): VercelRequest {
   return { method: 'POST', headers: {}, ...overrides } as any;
 }
 
-describe('recovery-clear endpoint (mocked behavioral)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetUser.mockReset();
-    mockFrom.mockReset();
-  });
+describe('recovery-clear endpoint — mocked behavioral with chain proof', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockGetUser.mockReset(); mockFrom.mockReset(); });
 
-  it('GET -> 405', () => {
-    const r = resMock();
-    handler(reqMock({ method: 'GET' }), r);
-    expect(r._status).toBe(405);
-  });
+  it('GET -> 405', () => { const r = resMock(); handler(reqMock({ method: 'GET' }), r); expect(r._status).toBe(405); });
 
-  it('POST without bearer -> 401', () => {
-    const r = resMock();
-    handler(reqMock({ headers: {} }), r);
-    expect(r._status).toBe(401);
-  });
+  it('POST without bearer -> 401', () => { const r = resMock(); handler(reqMock({ headers: {} }), r); expect(r._status).toBe(401); });
 
   it('invalid bearer (getUser error) -> 401', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: 'bad token' } });
-    const r = resMock();
-    await handler(reqMock({ headers: { authorization: 'Bearer bad' } }), r);
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: 'bad' } });
+    const r = resMock(); await handler(reqMock({ headers: { authorization: 'Bearer bad' } }), r);
     expect(r._status).toBe(401);
   });
 
-  it('valid bearer (user A) -> DB constrained with .eq(id, userA.id)', async () => {
-    const userA = { id: 'user-a-01', email: 'a@test.com' };
-    mockGetUser.mockResolvedValue({ data: { user: userA }, error: null });
-    const updateMock = vi.fn().mockReturnThis();
-    const eqMock = vi.fn().mockResolvedValue({ error: null });
-    mockFrom.mockReturnValue({
-      update: updateMock,
-    });
-    // We verify target identity via source contract (handler uses .eq('id', user.id)); mock captures call shape.
-    const r = resMock();
-    await handler(reqMock({ headers: { authorization: 'Bearer tok' } }), r);
-    expect(mockFrom).toHaveBeenCalledWith('user_profiles');
-  });
-
-  it('request with another user ID in body cannot change target', async () => {
-    const userA = { id: 'real-id', email: 'a@test.com' };
-    mockGetUser.mockResolvedValue({ data: { user: userA }, error: null });
-    const r = resMock();
-    await handler(reqMock({ headers: { authorization: 'Bearer tok' }, body: { id: 'other-user-id' } }), r);
-    // Endpoint resolves user.id from token, ignores body id; contract: .eq('id', user.id) only.
-    expect(r._status).toBeGreaterThanOrEqual(200);
-  });
-
-  it('DB update failure -> 500 sanitized', async () => {
+  it('DB failure -> 500 sanitized (detail included, not raw)', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
-    mockFrom.mockReturnValue({
-      update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: { message: 'db down' } }) }),
-    });
-    const r = resMock();
-    await handler(reqMock({ headers: { authorization: 'Bearer good' } }), r);
+    const eqMock = vi.fn().mockResolvedValue({ error: { message: 'db down' } });
+    const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
+    mockFrom.mockReturnValue({ update: updateMock });
+    const r = resMock(); await handler(reqMock({ headers: { authorization: 'Bearer good' } }), r);
     expect(r._status).toBe(500);
     expect(r._json?.error).toBe('Clear failed');
+    expect(updateMock).toHaveBeenCalledTimes(1);
   });
 
-  it('DB update success -> 200 { success: true }', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
-    mockFrom.mockReturnValue({
-      update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-    });
+  it('successful clear -> 200 { success: true } with .eq(id, resolvedUser.id)', async () => {
+    const resolvedUser = { id: 'user-a-01', email: 'a@test.com' };
+    mockGetUser.mockResolvedValue({ data: { user: resolvedUser }, error: null });
+    const eqMock = vi.fn().mockResolvedValue({ error: null });
+    const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
+    mockFrom.mockReturnValue({ update: updateMock });
     const r = resMock();
-    await handler(reqMock({ headers: { authorization: 'Bearer good' } }), r);
+    await handler(reqMock({ headers: { authorization: 'Bearer tok' } }), r);
     expect(r._status).toBe(200);
     expect(r._json).toEqual({ success: true });
+    // Chain proof
+    expect(mockFrom).toHaveBeenCalledWith('user_profiles');
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({
+      must_change_password: false,
+    }));
+    expect(eqMock).toHaveBeenCalledTimes(1);
+    expect(eqMock).toHaveBeenCalledWith('id', resolvedUser.id);
+  });
+
+  it('malicious body id cannot alter target — .eq always uses token-resolved id', async () => {
+    const realId = 'real-id';
+    mockGetUser.mockResolvedValue({ data: { user: { id: realId } }, error: null });
+    const eqMock = vi.fn().mockResolvedValue({ error: null });
+    const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
+    mockFrom.mockReturnValue({ update: updateMock });
+    const r = resMock();
+    await handler(reqMock({ headers: { authorization: 'Bearer tok' }, body: { id: 'other-user-id' } }), r);
+    expect(r._status).toBe(200);
+    expect(eqMock).toHaveBeenCalledWith('id', realId);
+    expect(eqMock).not.toHaveBeenCalledWith('id', 'other-user-id');
   });
 });
 
-describe('cleanup decision logic (extracted, no placeholder)', () => {
-  function decide(token: string | null, resOk: boolean, resSuccess: boolean) {
-    let clearFailed = false;
-    if (token === null || token === undefined || token === '') {
-      clearFailed = true;
-    } else if (!resOk || !resSuccess) {
-      clearFailed = true;
-    }
+describe('cleanup decision logic — extracted, zero placeholders', () => {
+  function decide(token: string | null | undefined, resOk: boolean, resSuccess: boolean) {
+    let clearFailed = !!(token === null || token === undefined || token === '' || !resOk || !resSuccess);
     return { completed: !!token && resOk && resSuccess, partial: clearFailed };
   }
-
-  it('missing access token -> partial-success (not completed)', () => {
-    const s = decide(null, true, true);
-    expect(s.completed).toBe(false);
-    expect(s.partial).toBe(true);
-  });
-
-  it('cleanup HTTP failure -> partial-success', () => {
-    const s = decide('tok', false, true);
-    expect(s.completed).toBe(false);
-    expect(s.partial).toBe(true);
-  });
-
-  it('cleanup {success:false} -> partial-success', () => {
-    const s = decide('tok', true, false);
-    expect(s.completed).toBe(false);
-    expect(s.partial).toBe(true);
-  });
-
-  it('valid token + HTTP success + {success:true} -> completed', () => {
-    const s = decide('tok', true, true);
-    expect(s.completed).toBe(true);
-    expect(s.partial).toBe(false);
-  });
+  it('missing token -> partial', () => { const s = decide(null, true, true); expect(s.completed).toBe(false); expect(s.partial).toBe(true); });
+  it('HTTP fail -> partial', () => { const s = decide('tok', false, true); expect(s.completed).toBe(false); expect(s.partial).toBe(true); });
+  it('success false -> partial', () => { const s = decide('tok', true, false); expect(s.completed).toBe(false); expect(s.partial).toBe(true); });
+  it('valid + ok + true -> completed', () => { const s = decide('tok', true, true); expect(s.completed).toBe(true); expect(s.partial).toBe(false); });
 });
