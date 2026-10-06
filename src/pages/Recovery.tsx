@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+import { supabase } from '../lib/supabase';
 
 export default function Recovery() {
   const [loading, setLoading] = useState(true);
@@ -15,15 +12,17 @@ export default function Recovery() {
   useEffect(() => {
     // Supabase Auth validates recovery token from URL automatically
     // when the page loads with the recovery link; establish session.
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { autoRefreshToken: false, persistSession: true },
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session && data.session.user) {
-        setValid(true);
-      }
+    const supabaseClient = (supabase && typeof (supabase as any).auth?.getSession === 'function') ? (supabase as any) : null;
+    if (supabaseClient) {
+      supabaseClient.auth.getSession().then(({ data }: any) => {
+        if (data.session && data.session.user && data.session.user.recovery_session) {
+          setValid(true);
+        }
+        setLoading(false);
+      });
+    } else {
       setLoading(false);
-    });
+    }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -31,10 +30,9 @@ export default function Recovery() {
     setError('');
     if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { autoRefreshToken: false, persistSession: true },
-    });
-    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    const supabaseClient = (supabase && typeof (supabase as any).auth?.getSession === 'function') ? (supabase as any) : null;
+    if (!supabaseClient) { setError('Recovery session unavailable'); return; }
+    const { error: updateError } = await supabaseClient.auth.updateUser({ password: newPassword });
     if (updateError) { setError(updateError.message); return; }
     setDone(true);
   };

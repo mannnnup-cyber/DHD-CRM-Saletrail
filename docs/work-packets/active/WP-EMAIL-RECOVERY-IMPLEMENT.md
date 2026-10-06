@@ -39,7 +39,7 @@ The exact current sequence removed:
 
 ## MUST_CHANGE_PASSWORD
 - The `must_change_password` flag is **not** set when initiating a recovery
-- After a successful self-service password change via the recovery page, the flag is cleared (preserving existing `changePassword` behavior)
+- After successful recovery: must_change_password clear requires separate authenticated server action (api/recovery-clear.ts); NOT yet implemented in Recovery.tsx (blocking defect corrected as separate endpoint, not pretended complete in page)
 
 ## SECURITY CONTROLS
 - The action link or hashed token is never returned to the client or logged
