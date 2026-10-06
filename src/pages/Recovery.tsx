@@ -8,21 +8,29 @@ export default function Recovery() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const [recoveryEvent, setRecoveryEvent] = useState<string | null>(null);
 
   useEffect(() => {
-    // Supabase Auth validates recovery token from URL automatically
-    // when the page loads with the recovery link; establish session.
-    const supabaseClient = (supabase && typeof (supabase as any).auth?.getSession === 'function') ? (supabase as any) : null;
-    if (supabaseClient) {
-      supabaseClient.auth.getSession().then(({ data }: any) => {
-        if (data.session && data.session.user && data.session.user.recovery_session) {
-          setValid(true);
-        }
-        setLoading(false);
-      });
-    } else {
+    // SDK-supported mechanism: listen for PASSWORD_RECOVERY auth-state event.
+    // Ordinary signed-in session (SIGNED_IN / INITIAL_SESSION) without recovery event = reject.
+    // Missing / invalid recovery state = reject.
+    const subscription = supabase.auth?.onAuthStateChange?.((event: string, session: any) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryEvent('PASSWORD_RECOVERY');
+        if (session?.user) setValid(true);
+      }
+    }).subscription;
+
+    // Also verify current session state (if recovery already processed / redirect arrived)
+    supabase.auth?.getSession?.().then(({ data }: any) => {
+      if (data?.session?.user) {
+        // Only accept as valid recovery if the SDK recovery mechanism has been triggered
+        // (recovery_event / recovery_sent_at / or onAuthStateChange PASSWORD_RECOVERY fired).
+        // Ordinary already-authenticated session without PASSWORD_RECOVERY event = NOT recovery.
+      }
       setLoading(false);
-    }
+    });
+    return () => { subscription?.unsubscribe?.(); };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -30,10 +38,27 @@ export default function Recovery() {
     setError('');
     if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
-    const supabaseClient = (supabase && typeof (supabase as any).auth?.getSession === 'function') ? (supabase as any) : null;
-    if (!supabaseClient) { setError('Recovery session unavailable'); return; }
-    const { error: updateError } = await supabaseClient.auth.updateUser({ password: newPassword });
+    // Must have established recovery session; ordinary authenticated session rejected
+    if (recoveryEvent !== 'PASSWORD_RECOVERY') {
+      setError('Invalid or missing recovery state'); return;
+    }
+    const { error: updateError } = await supabase.auth?.updateUser?.({ password: newPassword });
     if (updateError) { setError(updateError.message); return; }
+
+    // Clear must_change_password after successful update (wired; requires server action call)
+    try {
+      const sessionData = await supabase.auth?.getSession?.();
+      const token = sessionData?.data?.session?.access_token;
+      if (token) {
+        await fetch('/api/recovery-clear', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    } catch {
+      // Safe UX: password already changed by Supabase; profile-flag clear failure is non-blocking
+      // but must not report password failure.
+    }
     setDone(true);
   };
 
