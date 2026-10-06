@@ -57,9 +57,8 @@ export default function Recovery() {
         });
         if (!res.ok || !(await res.json()).success) clearFailed = true;
       }
-      if (clearFailed) {
+      if (!token || clearFailed) {
         setError('Password updated successfully, but account cleanup could not be completed; contact an administrator/support.');
-        // Still show success for password; do NOT say password failed
         return;
       }
     } catch {
