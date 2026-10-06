@@ -115,18 +115,13 @@ const sendReactivateEmail = (to: string, name: string, role: string, tempPasswor
     ${loginButton()}
   </div>`);
 
-const sendResetEmail = (to: string, name: string, tempPassword: string) =>
-  sendEmail(to, 'Your DHD SalesTrail password has been reset', `
+const sendResetLinkEmail = (to: string, name: string, actionLink: string) =>
+  sendEmail(to, 'Reset your FollOps password', `
     ${logoHeader()}
-    <h2 style="color:#111;margin:0 0 8px 0;">Password Reset</h2>
-    <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, your password has been reset by an administrator.</p>
-    <div style="background:#f9f9f9;border:1px solid #eee;border-radius:12px;padding:20px;margin:0 0 24px 0;">
-      <p style="margin:0 0 8px 0;color:#333;font-weight:600;">Your new temporary password:</p>
-      <p style="margin:0 0 4px 0;color:#555;">Email: <strong>${to}</strong></p>
-      <p style="margin:0 0 16px 0;color:#555;">Password: <strong style="font-family:monospace;background:#eee;padding:2px 6px;border-radius:4px;">${tempPassword}</strong></p>
-      <p style="margin:0;color:#888;font-size:13px;">Please change your password after logging in.</p>
-    </div>
-    ${loginButton()}
+    <h2 style="color:#111;margin:0 0 8px 0;">Reset your FollOps password</h2>
+    <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, a password reset was requested for your account.</p>
+    <p style="color:#555;margin:0 0 16px 0;"><a href="${actionLink}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">Reset Password</a></p>
+    <p style="color:#888;font-size:13px;margin:0;">If you didn't request this, you can ignore this email. Your current password has not changed.</p>
   </div>`);
 
 // ─── Warning helper ──────────────────────────────────────────────────────────
@@ -345,23 +340,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .select('email, name').eq('id', id).single();
         if (!profile) return res.json({ success: false, error: 'User not found' });
 
-        const tempPassword = generateTempPassword();
-        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(id, { password: tempPassword });
-        if (updateError) return res.json({ success: false, error: updateError.message });
+        const redirectTo = `${APP_URL}/#/recovery`;
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'recovery', email: profile.email, redirectTo
+        });
+        if (linkError || !linkData?.properties?.action_link) {
+          return res.json({ success: false, error: linkError?.message || 'Failed to generate recovery link' });
+        }
 
-        // Mark as must-change on next login
-        await supabaseAdmin.from('user_profiles')
-          .update({ must_change_password: true, updated_at: new Date().toISOString() }).eq('id', id);
+        const actionLink = linkData.properties.action_link;
+        // Secure: discard link/token properties after server-side use
+        const emailResult = await sendResetLinkEmail(profile.email, profile.name, actionLink);
 
-        const emailResult = await sendResetEmail(profile.email, profile.name, tempPassword);
         if (!emailResult.sent) {
-          // New password is only delivered by email — never returned in the API response.
+          // Invariant: user's existing password has NOT been changed.
           return res.json({
-            success: true,
-            warning: 'Password was reset, but the email could not be delivered. The new password was NOT changed to anything shown here — retry the reset once email sending is working.'
+            success: false,
+            error: 'Recovery link could not be delivered. The user\'s existing password has not been changed.'
           });
         }
-        return res.json({ success: true });
+        return res.json({ success: true, message: 'Recovery link sent to user.' });
       }
 
       case 'changePassword': {

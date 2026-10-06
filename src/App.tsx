@@ -21,6 +21,7 @@ import Invoices from './pages/Invoices';
 import Settings from './pages/Settings';
 import Documentation from './pages/Documentation';
 import WhatsApp from './pages/WhatsApp';
+import Recovery from './pages/Recovery';
 import EmailInbox from './pages/EmailInbox';
 import Contacts from './pages/Contacts';
 import ContactProfile from './pages/ContactProfile';
@@ -348,6 +349,7 @@ const AppInner: React.FC = () => {
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactProfile />} />
             <Route path="/social" element={<SocialMedia />} />
+            <Route path="/recovery" element={<Recovery />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
