@@ -49,15 +49,22 @@ export default function Recovery() {
     try {
       const sessionData = await supabase.auth?.getSession?.();
       const token = sessionData?.data?.session?.access_token;
+      let clearFailed = false;
       if (token) {
-        await fetch('/api/recovery-clear', {
+        const res = await fetch('/api/recovery-clear', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (!res.ok || !(await res.json()).success) clearFailed = true;
+      }
+      if (clearFailed) {
+        setError('Password updated successfully, but account cleanup could not be completed; contact an administrator/support.');
+        // Still show success for password; do NOT say password failed
+        return;
       }
     } catch {
-      // Safe UX: password already changed by Supabase; profile-flag clear failure is non-blocking
-      // but must not report password failure.
+      setError('Password updated successfully, but account cleanup could not be completed; contact an administrator/support.');
+      return;
     }
     setDone(true);
   };

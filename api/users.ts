@@ -342,7 +342,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const redirectTo = `${APP_URL}/#/recovery`;
         const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: 'recovery', email: profile.email, redirectTo: redirectTo as any
+          type: 'recovery', email: profile.email, redirectTo: (redirectTo as string)
         });
         if (linkError || !linkData?.properties?.action_link) {
           return res.json({ success: false, error: linkError?.message || 'Failed to generate recovery link' });
