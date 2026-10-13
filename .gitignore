@@ -37,3 +37,6 @@ supabase/.temp/
 .cache/
 .gitnexus
 .vercel
+
+# Separate Git worktree; its changes belong to the WP-001-whatsapp branch.
+/WP-001-whatsapp/

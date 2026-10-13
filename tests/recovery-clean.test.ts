@@ -1,13 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-// Config: deterministically provide Supabase env before module initialization
-process.env.SUPABASE_PROJECT_URL = 'https://test.supabase.co';
-process.env.VITE_SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'anon-test';
-process.env.VITE_SUPABASE_ANON_KEY = 'anon-test';
-process.env.SUPABASE_SECRET_KEY = 'service-test';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-test';
 
 let mockGetUser = vi.fn();
 let mockFrom = vi.fn();
@@ -19,7 +11,7 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-import handler from '../api/recovery-clear';
+let handler: typeof import('../api/recovery-clear').default;
 
 function resMock() {
   const r: any = {
@@ -36,11 +28,25 @@ function reqMock(overrides: Partial<VercelRequest> = {}): VercelRequest {
 }
 
 describe('recovery-clear endpoint — mocked behavioral with chain proof', () => {
-  beforeEach(() => { vi.clearAllMocks(); mockGetUser.mockReset(); mockFrom.mockReset(); });
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockGetUser.mockReset();
+    mockFrom.mockReset();
+    // The endpoint reads configuration at import time; reload only after stubbing it.
+    vi.stubEnv('SUPABASE_PROJECT_URL', 'https://test.supabase.co');
+    vi.stubEnv('SUPABASE_ANON_KEY', 'anon-test');
+    vi.stubEnv('SUPABASE_SECRET_KEY', 'service-test');
+    handler = (await import('../api/recovery-clear')).default;
+  });
 
-  it('GET -> 405', () => { const r = resMock(); handler(reqMock({ method: 'GET' }), r); expect(r._status).toBe(405); });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
 
-  it('POST without bearer -> 401', () => { const r = resMock(); handler(reqMock({ headers: {} }), r); expect(r._status).toBe(401); });
+  it('GET -> 405', async () => { const r = resMock(); await handler(reqMock({ method: 'GET' }), r); expect(r._status).toBe(405); });
+
+  it('POST without bearer -> 401', async () => { const r = resMock(); await handler(reqMock({ headers: {} }), r); expect(r._status).toBe(401); });
 
   it('invalid bearer (getUser error) -> 401', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: 'bad' } });

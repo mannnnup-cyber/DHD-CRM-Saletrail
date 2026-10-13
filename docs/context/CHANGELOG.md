@@ -4,6 +4,18 @@ Entries are newest first. Each entry covers a development session or sprint.
 
 ---
 
+## 2026-10-13 — Recovery test isolation and local worktree housekeeping
+
+- Recovery-clear tests now stub configuration before importing the endpoint and
+  restore the environment after each test. Removed the premature static import;
+  preserved existing authorization and same-user update assertions.
+- Ignore the nested `WP-001-whatsapp/` checkout in the parent repository. Its
+  documentation remains versioned independently on the WhatsApp branch.
+- Production handlers and recovery UI are unchanged. Branch release readiness
+  remains subject to type checks, independent review, and live recovery UAT.
+
+---
+
 ## 2026-09-06 to 2026-09-07 — Stage 1: Verification, Handler Flip, RLS Lockdown, Secret-Key Path
 
 Step 3 owner-verification executed live via throwaway temp accounts (created

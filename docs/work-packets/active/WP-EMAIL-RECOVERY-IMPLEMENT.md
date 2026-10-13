@@ -86,3 +86,44 @@ The exact current sequence removed:
 - Invitation and reactivation email flows remain unchanged
 
 WP-EMAIL-RECOVERY-IMPLEMENT COMPLETE — PA REVIEW REQUIRED
+
+## Local cleanup review — 2026-10-13
+
+This update does not approve the earlier completion claim or release readiness.
+The recovery-clear test imports its handler only after test configuration is
+stubbed, restores the environment after each test, and keeps the existing
+token-resolved identity assertions. The nested WhatsApp worktree is ignored by
+the parent checkout; its own branch remains separate.
+
+Production code is unchanged by this cleanup. Live recovery-link delivery,
+redirect handling, session lifecycle, and cleanup remain release gates. Review
+against refreshed `origin/master` is required because local `master` is stale.
+
+### Verification and independent review
+
+- Full local test suite: 21/21 tests pass (10 recovery-clear, 11 inbox contract).
+- `npm run type-check`: PASS (exit 0). This does not cover browser routing or live
+  recovery delivery, and the tsconfig does not include the test directory.
+- Independent QA/security review of the cleanup: PASS. No production auth,
+  credential, database, or webhook behavior changed.
+- GitNexus MCP commands are unavailable in this environment; Git diff/status
+  checks verify the cleanup scope. No existing named production symbol edited.
+- Four cleanup-decision tests exercise a duplicated local helper, not the actual
+  recovery page; they do not prove browser recovery behavior.
+
+### Release blockers found in the existing branch
+
+- `src/App.tsx` returns Login before the recovery route for logged-out users;
+  the CRM auth context is separate from the SDK recovery session.
+- `src/pages/Recovery.tsx` uses a browser client that can fall back to `{}` in
+  `src/lib/supabase.ts`. With no auth client, loading never completes.
+- `api/recovery-clear.ts` permits any valid signed-in token to clear the forced
+  password-change flag without proof of a successful password update. Same-user
+  targeting assertions do not enforce that prerequisite.
+- Recovery reads `.subscription` from the auth listener return value; the
+  installed SDK returns `{ data: { subscription } }`, so cleanup is ineffective.
+- The interaction of HashRouter and SDK recovery-token hash processing needs a
+  browser integration test using a real recovery link.
+
+These are findings, not fixes made by this cleanup. The branch is not approved
+for merge or deployment. Recovery email delivery and live UAT remain unverified.
