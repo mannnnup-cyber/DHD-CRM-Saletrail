@@ -1,6 +1,13 @@
 # Account invitation and reactivation setup links — 2026-10-14
 
 Status: In Progress. Branch: fix/account-setup-email, isolated from origin/master 9502f46.
+
+Independent final QA and security passed for implementation snapshot efddb373
+against d164c14. Security found no blocking findings; pre-existing users.update
+role behavior and deferred credential remediation remain outside this packet.
+Read-then-write role checks are not fully atomic with concurrent owner edits;
+future role/version compare-and-set is recommended if concurrent administration
+is supported. New invitation-button delivery remains the production UAT gate.
 Owner authorized replacing credential emails and preserving existing recovery behavior.
 
 ## Design and scope
