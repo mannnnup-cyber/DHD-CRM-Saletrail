@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 export default function Recovery() {
+  const [isSetup] = useState(() => new URLSearchParams(window.location.hash.split('?')[1] || '').get('mode') === 'setup');
   // Capture before stripping; React StrictMode may invoke the initializer twice.
   const [tokenHash, setTokenHash] = useState(() => {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -54,7 +55,7 @@ export default function Recovery() {
         : outcome === 'failed' ? <p role="alert" className="text-red-400">{error} <a href="/#/login" className="underline">Log in</a>.</p>
         : !tokenHash ? <p role="alert" className="text-red-400">Invalid or missing recovery link. Ask an administrator for a new recovery link.</p>
         : <>
-          <h1 className="text-2xl font-bold mb-4">Set new password</h1>
+          <h1 className="text-2xl font-bold mb-4">{isSetup ? 'Set up your account' : 'Set new password'}</h1>
           <p className="text-gray-400 mb-4">Use at least 8 characters. Reloading this page will require reopening your recovery email.</p>
           <form onSubmit={handleSubmit} className="space-y-4">
             <label className="block">New password<input aria-label="New password" type="password" autoComplete="new-password" maxLength={1024} disabled={loading} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700" /></label>

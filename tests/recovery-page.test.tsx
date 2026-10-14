@@ -25,6 +25,13 @@ async function enter(password = 'valid-password-123', confirmation = password) {
 }
 async function submit() { await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))); }
 describe('actual recovery page', () => {
+  it('labels onboarding setup without changing fixed recovery credential contract', async () => {
+    history.replaceState(null, '', '/#/recovery?token_hash=hash-test&type=recovery&mode=setup');
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+    await mount(); expect(host.textContent).toContain('Set up your account');
+    expect(location.hash).toBe('#/recovery'); await enter(); await submit();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ tokenHash: 'hash-test', newPassword: 'valid-password-123' });
+  });
   it('App exposes recovery outside logged-out CRM providers and login gate', async () => {
     vi.doMock('../src/context/AppContext', () => ({ AppProvider: () => { throw new Error('CRM provider must not mount'); }, useApp: () => { throw new Error('CRM login gate must not run'); } }));
     // Other route modules are irrelevant to this integration boundary.
