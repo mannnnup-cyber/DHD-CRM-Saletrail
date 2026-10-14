@@ -1,5 +1,28 @@
 # WP-MAINTENANCE-BASELINE — Baseline Build/Type-Check/Test Health
 
+## Current baseline refresh — 2026-10-14
+
+Source baseline: origin/master `9502f46a1a68b6b6ec388e9d097178f40dafb420`.
+Authoritative checkout: `C:/Users/Administrator/DHD-CRM-Saletrail`.
+Verification worktree: `C:/Users/Administrator/Documents/Codex/2026-10-12/do-you-have-access-to-my/work/inbox-review`, branch `docs/inbox-foundation-refresh`.
+Dependencies reused from the authoritative checkout via a local node_modules junction; no package/lockfile changes or dependency installation performed.
+
+Current package.json provides Vitest test/test:contract scripts, type-check and qrcode; jsdom is present for actual React component tests. The original missing-runner/qrcode and Jest installation instructions below are historical and superseded; do not execute them as a current repair.
+
+Fresh command results at this baseline:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| npm test | PASS on isolated rerun | 65/65 tests in 4 files, 36.62s; handler 15, initiation/email 30, actual page 9, Inbox contract 11 |
+| npm run test:contract | PASS | 11/11 Inbox contracts, 10.28s |
+| npm run type-check | PASS | tsc --noEmit exit 0 |
+| npm run build | PASS | 2777 modules; dist/index.html 1267.42 kB, gzip 335.98 kB; 5m30s on slow host |
+
+First full-suite attempt overlapped type/build checks on a slow host: 64/65 passed, public-App route test exceeded default 5000ms (5864ms; jsdom setup 230.34s). Unmodified npm test rerun alone passed all 65 with the same route test 1027ms. Record this as an observed transient timeout, not a missing runner or a hidden assertion failure; no test timeout/config/source change was made.
+Source/fixture checks do not verify production access, delivery, customer data or security state. Baseline health permits the proposed pure synthetic Inbox slice but does not clear live activation gates.
+
+## Historical baseline and implementation records (superseded by current results)
+
 ## Status: Planning ONLY — no code change
 ## Branch: master (from verified origin/master f3aea2f)
 ## Preflight: PASS

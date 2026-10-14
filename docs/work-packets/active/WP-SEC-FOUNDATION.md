@@ -1,4 +1,19 @@
 # WP-SEC-FOUNDATION — Security Foundation & Remaining Risk
+## Current scope clarification — 2026-10-14
+
+Docs-only review baseline: origin/master `9502f46a1a68b6b6ec388e9d097178f40dafb420`; authoritative checkout `C:/Users/Administrator/DHD-CRM-Saletrail`. The old root below is historical and forbidden by current AGENTS.md.
+
+This clarification supersedes the blanket "before development" and all A–F prerequisite requirements below: local synthetic Inbox contract/projection modules need scoped impact/QA and privacy review, but have no live webhook, device, RLS mutation or AI dependency. The proposed slice is defined in WP-INBOX-FOUNDATION; no product implementation or live activation is approved here.
+
+Live email Inbox activation remains blocked by caller authentication/row authorization on its data endpoints, minimization/retention, verified production schema/RLS, deterministic source identity/pagination and relevant abuse/UI controls. Source inspection at this baseline finds no caller-auth gate in api/email.ts or api/social.ts; existing api/users.ts role enforcement cannot substitute. Social accounts/analytics is not proven inbound-message support.
+
+Gate B applies to live integrations; webhook authenticity/delivery applies when ingesting provider callbacks. WhatsApp remains on hold. Gate C applies to AI/call/device processing and Gate D to autonomous actions, not the pure local email projection. Historical RLS 38/38 and credential containment records are not new live verification; compromised legacy-key deferral remains unresolved and owner-controlled.
+
+The older A–F list below is a historical aggregate checklist, not a universal blocker. Its requirement to log AI inputs/outputs is superseded by Gate C's metadata-first audit model: raw sensitive content requires explicit retention approval.
+
+No security configuration, credentials, RLS, provider or production data was changed or verified live by this review.
+
+## Historical planning record
 # Status: Planning ONLY — no mutation authorized
 # Branch: planning/phase1-packets (from verified origin/master 6f0ef85)
 # Preflight: PASS (fetch done; remote = mannnnup-cyber/DHD-CRM-Saletrail.git)
