@@ -60,8 +60,14 @@ The rewritten recovery endpoint requires `SUPABASE_SECRET_KEY` for profile
 access; it does not accept the legacy service-role key. Other handlers' existing
 credential compatibility behavior is unchanged.
 
-This branch implementation still requires verification of real recovery-email
-delivery and the deployed application before release can be called complete.
+Production merge `3eea633` passed real recovery-token/password update, replay
+rejection, flag cleanup, and new-password login with a temporary normal account.
+Email delivery failed in owner UAT and is tracked in
+`WP-EMAIL-RECOVERY-DELIVERY.md`. Recovery mail uses `RESEND_API_KEY` env first,
+saved-setting fallback, and recovery-only `RECOVERY_FROM_EMAIL` env/settings.
+The approved sender is `FollOps <no-reply@pickupja.com>`. Recovery links use
+trusted `RECOVERY_APP_URL` or the public CRM origin; generated `VERCEL_URL`
+hosts are not used for reset links. Delivery errors remain sanitized.
 
 - Entry point: `src/main.tsx`
 - App shell and route table: `src/App.tsx`

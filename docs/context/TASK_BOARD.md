@@ -215,7 +215,7 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 | Task | Owner | Status | Notes |
 | --- | --- | --- | --- |
 | Fix reset-link completion and prevent bearer-only flag cleanup | AI | Review | `WP-EMAIL-RECOVERY-IMPLEMENT`; 42 tests, type-check, build, independent QA/Security pass; deployed email/recovery UAT remains a release gate |
-| Verify real reset-email delivery and deployed recovery | Owner+AI | Planned | Dedicated test account; no real-user reset or test email sent during local implementation |
+| Verify real reset-email delivery and deployed recovery | Owner+AI | In Progress | Live token completion/login verified on dedicated normal test account; email delivery failed, sender/key resolution follow-up underway |
 | WhatsApp reconnection | Owner+AI | Blocked | On hold at owner request; server-management access still needed |
 
 ## Work Categories Legend
