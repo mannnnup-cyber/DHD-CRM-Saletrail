@@ -2,9 +2,10 @@
 
 > Current contract is the 2026-10-13 authorized repair described below. Earlier
 > implementation, completion, session, and test statements are historical and
-> superseded where they conflict with that repair. Status: Review; local checks
-> and independent review are required, with deployed email/recovery UAT still a
-> release gate. No production deployment is claimed.
+> superseded where they conflict with that repair. Status: Done. Production
+> core and delivery follow-up are deployed; local checks, independent reviews,
+> live recovery completion/login/replay, and actual email delivery are verified.
+> Earlier no-deployment and pending-UAT records are historical.
 
 ## PRE-FLIGHT
 - **master SHA:** d76e0dbe11eefe0547582e80b751a0da47853d38
@@ -216,3 +217,14 @@ Status: Review for release; local code repair reviewed. Production build: PASS
 (`npm run build`, exit 0). Git diff/check confirms only scoped recovery files,
 tests/development dependency, and matching context docs. No master merge or
 push/deploy claimed.
+
+## Production verification closeout — 2026-10-13
+
+PR #3/core merge `3eea633` and PR #4/delivery merge `8661d7b` are deployed.
+Real-token recovery, password update, flag cleanup, token replay rejection, and
+new-password login passed live. Owner confirmed email-link form completion.
+Actual CRM reset action subsequently reported success; its separate application
+email was reported delivered with the approved sender and public recovery URL.
+The temporary normal account/profile were removed and absence verified.
+Existing users and their passwords/roles were untouched. No expiry wait test is
+claimed; token expiration remains enforced by Supabase verification.

@@ -16,6 +16,9 @@ Entries are newest first. Each entry covers a development session or sprint.
   hostname that can require Vercel SSO.
 - Local verification, independent reviews, deployment, and real email evidence
   are recorded in `WP-EMAIL-RECOVERY-DELIVERY.md`.
+- Closeout: PR #4/`8661d7b` production successful; actual CRM mail reported
+  delivered with the approved sender/public link; owner completed email-link
+  recovery. Temporary account/profile removed and absence verified.
 
 ---
 

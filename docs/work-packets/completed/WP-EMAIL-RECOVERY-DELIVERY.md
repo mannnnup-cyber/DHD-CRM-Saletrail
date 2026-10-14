@@ -1,6 +1,6 @@
 # Recovery email delivery repair — 2026-10-13
 
-Status: Review for release. Branch: `fix/recovery-email-delivery`, from production merge
+Status: Done. Branch: `fix/recovery-email-delivery`, from production merge
 `3eea633`. Owner authorized deployment and real recovery email verification;
 sender choice explicitly approved: `FollOps <no-reply@pickupja.com>`.
 
@@ -56,3 +56,19 @@ Other email helpers, keys, and global senders remain unchanged.
 
 Release through PR, then confirm the actual app's reset action and receipt.
 Do not claim complete application email delivery from provider acceptance alone.
+
+## Release closeout — 2026-10-13
+
+- PR #4 merged; production merge `8661d7b` deployed successfully and CI passed.
+- Owner received the direct provider verification email and confirmed its
+  public-link password form completed recovery successfully.
+- After deployment, owner retried the actual CRM Reset Password action and
+  received its success message. A distinct provider record confirms the actual
+  application email template delivered, with the approved sender and public
+  CRM recovery link.
+- Core release `3eea633` already passed live real-token completion, replay
+  rejection, same-user flag cleanup, new-password login, and old-password denial.
+- Temporary normal auth account/profile removed; absence verified. No existing
+  user passwords/roles changed. Credentials, DNS, RLS, and global senders untouched.
+- Full evidence is saved in the local user-facing password-recovery release
+  report; no private test mailbox, token, or password is committed.

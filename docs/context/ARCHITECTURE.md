@@ -41,7 +41,7 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 
 ## Frontend
 
-### Password recovery (implementation branch, 2026-10-13)
+### Password recovery (deployed and verified, 2026-10-13)
 
 The public `/#/recovery` route is outside the CRM auth/data provider and login
 gate. Recovery uses `/api/recovery-clear`, not the legacy browser Supabase
@@ -62,8 +62,10 @@ credential compatibility behavior is unchanged.
 
 Production merge `3eea633` passed real recovery-token/password update, replay
 rejection, flag cleanup, and new-password login with a temporary normal account.
-Email delivery failed in owner UAT and is tracked in
-`WP-EMAIL-RECOVERY-DELIVERY.md`. Recovery mail uses `RESEND_API_KEY` env first,
+The delivery follow-up `8661d7b` resolved the owner-reported failure; actual CRM
+reset email delivery and the public link were verified. Completed evidence is
+in `docs/work-packets/completed/WP-EMAIL-RECOVERY-DELIVERY.md`.
+Recovery mail uses `RESEND_API_KEY` env first,
 saved-setting fallback, and recovery-only `RECOVERY_FROM_EMAIL` env/settings.
 The approved sender is `FollOps <no-reply@pickupja.com>`. Recovery links use
 trusted `RECOVERY_APP_URL` or the public CRM origin; generated `VERCEL_URL`
