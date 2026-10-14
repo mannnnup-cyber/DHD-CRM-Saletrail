@@ -1,13 +1,40 @@
 # Account invitation and reactivation setup links — 2026-10-14
 
-Status: In Progress. Branch: fix/account-setup-email, isolated from origin/master 9502f46.
+Status: Done. Implementation branch: fix/account-setup-email, isolated from origin/master 9502f46.
+
+## Verified release — 2026-10-14
+
+PR #6 merged as 5d6f7c5; Vercel production deployment and CI passed. Public
+setup page returned 200, unauthenticated invitation returned 401, and invalid
+completion token returned 401. Independent QA passed all 87 tests, type check
+and build; independent security review passed.
+
+The owner used the actual CRM invitation action and supplied a screenshot of
+the setup email, then confirmed password setup and login worked. Read-only
+provider evidence confirms setup-subject email delivered by the verified FollOps
+sender with the stable public setup link. The matching normal sales-rep profile
+is active, must_change_password is false, and Auth records a subsequent login.
+This user-created account was left in place; no account mutation was performed
+during the final verification. Kayci's existing profiles were also left untouched.
+
+Earlier parent synthetic testing proved passwordless Auth provisioning and same
+UUID recreation, completion, replay rejection, login and flag cleanup, and its
+separate temporary identity was removed. Real reactivation button delivery was
+not separately exercised; reactivation is covered by actual-handler tests and
+hosted same-UUID compatibility verification. Do not claim broader production
+account cleanup or deferred security remediation is complete.
+
+## Historical implementation and review record
+
+Pending-release statements below describe earlier snapshots and are superseded
+by the verified release evidence above.
 
 Independent final QA and security passed for implementation snapshot efddb373
 against d164c14. Security found no blocking findings; pre-existing users.update
 role behavior and deferred credential remediation remain outside this packet.
 Read-then-write role checks are not fully atomic with concurrent owner edits;
 future role/version compare-and-set is recommended if concurrent administration
-is supported. New invitation-button delivery remains the production UAT gate.
+is supported. The invitation-button gate was subsequently verified as above.
 Owner authorized replacing credential emails and preserving existing recovery behavior.
 
 ## Design and scope

@@ -213,9 +213,11 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 
 ## Password recovery repair — 2026-10-13
 
-Team invitation/reactivation setup links (2026-10-14): Review — passwordless
+Team invitation/reactivation setup links (2026-10-14): Done — passwordless
 provisioning, historical UUID preservation, one-time setup emails and pending
-delivery retry implemented; independent reviews and live release verification pending.
+delivery retry implemented; 87 tests and independent reviews passed. Actual CRM
+setup email delivered; owner completed setup/login; active profile flag cleared.
+User-created test account retained. See completed WP-EMAIL-ONBOARDING.
 
 | Task | Owner | Status | Notes |
 | --- | --- | --- | --- |

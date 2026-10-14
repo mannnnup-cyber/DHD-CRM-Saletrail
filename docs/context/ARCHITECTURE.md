@@ -41,7 +41,7 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 
 ## Frontend
 
-### Team account setup (implementation, 2026-10-14)
+### Team account setup (deployed and verified, 2026-10-14)
 
 Invitation/reactivation provisions a passwordless Auth identity and sends a
 one-time recovery-type link presented as account setup. Deleted inactive users
@@ -53,8 +53,10 @@ New onboarding operations require a request-scoped modern SUPABASE_SECRET_KEY.
 Setup delivery intentionally reuses RECOVERY_FROM_EMAIL and RECOVERY_APP_URL,
 with the verified FollOps sender and stable public link origin. Delivery failure
 reports pending setup and permits retry; no password is generated or emailed.
-The existing token-verified completion endpoint remains unchanged. Local review
-and live release verification are recorded in WP-EMAIL-ONBOARDING.
+The existing token-verified completion endpoint remains unchanged. Independent
+reviews, 87 tests, hosted UUID compatibility and actual invitation email/setup/login
+verification are recorded in completed WP-EMAIL-ONBOARDING. The owner's created
+test account remains in place; no existing employee account was removed.
 
 ### Password recovery (deployed and verified, 2026-10-13)
 
