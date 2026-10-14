@@ -4,6 +4,12 @@ This file explains the key files, folders, routes, dependencies, integrations,
 and environment variables in the project. The JSON block is intended to stay
 parseable by AI tools and harness systems.
 
+Account setup (2026-10-14): Settings Team invitations call api/users.ts;
+passwordless provisioning and one-time setup delivery use the modern secret and
+the existing RECOVERY_FROM_EMAIL / RECOVERY_APP_URL settings. Recovery.tsx
+accepts mode=setup only for presentation; api/recovery-clear.ts still verifies
+the fixed recovery OTP type. Delivery failure exposes pending status for retry.
+
 ```json
 {
   "project": {

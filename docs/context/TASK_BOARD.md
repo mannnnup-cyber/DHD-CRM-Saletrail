@@ -213,6 +213,10 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 
 ## Password recovery repair — 2026-10-13
 
+Team invitation/reactivation setup links (2026-10-14): Review — passwordless
+provisioning, historical UUID preservation, one-time setup emails and pending
+delivery retry implemented; independent reviews and live release verification pending.
+
 | Task | Owner | Status | Notes |
 | --- | --- | --- | --- |
 | Fix reset-link completion and prevent bearer-only flag cleanup | AI | Done | Production deployed; live real-token completion/login/replay and independent reviews verified |

@@ -1,0 +1,47 @@
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+const m = vi.hoisted(() => ({ createClient: vi.fn(), getUser: vi.fn(), createUser: vi.fn(), generateLink: vi.fn(), deleteUser: vi.fn(), from: vi.fn(), insert: vi.fn(), update: vi.fn(), ilike: vi.fn(), fetch: vi.fn(), caller: { role: 'owner' }, existing: null as any, persistError: null as any }));
+vi.mock('@supabase/supabase-js', () => ({ createClient: m.createClient }));
+let handler: typeof import('../api/users').default;
+const input = { name: 'New Rep', email: 'rep@example.test', role: 'sales_rep' };
+async function invite(body: any = input, authorization = 'Bearer session') {
+  const res: any = { code: 200, payload: null, setHeader: vi.fn(), status(n: number) { this.code = n; return this; }, json(data: any) { this.payload = data; return this; } };
+  await handler({ method: 'POST', query: { action: 'invite' }, headers: { authorization }, body } as any, res); return res;
+}
+describe('actual invitation/reactivation handler', () => {
+  beforeEach(async () => {
+    vi.resetModules(); vi.resetAllMocks(); m.caller.role = 'owner'; m.existing = null; m.persistError = null;
+    for (const [key, value] of Object.entries({ SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SECRET_KEY: 'modern-test', SUPABASE_ANON_KEY: 'anon-test', SUPABASE_SERVICE_ROLE_KEY: 'legacy-test', RESEND_API_KEY: 'resend-test', RECOVERY_FROM_EMAIL: 'FollOps <no-reply@pickupja.com>', RECOVERY_APP_URL: 'https://public.example' })) vi.stubEnv(key, value);
+    m.getUser.mockResolvedValue({ data: { user: { id: 'caller-id' } }, error: null });
+    m.createUser.mockResolvedValue({ data: { user: { id: 'new-id', email: input.email } }, error: null });
+    m.generateLink.mockResolvedValue({ data: { user: { id: 'new-id' }, properties: { hashed_token: 'setup-hash' } }, error: null });
+    m.deleteUser.mockResolvedValue({ error: null }); m.fetch.mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', m.fetch);
+    m.from.mockImplementation(() => {
+      const chain: any = { filters: {}, select: vi.fn(() => chain), eq: vi.fn((key, value) => { chain.filters[key] = value; return chain; }),
+        ilike: m.ilike.mockImplementation((key, value) => { chain.filters[key] = value; return chain; }),
+        maybeSingle: vi.fn(async () => ({ data: chain.filters.id === 'caller-id' ? { id: 'caller-id', role: m.caller.role, is_active: true } : m.existing ? { email: input.email, ...m.existing } : null, error: null })),
+        single: vi.fn(async () => ({ data: { id: m.existing?.id || 'new-id' }, error: m.persistError })),
+        insert: m.insert.mockImplementation(() => chain), update: m.update.mockImplementation(() => chain) };
+      return chain;
+    });
+    m.createClient.mockReturnValue({ auth: { getUser: m.getUser, admin: { createUser: m.createUser, generateLink: m.generateLink, deleteUser: m.deleteUser } }, from: m.from });
+    handler = (await import('../api/users')).default;
+  });
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  it('requires verified caller', async () => { expect((await invite(input, '')).code).toBe(401); expect(m.createUser).not.toHaveBeenCalled(); });
+  it('rejects non-manager role', async () => { m.caller.role = 'sales_rep'; expect((await invite()).code).toBe(403); expect(m.fetch).not.toHaveBeenCalled(); });
+  it.each(['superadmin', '', 1])('rejects unsupported role %j before mutation', async role => { expect((await invite({ ...input, role })).code).toBe(400); expect(m.createUser).not.toHaveBeenCalled(); });
+  it.each(['owner', 'manager'])('manager cannot grant %s', async role => { m.caller.role = 'manager'; expect((await invite({ ...input, role })).code).toBe(403); expect(m.createUser).not.toHaveBeenCalled(); });
+  it('manager cannot reactivate privileged profile by submitting rep role', async () => { m.caller.role = 'manager'; m.existing = { id: 'historical-id', role: 'owner', is_active: false }; expect((await invite()).code).toBe(403); expect(m.createUser).not.toHaveBeenCalled(); });
+  it('creates passwordless identity and emails one-time setup link', async () => { const r = await invite(); expect(r.payload).toMatchObject({ success: true, emailSent: true, userId: 'new-id' }); expect(m.createUser).toHaveBeenCalledWith(expect.objectContaining({ email: input.email, email_confirm: true })); expect(m.createUser.mock.calls[0][0]).not.toHaveProperty('password'); expect(m.insert).toHaveBeenCalledWith(expect.objectContaining({ must_change_password: true, is_active: true })); expect(m.generateLink).toHaveBeenCalledWith({ type: 'recovery', email: input.email }); const mail = JSON.parse(m.fetch.mock.calls[0][1].body); expect(mail.from).toBe('FollOps <no-reply@pickupja.com>'); expect(mail.subject).toContain('Set up'); expect(mail.html).toContain('mode=setup'); expect(mail.html).not.toMatch(/Temporary password|login details/); expect(JSON.stringify(r.payload)).not.toMatch(/setup-hash|password|token/); });
+  it('retains historical UUID on reactivation', async () => { m.existing = { id: 'historical-id', email: input.email, name: input.name, role: 'sales_rep', is_active: false }; m.createUser.mockResolvedValue({ data: { user: { id: 'historical-id', email: input.email } }, error: null }); m.generateLink.mockResolvedValue({ data: { user: { id: 'historical-id' }, properties: { hashed_token: 'hash' } }, error: null }); const r = await invite(); expect(r.payload).toMatchObject({ success: true, wasReactivated: true, userId: 'historical-id' }); expect(m.createUser.mock.calls[0][0].id).toBe('historical-id'); expect(m.insert).not.toHaveBeenCalled(); expect(m.update).toHaveBeenCalledWith(expect.objectContaining({ is_active: true, must_change_password: true })); });
+  it('fails closed if provider recreates wrong UUID', async () => { m.existing = { id: 'historical-id', email: input.email, role: 'sales_rep', is_active: false }; const r = await invite(); expect(r.payload.success).toBe(false); expect(m.update).not.toHaveBeenCalled(); expect(m.fetch).not.toHaveBeenCalled(); });
+  it('fails closed if inactive Auth identity still exists', async () => { m.existing = { id: 'historical-id', email: input.email, role: 'sales_rep', is_active: false }; m.createUser.mockResolvedValue({ data: null, error: { message: 'private-provider-detail' } }); const r = await invite(); expect(r.payload.success).toBe(false); expect(m.update).not.toHaveBeenCalled(); expect(JSON.stringify(r.payload)).not.toContain('private-provider-detail'); });
+  it('does not send a token for mismatched link identity', async () => { m.generateLink.mockResolvedValue({ data: { user: { id: 'wrong-id' }, properties: { hashed_token: 'hash' } }, error: null }); expect((await invite()).payload.success).toBe(false); expect(m.fetch).not.toHaveBeenCalled(); });
+  it('reports delivery failure truthfully and supports retry without recreating account', async () => { m.fetch.mockResolvedValueOnce({ ok: false, status: 401 }); const first = await invite(); expect(first.payload).toMatchObject({ success: false, accountCreated: true, pendingDelivery: true }); m.existing = { id: 'new-id', email: input.email, name: input.name, role: 'sales_rep', is_active: true, must_change_password: true }; const retry = await invite({ ...input, name: 'Changed', role: 'manager' }); expect(retry.payload.success).toBe(true); expect(m.createUser).toHaveBeenCalledTimes(1); expect(m.insert).toHaveBeenCalledTimes(1); expect(m.update).not.toHaveBeenCalled(); });
+  it('rejects already active completed account', async () => { m.existing = { id: 'new-id', role: 'sales_rep', is_active: true, must_change_password: false }; expect((await invite()).payload.success).toBe(false); expect(m.createUser).not.toHaveBeenCalled(); expect(m.fetch).not.toHaveBeenCalled(); });
+  it('requires modern secret despite available legacy credential', async () => { vi.stubEnv('SUPABASE_SECRET_KEY', ''); expect((await invite()).code).toBe(503); expect(m.createUser).not.toHaveBeenCalled(); });
+  it('matches case-insensitive historical email while retaining UUID', async () => { m.existing = { id: 'historical-id', email: 'Rep@Example.Test', role: 'sales_rep', is_active: false }; m.createUser.mockResolvedValue({ data: { user: { id: 'historical-id', email: input.email } }, error: null }); m.generateLink.mockResolvedValue({ data: { user: { id: 'historical-id' }, properties: { hashed_token: 'hash' } }, error: null }); expect((await invite()).payload.userId).toBe('historical-id'); expect(m.ilike).toHaveBeenCalledWith('email', input.email); });
+  it('escapes wildcard characters so email lookup stays exact', async () => { const email = 'rep_name%literal@example.test'; m.createUser.mockResolvedValue({ data: { user: { id: 'new-id', email } }, error: null }); expect((await invite({ ...input, email })).payload.success).toBe(true); expect(m.ilike).toHaveBeenCalledWith('email', 'rep\\_name\\%literal@example.test'); });
+  it.each(['bad', 'victim@example.test\r\nBcc:another@example.test'])('rejects malformed email %j', async email => { expect((await invite({ ...input, email })).code).toBe(400); expect(m.createUser).not.toHaveBeenCalled(); });
+  it('sanitizes thrown Auth failure without logs', async () => { const log = vi.spyOn(console, 'error').mockImplementation(() => {}); m.createUser.mockRejectedValue(new Error('private-provider-detail')); const r = await invite(); expect(r.code).toBe(500); expect(JSON.stringify(r.payload)).not.toContain('private-provider-detail'); expect(log).not.toHaveBeenCalled(); });
+});

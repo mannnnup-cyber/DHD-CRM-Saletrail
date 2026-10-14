@@ -39,6 +39,10 @@ workflows.
 
 ## Success Criteria
 
+Team invitation and reactivation use one-time emailed setup links so employees
+choose their own password. Reactivation preserves the employee's historical
+identity. A failed delivery is visible and recoverable by resending the invitation.
+
 Password-reset repair on the implementation branch uses a one-time emailed
 recovery link and an accessible signed-out form. Initiating a reset leaves the
 current password unchanged; completion updates it only after token verification.

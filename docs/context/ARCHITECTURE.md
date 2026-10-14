@@ -41,6 +41,21 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 
 ## Frontend
 
+### Team account setup (implementation, 2026-10-14)
+
+Invitation/reactivation provisions a passwordless Auth identity and sends a
+one-time recovery-type link presented as account setup. Deleted inactive users
+are recreated with their historical UUID; returned Auth/link identities must
+match. An inactive identity that still exists fails closed for administrator
+repair. Pending active setup may resend without changing name or role.
+Managers can invite/reactivate reps only, including checks of stored target roles.
+New onboarding operations require a request-scoped modern SUPABASE_SECRET_KEY.
+Setup delivery intentionally reuses RECOVERY_FROM_EMAIL and RECOVERY_APP_URL,
+with the verified FollOps sender and stable public link origin. Delivery failure
+reports pending setup and permits retry; no password is generated or emailed.
+The existing token-verified completion endpoint remains unchanged. Local review
+and live release verification are recorded in WP-EMAIL-ONBOARDING.
+
 ### Password recovery (deployed and verified, 2026-10-13)
 
 The public `/#/recovery` route is outside the CRM auth/data provider and login

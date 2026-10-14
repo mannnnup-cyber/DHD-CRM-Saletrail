@@ -40,7 +40,7 @@ const Settings: React.FC = () => {
 
   // Reset password state
   const [resetingPwId, setResetingPwId] = useState<string | null>(null);
-  const [resetPwResult, setResetPwResult] = useState<{ email: string; name: string; tempPassword: string; warning?: string } | null>(null);
+  const [resetPwResult, setResetPwResult] = useState<{ email: string; name: string; warning?: string } | null>(null);
 
   // Role editing state
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
@@ -593,13 +593,14 @@ const Settings: React.FC = () => {
       if (data.success) {
         const msg = data.warning
           ? data.warning
-          : `Invite sent to ${inviteEmail}`;
+          : `Account setup link sent to ${inviteEmail}`;
         setTeamMessage({ type: data.warning ? 'error' : 'success', text: msg });
         setInviteName(''); setInviteEmail(''); setInviteRole('sales_rep');
         setShowInviteForm(false);
         loadTeam();
       } else {
-        setTeamMessage({ type: 'error', text: data.error || 'Failed to send invite' });
+        setTeamMessage({ type: 'error', text: data.error || 'Failed to send setup email' });
+        if (data.accountCreated) loadTeam();
       }
     } catch {
       setTeamMessage({ type: 'error', text: 'Network error' });
@@ -622,7 +623,7 @@ const Settings: React.FC = () => {
   };
 
   const handleResetPassword = async (member: { id: string; name: string; email: string }) => {
-    if (!confirm(`Reset ${member.name}'s password? They will need new credentials to log in.`)) return;
+    if (!confirm(`Send ${member.name} a password reset link? Their current password will stay unchanged until they use it.`)) return;
     setResetingPwId(member.id);
     try {
       const r = await fetch('/api/users?action=resetPassword', {
@@ -632,7 +633,7 @@ const Settings: React.FC = () => {
       });
       const data = await r.json();
       if (data.success) {
-        setResetPwResult({ email: member.email, name: member.name, tempPassword: data.tempPassword, warning: data.warning });
+        setResetPwResult({ email: member.email, name: member.name, warning: data.warning });
       } else {
         setTeamMessage({ type: 'error', text: data.error || 'Failed to reset password' });
       }
@@ -1509,7 +1510,7 @@ const Settings: React.FC = () => {
                         <select value={inviteRole} onChange={e => setInviteRole(e.target.value as any)}
                           className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50">
                           <option value="sales_rep">Sales Rep</option>
-                          <option value="manager">Manager</option>
+                          {state.user?.role === 'owner' && <option value="manager">Manager</option>}
                         </select>
                       </div>
                     </div>
@@ -1897,28 +1898,7 @@ const Settings: React.FC = () => {
                   Password reset email sent to {resetPwResult.email}
                 </div>
               )}
-              <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-2">
-                <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Temporary Credentials</p>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-400">Email</p>
-                    <p className="text-sm text-white font-mono truncate">{resetPwResult.email}</p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-400">New Password</p>
-                    <p className="text-sm text-amber-400 font-mono">{resetPwResult.tempPassword}</p>
-                  </div>
-                  <button
-                    onClick={() => navigator.clipboard.writeText(resetPwResult.tempPassword)}
-                    className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
-                    title="Copy password">
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500">Share these credentials with {resetPwResult.name}. They should change their password after logging in.</p>
+              <p className="text-sm text-gray-400">A secure link lets {resetPwResult.name} choose their own password. No password is shown or shared by an administrator.</p>
               <button
                 onClick={() => setResetPwResult(null)}
                 className="w-full bg-gray-800 hover:bg-gray-700 text-white font-medium py-2.5 rounded-xl transition-all text-sm">

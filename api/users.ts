@@ -4,8 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const APP_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://dhd-crm-saletrail.vercel.app';
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
@@ -13,9 +11,6 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
-
-const generateTempPassword = () =>
-  Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '!';
 
 // ─── Authentication / authorization ──────────────────────────────────────────
 // Verifies the caller's Supabase access token server-side and loads their role
@@ -59,69 +54,19 @@ async function authenticate(
 
 // ─── Email helpers ────────────────────────────────────────────────────────────
 
-const sendEmail = async (to: string, subject: string, html: string) => {
-  if (!RESEND_API_KEY) return { sent: false, reason: 'no_key' };
-  try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'DHD SalesTrail <support@dirtyhanddesigns.com>', to: [to], subject, html })
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      console.error('[api/users] Resend error:', err);
-      return { sent: false, reason: 'api_error', status: r.status };
-    }
-    return { sent: true };
-  } catch (e: any) {
-    console.error('[api/users] Resend network error:', e.message);
-    return { sent: false, reason: 'network_error' };
-  }
-};
-
-const credentialsBox = (email: string, password: string) => `
-  <div style="background:#f9f9f9;border:1px solid #eee;border-radius:12px;padding:20px;margin:0 0 24px 0;">
-    <p style="margin:0 0 8px 0;color:#333;font-weight:600;">Your login details:</p>
-    <p style="margin:0 0 4px 0;color:#555;">Email: <strong>${email}</strong></p>
-    <p style="margin:0 0 16px 0;color:#555;">Temporary password: <strong style="font-family:monospace;background:#eee;padding:2px 6px;border-radius:4px;">${password}</strong></p>
-    <p style="margin:0;color:#888;font-size:13px;">Please change your password after first login.</p>
-  </div>`;
-
-const loginButton = () =>
-  `<a href="${APP_URL}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">Log In Now</a>`;
-
 const logoHeader = () => `
   <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px;background:#fff;">
     <div style="background:#f59e0b;width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:24px;">
       <span style="color:#000;font-weight:900;font-size:16px;">DH</span>
     </div>`;
 
-const sendInviteEmail = (to: string, name: string, role: string, tempPassword: string) =>
-  sendEmail(to, "You've been invited to DHD SalesTrail", `
-    ${logoHeader()}
-    <h2 style="color:#111;margin:0 0 8px 0;">You've been invited to DHD SalesTrail</h2>
-    <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, you've been added as a <strong>${role.replace('_', ' ')}</strong>.</p>
-    ${credentialsBox(to, tempPassword)}
-    ${loginButton()}
-    <p style="color:#aaa;font-size:12px;margin:24px 0 0 0;">If you weren't expecting this, you can ignore this email.</p>
-  </div>`);
-
-const sendReactivateEmail = (to: string, name: string, role: string, tempPassword: string) =>
-  sendEmail(to, 'Your DHD SalesTrail access has been restored', `
-    ${logoHeader()}
-    <h2 style="color:#111;margin:0 0 8px 0;">Your access has been restored</h2>
-    <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${name}</strong>, your <strong>${role.replace('_', ' ')}</strong> account has been reactivated.</p>
-    ${credentialsBox(to, tempPassword)}
-    ${loginButton()}
-  </div>`);
-
-const sendResetLinkEmail = async (to: string, name: string, actionLink: string) => {
+const sendResetLinkEmail = async (to: string, name: string, actionLink: string, mode: 'recovery' | 'setup' = 'recovery', settingsClient = supabaseAdmin) => {
   let key = (process.env.RESEND_API_KEY || '').trim();
   let sender = process.env.RECOVERY_FROM_EMAIL || '';
   if (!sender.trim()) sender = '';
   if (!key || !sender) {
     try {
-      const { data, error } = await supabaseAdmin.from('app_settings')
+      const { data, error } = await settingsClient.from('app_settings')
         .select('setting_key, setting_value').in('setting_key', ['RESEND_API_KEY', 'RECOVERY_FROM_EMAIL'])
         .order('updated_at', { ascending: false });
       if (error) return { sent: false, reason: 'configuration_unavailable' };
@@ -142,18 +87,20 @@ const sendResetLinkEmail = async (to: string, name: string, actionLink: string) 
   if (sender.length > 320 || /[\x00-\x1f\x7f]/.test(sender) || !mailbox ||
       Boolean(mailbox[1]) !== Boolean(mailbox[3]) || mailbox[2].length > 254 ||
       !validAddress.test(mailbox[2]) || /(^\.|\.\.|\.@)/.test(mailbox[2])) return { sent: false, reason: 'invalid_sender' };
+  const title = mode === 'setup' ? 'Set up your FollOps account' : 'Reset your FollOps password';
+  const introduction = mode === 'setup' ? 'your team account is ready. Choose your own password using the secure link below.' : 'a password reset was requested for your account.';
   const escapedName = name.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
   try {
     // Recovery delivery must never log provider responses containing the link.
     const result = await fetch('https://api.resend.com/emails', {
       method: 'POST', signal: AbortSignal.timeout(15_000),
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: sender, to: [to], subject: 'Reset your FollOps password', html: `
+      body: JSON.stringify({ from: sender, to: [to], subject: title, html: `
         ${logoHeader()}
-        <h2 style="color:#111;margin:0 0 8px 0;">Reset your FollOps password</h2>
-        <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${escapedName}</strong>, a password reset was requested for your account.</p>
-        <p style="color:#555;margin:0 0 16px 0;"><a href="${actionLink.replace(/&/g, '&amp;')}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">Reset Password</a></p>
-        <p style="color:#888;font-size:13px;margin:0;">If you didn't request this, ignore this email. Your current password has not changed.</p>
+        <h2 style="color:#111;margin:0 0 8px 0;">${title}</h2>
+        <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${escapedName}</strong>, ${introduction}</p>
+        <p style="color:#555;margin:0 0 16px 0;"><a href="${actionLink.replace(/&/g, '&amp;')}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;">${mode === 'setup' ? 'Set Up Account' : 'Reset Password'}</a></p>
+        <p style="color:#888;font-size:13px;margin:0;">If you didn't request this, ignore this email. ${mode === 'setup' ? 'No password is included in this email.' : 'Your current password has not changed.'}</p>
       </div>` })
     });
     if (result.ok) return { sent: true };
@@ -268,71 +215,65 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'invite': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
-        const caller = await authenticate(req, res, ['owner', 'manager']);
-        if (!caller) return;
-        const { name, email, role } = req.body;
-        if (!name || !email || !role) return res.status(400).json({ success: false, error: 'name, email and role are required' });
-
-        const tempPassword = generateTempPassword();
-
-        const { data: existingProfile } = await supabaseAdmin
-          .from('user_profiles')
-          .select('id, is_active')
-          .eq('email', email)
-          .maybeSingle();
-
-        let invitedUserId: string;
+        let accountCreated = false;
+        let invitedUserId: string | undefined;
         let wasReactivated = false;
-
-        if (existingProfile) {
-          if (existingProfile.is_active) {
-            return res.json({ success: false, error: 'A team member with this email is already active.' });
+        try {
+          const caller = await authenticate(req, res, ['owner', 'manager']);
+          if (!caller) return;
+          const { name, email: suppliedEmail, role } = req.body || {};
+          const validEmail = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
+          if (typeof name !== 'string' || !name.trim() || name.length > 120 || /[\x00-\x1f\x7f]/.test(name) ||
+              typeof suppliedEmail !== 'string' || suppliedEmail.length > 254 || !validEmail.test(suppliedEmail) || /(^\.|\.\.|\.@)/.test(suppliedEmail) ||
+              !['owner', 'manager', 'sales_rep', 'rep'].includes(role)) return res.status(400).json({ success: false, error: 'A valid name, email and supported role are required.' });
+          if (caller.role === 'manager' && !['sales_rep', 'rep'].includes(role)) return res.status(403).json({ success: false, error: 'Managers may invite sales reps only.' });
+          const modernKey = process.env.SUPABASE_SECRET_KEY;
+          if (!modernKey || !SUPABASE_URL) return res.status(503).json({ success: false, error: 'Account setup is temporarily unavailable.' });
+          const admin = createClient(SUPABASE_URL, modernKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
+          const email = suppliedEmail.toLowerCase();
+          const emailPattern = email.replace(/[\\%_]/g, '\\$&');
+          const appOrigin = new URL(process.env.RECOVERY_APP_URL || 'https://dhd-crm-saletrail.vercel.app');
+          if (appOrigin.protocol !== 'https:' || appOrigin.username || appOrigin.password) return res.status(503).json({ success: false, error: 'Account setup is temporarily unavailable.' });
+          const { data: existing, error: lookupError } = await admin.from('user_profiles')
+            .select('id, email, name, role, is_active, must_change_password').ilike('email', emailPattern).maybeSingle();
+          if (lookupError) return res.status(500).json({ success: false, error: 'Unable to look up account. Try again later.' });
+          if (existing && existing.email?.toLowerCase() !== email) return res.status(500).json({ success: false, error: 'Account identity could not be verified.' });
+          if (existing && caller.role === 'manager' && !['sales_rep', 'rep'].includes(existing.role)) return res.status(403).json({ success: false, error: 'Only an owner may manage this account.' });
+          if (existing?.is_active) {
+            if (!existing.must_change_password) return res.json({ success: false, error: 'A team member with this email is already active.' });
+            // Resending a pending setup link must not change an existing role or name.
+            invitedUserId = existing.id;
+          } else {
+            const { data: created, error: createError } = await admin.auth.admin.createUser({
+              ...(existing ? { id: existing.id } : {}), email, email_confirm: true, user_metadata: { name: name.trim() }
+            });
+            if (createError || !created?.user || (existing && created.user.id !== existing.id) || created.user.email?.toLowerCase() !== email) {
+              return res.json({ success: false, error: 'Account setup could not be provisioned. Contact an administrator if the account already exists.' });
+            }
+            invitedUserId = created.user.id;
+            wasReactivated = Boolean(existing);
+            const values = { name: name.trim(), role, is_active: true, must_change_password: true, updated_at: new Date().toISOString() };
+            const persisted = existing
+              ? await admin.from('user_profiles').update(values).eq('id', existing.id).eq('is_active', false).select('id').single()
+              : await admin.from('user_profiles').insert({ id: invitedUserId, email, ...values }).select('id').single();
+            if (persisted.error || persisted.data?.id !== invitedUserId) {
+              try { await admin.auth.admin.deleteUser(invitedUserId); } catch { /* No account access was granted; preserve sanitized failure. */ }
+              return res.status(500).json({ success: false, error: 'Account profile could not be provisioned. Contact an administrator before retrying.' });
+            }
           }
-          // Reactivate with same UUID — historical data stays linked
-          const { error: authError } = await supabaseAdmin.auth.admin.createUser({
-            id: existingProfile.id, email, password: tempPassword, email_confirm: true,
-            user_metadata: { name, role }
-          });
-          if (authError) return res.json({ success: false, error: authError.message });
-
-          const { error: updateError } = await supabaseAdmin.from('user_profiles')
-            .update({ name, role, is_active: true, must_change_password: true, updated_at: new Date().toISOString() })
-            .eq('id', existingProfile.id);
-          if (updateError) return res.json({ success: false, error: updateError.message });
-
-          invitedUserId = existingProfile.id;
-          wasReactivated = true;
-        } else {
-          // Brand new user
-          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-            email, password: tempPassword, email_confirm: true, user_metadata: { name, role }
-          });
-          if (authError) return res.json({ success: false, error: authError.message });
-
-          const { error: profileError } = await supabaseAdmin.from('user_profiles')
-            .insert({ id: authData.user.id, name, email, role, is_active: true, must_change_password: true });
-          if (profileError) {
-            await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-            return res.json({ success: false, error: profileError.message });
+          accountCreated = true;
+          const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({ type: 'recovery', email });
+          const hash = linkData?.properties?.hashed_token;
+          if (linkError || linkData?.user?.id !== invitedUserId || typeof hash !== 'string' || !hash || hash.length > 4096) {
+            return res.json({ success: false, accountCreated: true, pendingDelivery: true, userId: invitedUserId, wasReactivated, error: 'Account is pending setup, but the setup link could not be generated. Retry the invitation.' });
           }
-          invitedUserId = authData.user.id;
+          const actionLink = `${appOrigin.origin}/#/recovery?token_hash=${encodeURIComponent(hash)}&type=recovery&mode=setup`;
+          const sent = await sendResetLinkEmail(email, existing?.is_active ? existing.name || '' : name.trim(), actionLink, 'setup', admin);
+          if (!sent.sent) return res.json({ success: false, accountCreated: true, pendingDelivery: true, userId: invitedUserId, wasReactivated, deliveryError: sent.reason, error: 'Account is pending setup, but the setup email could not be delivered. Retry the invitation or use Reset Password after email delivery is available.' });
+          return res.json({ success: true, emailSent: true, userId: invitedUserId, wasReactivated, message: 'Account setup link sent.' });
+        } catch {
+          return res.status(500).json({ success: false, ...(accountCreated ? { accountCreated: true, pendingDelivery: true, userId: invitedUserId, wasReactivated } : {}), error: accountCreated ? 'Account is pending setup. Retry the invitation to send a new setup link.' : 'Account setup could not be completed. Contact an administrator before retrying.' });
         }
-
-        const emailResult = wasReactivated
-          ? await sendReactivateEmail(email, name, role, tempPassword)
-          : await sendInviteEmail(email, name, role, tempPassword);
-
-        if (!emailResult.sent) {
-          // Credentials are only delivered by email — never returned in the API
-          // response. If delivery fails, re-invite (or reset password) once email
-          // delivery is working to issue the user fresh credentials.
-          return res.json({
-            success: true, userId: invitedUserId, wasReactivated,
-            warning: 'Account created, but the credential email could not be delivered. Once email sending is fixed, use Reset Password (or re-invite) to issue credentials — passwords are never shown here.'
-          });
-        }
-
-        return res.json({ success: true, userId: invitedUserId, wasReactivated });
       }
 
       case 'update': {
