@@ -1,4 +1,47 @@
 # WP-INBOX-FOUNDATION — Canonical Interaction/Event Foundation
+## Current review — 2026-10-14 (supersedes historical baseline and blanket dependencies below)
+
+Status: Review. This authorization covers plan/baseline refresh, not live Inbox implementation or deployment.
+Authoritative checkout: `C:/Users/Administrator/DHD-CRM-Saletrail`.
+Review worktree: `C:/Users/Administrator/Documents/Codex/2026-10-12/do-you-have-access-to-my/work/inbox-review`.
+Branch: `docs/inbox-foundation-refresh`; source baseline: `9502f46a1a68b6b6ec388e9d097178f40dafb420` (origin/master).
+The old `dhd crm sale trail` root below is historical and explicitly forbidden by current AGENTS.md; do not use it.
+
+### Implemented foundation and missing pieces
+
+- `src/lib/inbox/types.ts` defines CanonicalInteraction, ContactResolutionOutcome and IdempotencyResult.
+- `src/lib/inbox/adapter.ts` defines SourceAdapter, three idempotency helpers and resolution outcomes; it does not implement source normalize adapters, persistence or an Inbox UI.
+- `src/lib/inbox/contract.test.ts` has 11 executable Vitest tests. Search finds no production consumers of these helpers.
+- Current contract combines message/email with call/task/deal/note in one type; a discriminated messaging/business-event boundary remains missing.
+- Truthy provider IDs are converted with String(), accepting malformed objects; email IDs lack mailbox/account scope. Resolution assumes supplied candidates are authoritative; it performs no identity lookup.
+- `api/email.ts` has list/threads/thread plus sync/send/reply/mutations, but its handler has no caller JWT/role gate and uses wildcard CORS. Existing user-management auth does not secure those actions.
+- `api/social.ts` exposes provider status/accounts/analytics, not a verified inbound message adapter; provider Authorization is not caller authorization.
+- `api/contacts.ts`, existing interactions and email persistence can inform future mapping. Source inspection does not verify current production schema/RLS state.
+
+### Smallest next implementation slice: synthetic email projection
+
+Implement only pure modules under `src/lib/inbox/` and synthetic fixtures/tests. No route, API fetch, provider call, actual customer data, storage write, AI, contact creation, send/reply or WhatsApp change.
+Project a documented minimal email fixture into a messaging-only canonical result with content references, timestamp, direction, mailbox/provider identity and contact-resolution evidence supplied by the caller. Separate business events using an explicit discriminator. Reject invalid inputs with structured outcomes rather than throwing or inventing identifiers.
+
+Acceptance criteria:
+1. Runtime validation rejects absent/object/blank IDs, invalid timestamps/directions and unsupported types; unknown metadata cannot leak into the projected result by unrestricted copying.
+2. Provider + mailbox/account + stable external message ID define deterministic collision-safe identity; replay yields the same key, distinct mailboxes/providers do not collide, missing identity is explicitly unsafe. No timestamp-only fallback.
+3. Projection retains unresolved/ambiguous outcomes with no invented contact ID; verified/unique-normalized matching requires explicit authoritative evidence.
+4. Messaging records and business events are distinguishable; call/task/deal events cannot appear as Inbox messages by default.
+5. Pure fixture tests cover malformed inputs, replay/collision, timestamp normalization and all resolution outcomes; existing 11 contracts are preserved or deliberately updated with documented reasons.
+6. npm test, npm run test:contract, npm run type-check and npm run build pass; independent QA reviews the slice and security reviews any privacy-sensitive contract change.
+
+### Gates by actual exposure
+
+- Local synthetic slice: no webhook/RLS/provider rotation or live AI prerequisite blocks pure code. Required gates are scoped impact analysis, synthetic privacy-safe fixtures, deterministic validation and independent review. This is a proposed slice, not an implemented or deployed feature.
+- Live read-only email Inbox: server-side caller authentication/active role and row/contact ownership authorization, approved field minimization/retention, verified production schema/RLS, pagination and safe projection/deduplication are blockers. Protect read endpoints; do not treat RLS as sufficient when using privileged clients. Define applicable rate limits and UI rendering/CSP controls before activation.
+- Live inbound provider/WhatsApp ingestion: provider authenticity, replay/deduplication, callback delivery evidence and scoped retention/rate limits additionally apply. WhatsApp remains explicitly on hold; omit its activation from an email-only slice.
+- AI/call intelligence: privacy-aware audit/retention and device/transcription access gates apply only when these are included. Autonomous actions additionally require explicit authority and human approval.
+- Deferred legacy key exposure remains a recorded P0; this review neither verifies invalidation nor changes owner authorization. Any live feature must explicitly review/accept unresolved relevant risks; local tests do not resolve them.
+
+Current command evidence is recorded in WP-MAINTENANCE-BASELINE. Historical planning below is retained for provenance; claims about verified live tables, line counts and all A–F prerequisites are not fresh verification. The next slice's mailbox/provider/stable-ID identity explicitly supersedes the historical provider + external ID + occurred_at recipe: mutable timestamps must not split replay identity. Existing WhatsApp helper behavior is merely observed, not approved for new live ingestion.
+
+## Historical planning record
 # Status: Planning ONLY — no product change; WP-001 preserved
 # Branch: planning/phase1-packets (from verified origin/master 6f0ef85)
 # Preflight: PASS

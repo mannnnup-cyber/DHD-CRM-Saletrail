@@ -167,6 +167,7 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 
 | Task | Owner | Status | Notes |
 | --- | --- | --- | --- |
+| Unified Inbox foundation baseline and next slice | AI | Review | 2026-10-14: existing pure contract/helpers reviewed at 9502f46; synthetic email projection acceptance criteria in WP-INBOX-FOUNDATION. Live activation blocked by caller/data authorization and privacy/schema gates; WhatsApp on hold. No product code added by this review. |
 | FollOps rebrand (UI/branding only — no tech identifier changes) | AI | Planned | See BRAND.md; branding may become FollOps, but do NOT rename Git repos, DB tables, API routes, env vars, Supabase/Vercel projects |
 | WhatsApp provider switching UI | AI | Planned | Allow switching Green API ↔ Evolution in Settings |
 | WooCommerce rep/order association | Team | Planned | WC REST API does not expose admin who created order; need custom meta field |
