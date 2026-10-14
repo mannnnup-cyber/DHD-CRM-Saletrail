@@ -4,6 +4,27 @@ Entries are newest first. Each entry covers a development session or sprint.
 
 ---
 
+## 2026-10-13 — Password recovery repair (implementation branch)
+
+- Public recovery is outside the CRM login/data providers and no longer uses
+  the legacy browser Supabase client or auth listener.
+- Custom reset links carry a generated one-time recovery hash in the fragment;
+  the page removes it from the address bar and consumes it only on submission.
+- Server completion verifies recovery OTP in an isolated session, updates the
+  password with that session, then clears only the verified active profile.
+  Bearer-only flag cleanup is rejected. The modern secret key is required.
+- Delivery and completion errors are sanitized. Partial cleanup and uncertain
+  network outcomes do not claim full success or an unchanged password.
+- Tests exercise actual initiation, completion, public routing, and form
+  behavior using a development-only jsdom dependency.
+- Local tests: 42/42 PASS; type-check, production build, and independent
+  QA/Security reviews PASS.
+- No production deployment, real-user reset, test email, credential change, or
+  database/RLS mutation performed. Real email and deployed UAT remain release
+  gates.
+
+---
+
 ## 2026-10-13 — Recovery test isolation and local worktree housekeeping
 
 - Recovery-clear tests now stub configuration before importing the endpoint and

@@ -39,6 +39,13 @@ workflows.
 
 ## Success Criteria
 
+Password-reset repair on the implementation branch uses a one-time emailed
+recovery link and an accessible signed-out form. Initiating a reset leaves the
+current password unchanged; completion updates it only after token verification.
+If account cleanup fails after the password update, the UI tells the user that
+the password changed and directs them to support. Live email delivery and
+deployed recovery remain release verification requirements.
+
 - Developers and AI agents can understand the app structure without scanning the
   whole repository.
 - New work starts from project context, architecture, file map, task status, and

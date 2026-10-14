@@ -1,5 +1,11 @@
 # Work Packet Implementation: WP-EMAIL-RECOVERY-IMPLEMENT
 
+> Current contract is the 2026-10-13 authorized repair described below. Earlier
+> implementation, completion, session, and test statements are historical and
+> superseded where they conflict with that repair. Status: Review; local checks
+> and independent review are required, with deployed email/recovery UAT still a
+> release gate. No production deployment is claimed.
+
 ## PRE-FLIGHT
 - **master SHA:** d76e0dbe11eefe0547582e80b751a0da47853d38
 - **branch:** WP-EMAIL-RECOVERY-IMPLEMENT (from master)
@@ -127,3 +133,86 @@ against refreshed `origin/master` is required because local `master` is stale.
 
 These are findings, not fixes made by this cleanup. The branch is not approved
 for merge or deployment. Recovery email delivery and live UAT remain unverified.
+
+## Authorized repair scope — 2026-10-13
+
+Owner request: fix the broken password-reset feature. Status: In Progress.
+Continue on the existing isolated implementation branch. WhatsApp is on hold.
+
+Implement recovery completion as a single server request: verify the generated
+one-time recovery token with Supabase `verifyOtp(type: recovery)`, update the
+password using that request's recovered user session (never admin password
+mutation), and clear only that verified user's forced-change flag after the
+password update succeeds. A normal bearer token alone must no longer clear it.
+Recovery token/session data and passwords must never be returned or logged.
+
+Send custom recovery links using the generated hashed token in the HashRouter
+fragment. Show recovery outside the CRM login gate, remove the token from the
+address bar while retaining it in component memory, and consume it only when
+the user submits a validated password. Handle invalid/expired/replayed links,
+provider errors, and partial password-update/profile-cleanup failure honestly.
+Remove the broken browser client/auth-listener dependency from this flow.
+
+Preserve owner/manager permission for initiating a reset and existing
+invite/reactivate/change-password behavior. No production DB/RLS changes,
+credential changes, real-user resets, outbound test emails, or deployment.
+Tests must exercise actual endpoint and UI behavior, including bypass rejection,
+same-user scope, request isolation, retry/error states, and signed-out access.
+Run full tests, type-check, build, independent QA and Security review before
+committing. Update matching context docs with the final contract and evidence.
+
+## Repair implementation and review — 2026-10-13
+
+### Final implementation contract
+
+- `resetPassword` retains owner/manager authorization and active-target lookup.
+  It sends a custom HTTPS fragment recovery link made from `hashed_token`, not
+  the provider redirect URL. Generation/delivery errors are sanitized; no link
+  or password is returned and initiation does not change the password.
+- `/api/recovery-clear` now completes recovery rather than accepting a bearer
+  cleanup request. It verifies a bounded token with fixed OTP type `recovery`,
+  updates the password in a fresh recovered-user session, then updates only the
+  verified active profile. No matching profile or DB error yields explicit
+  partial completion. The modern `SUPABASE_SECRET_KEY` is required.
+- The public recovery route sits outside CRM auth/data providers. The page
+  keeps the fragment token only in memory, strips it from the URL, consumes it
+  only on submission, prevents duplicate submits, and clears sensitive state.
+  Uncertain network outcomes do not claim that the password stayed unchanged.
+- Existing invitation, reactivation, ordinary password changes, WhatsApp,
+  global browser client, and CRM auth context remain unchanged by this repair.
+
+### QA review
+
+Independent reviewer: PASS for the implemented diff. Actual public-route/form,
+reset initiation, and completion behavior is tested. Full test suite: 42/42
+PASS (15 completion, 7 reset email/authorization, 9 UI/route, 11 inbox contract).
+Type-check: PASS, exit 0. jsdom is a development-only dependency (30 new packages;
+no existing-package upgrades). Mocked replay tests verify application handling
+of provider rejection, not production Supabase token expiry/consumption.
+
+### Security review
+
+Independent Security reviewer: PASS for local code. Recovery type is fixed;
+caller IDs and ordinary bearer sessions cannot select or clear a profile;
+password update uses the recovered user session; clients are request-isolated;
+errors and email delivery do not expose credentials; recovered session cleanup
+uses local sign-out. No production data, RLS, credentials, email, or deployment
+was mutated for verification.
+
+### Tooling and release gates
+
+GitNexus index refreshed for the live checkout. Explicit absolute repo path
+avoids the identically named stale copy. Recovery/App impacts: LOW indexed
+fanout; reset-email helper: one direct API-handler caller. Handler-name
+ambiguity was resolved using exact-file context/Cypher; no indexed callers.
+Authentication still requires the independent security review above. MCP
+`detect_changes` is unavailable, so Git diff/status scope checks are used.
+
+Read-only local provider check: Supabase auth settings respond and email auth
+is enabled. Local files lack a Resend key and modern secret; deployed settings
+were not verified. Release still needs a configured modern secret, verified
+email delivery, and real generated-link recovery UAT with a dedicated account.
+Status: Review for release; local code repair reviewed. Production build: PASS
+(`npm run build`, exit 0). Git diff/check confirms only scoped recovery files,
+tests/development dependency, and matching context docs. No master merge or
+push/deploy claimed.

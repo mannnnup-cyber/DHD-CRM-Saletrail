@@ -349,7 +349,6 @@ const AppInner: React.FC = () => {
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactProfile />} />
             <Route path="/social" element={<SocialMedia />} />
-            <Route path="/recovery" element={<Recovery />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
@@ -369,11 +368,13 @@ const AppInner: React.FC = () => {
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <HashRouter>
-          <AppInner />
-        </HashRouter>
-      </AppProvider>
+      <HashRouter>
+        <Routes>
+          {/* Recovery has its own one-time credentials, independent of CRM login. */}
+          <Route path="/recovery" element={<Recovery />} />
+          <Route path="*" element={<AppProvider><AppInner /></AppProvider>} />
+        </Routes>
+      </HashRouter>
     </ErrorBoundary>
   );
 };

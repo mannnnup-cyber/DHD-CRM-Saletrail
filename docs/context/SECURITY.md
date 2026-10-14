@@ -15,6 +15,17 @@
 
 ## Open Security Items
 
+### Recovery repair on implementation branch (2026-10-13)
+
+The bearer-only forced-password-change cleanup endpoint is replaced by verified
+one-time recovery completion: request-scoped anon auth, fixed recovery OTP type,
+user-session password update, then active verified-user profile cleanup. The
+rewritten endpoint requires the modern `SUPABASE_SECRET_KEY`; no legacy key
+fallback or admin password mutation. Client-supplied IDs/types cannot choose the
+account. Tokens/passwords/session data are not logged or returned. Independent
+QA/Security and live deployment verification are release gates; this statement
+does not change the production containment baseline or close the deferred P0.
+
 ### P0 — Compromised Legacy Supabase `service_role` Key (Deferred by Owner)
 
 The legacy `SUPABASE_SERVICE_ROLE_KEY` (in public git history since

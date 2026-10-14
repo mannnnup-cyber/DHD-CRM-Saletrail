@@ -1,110 +1,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-let mockGetUser = vi.fn();
-let mockFrom = vi.fn();
-
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: () => ({
-    auth: { getUser: (...a: any[]) => mockGetUser(...a), getSession: vi.fn() },
-    from: (...a: any[]) => mockFrom(...a),
-  }),
-}));
-
+const m = vi.hoisted(() => ({ createClient: vi.fn(), from: vi.fn(), verifyOtp: vi.fn(), updateUser: vi.fn(), signOut: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(), update: vi.fn(), select: vi.fn() }));
+vi.mock('@supabase/supabase-js', () => ({ createClient: m.createClient }));
 let handler: typeof import('../api/recovery-clear').default;
-
-function resMock() {
-  const r: any = {
-    _status: 200,
-    _json: null,
-    status(c: number) { this._status = c; return this; },
-    json(b: any) { this._json = b; return this; },
-  };
-  return r as VercelResponse;
+const body = { tokenHash: 'recovery-hash', newPassword: 'new-password-123' };
+async function invoke(overrides: any = {}) {
+  const res: any = { code: 200, payload: null, setHeader: vi.fn(), status(code: number) { this.code = code; return this; }, json(payload: any) { this.payload = payload; return this; } };
+  await handler({ method: 'POST', body, headers: {}, ...overrides } as any, res); return res;
 }
-
-function reqMock(overrides: Partial<VercelRequest> = {}): VercelRequest {
-  return { method: 'POST', headers: {}, ...overrides } as any;
-}
-
-describe('recovery-clear endpoint — mocked behavioral with chain proof', () => {
+describe('actual recovery completion handler', () => {
   beforeEach(async () => {
-    vi.resetModules();
-    vi.clearAllMocks();
-    mockGetUser.mockReset();
-    mockFrom.mockReset();
-    // The endpoint reads configuration at import time; reload only after stubbing it.
-    vi.stubEnv('SUPABASE_PROJECT_URL', 'https://test.supabase.co');
-    vi.stubEnv('SUPABASE_ANON_KEY', 'anon-test');
-    vi.stubEnv('SUPABASE_SECRET_KEY', 'service-test');
+    vi.resetModules(); vi.resetAllMocks();
+    vi.stubEnv('SUPABASE_PROJECT_URL', 'https://example.supabase.co'); vi.stubEnv('SUPABASE_ANON_KEY', 'public-test'); vi.stubEnv('SUPABASE_SECRET_KEY', 'secret-test');
+    m.verifyOtp.mockResolvedValue({ data: { user: { id: 'verified-user' }, session: { access_token: 'private-session' } }, error: null });
+    m.updateUser.mockResolvedValue({ data: { user: { id: 'verified-user' } }, error: null }); m.signOut.mockResolvedValue({ error: null });
+    m.maybeSingle.mockResolvedValue({ data: { id: 'verified-user' }, error: null });
+    const chain = { eq: m.eq, select: m.select, maybeSingle: m.maybeSingle };
+    m.eq.mockReturnValue(chain); m.select.mockReturnValue(chain); m.update.mockReturnValue(chain); m.from.mockReturnValue({ update: m.update });
+    m.createClient.mockImplementation((_url, key) => key === 'secret-test' ? { from: m.from } : { auth: { verifyOtp: m.verifyOtp, updateUser: m.updateUser, signOut: m.signOut } });
     handler = (await import('../api/recovery-clear')).default;
   });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('GET -> 405', async () => { const r = resMock(); await handler(reqMock({ method: 'GET' }), r); expect(r._status).toBe(405); });
-
-  it('POST without bearer -> 401', async () => { const r = resMock(); await handler(reqMock({ headers: {} }), r); expect(r._status).toBe(401); });
-
-  it('invalid bearer (getUser error) -> 401', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: 'bad' } });
-    const r = resMock(); await handler(reqMock({ headers: { authorization: 'Bearer bad' } }), r);
-    expect(r._status).toBe(401);
-  });
-
-  it('DB failure -> 500 sanitized (detail included, not raw)', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
-    const eqMock = vi.fn().mockResolvedValue({ error: { message: 'db down' } });
-    const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
-    mockFrom.mockReturnValue({ update: updateMock });
-    const r = resMock(); await handler(reqMock({ headers: { authorization: 'Bearer good' } }), r);
-    expect(r._status).toBe(500);
-    expect(r._json?.error).toBe('Clear failed');
-    expect(updateMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('successful clear -> 200 { success: true } with .eq(id, resolvedUser.id)', async () => {
-    const resolvedUser = { id: 'user-a-01', email: 'a@test.com' };
-    mockGetUser.mockResolvedValue({ data: { user: resolvedUser }, error: null });
-    const eqMock = vi.fn().mockResolvedValue({ error: null });
-    const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
-    mockFrom.mockReturnValue({ update: updateMock });
-    const r = resMock();
-    await handler(reqMock({ headers: { authorization: 'Bearer tok' } }), r);
-    expect(r._status).toBe(200);
-    expect(r._json).toEqual({ success: true });
-    // Chain proof
-    expect(mockFrom).toHaveBeenCalledWith('user_profiles');
-    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({
-      must_change_password: false,
-    }));
-    expect(eqMock).toHaveBeenCalledTimes(1);
-    expect(eqMock).toHaveBeenCalledWith('id', resolvedUser.id);
-  });
-
-  it('malicious body id cannot alter target — .eq always uses token-resolved id', async () => {
-    const realId = 'real-id';
-    mockGetUser.mockResolvedValue({ data: { user: { id: realId } }, error: null });
-    const eqMock = vi.fn().mockResolvedValue({ error: null });
-    const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
-    mockFrom.mockReturnValue({ update: updateMock });
-    const r = resMock();
-    await handler(reqMock({ headers: { authorization: 'Bearer tok' }, body: { id: 'other-user-id' } }), r);
-    expect(r._status).toBe(200);
-    expect(eqMock).toHaveBeenCalledWith('id', realId);
-    expect(eqMock).not.toHaveBeenCalledWith('id', 'other-user-id');
-  });
-});
-
-describe('cleanup decision logic — extracted, zero placeholders', () => {
-  function decide(token: string | null | undefined, resOk: boolean, resSuccess: boolean) {
-    let clearFailed = !!(token === null || token === undefined || token === '' || !resOk || !resSuccess);
-    return { completed: !!token && resOk && resSuccess, partial: clearFailed };
-  }
-  it('missing token -> partial', () => { const s = decide(null, true, true); expect(s.completed).toBe(false); expect(s.partial).toBe(true); });
-  it('HTTP fail -> partial', () => { const s = decide('tok', false, true); expect(s.completed).toBe(false); expect(s.partial).toBe(true); });
-  it('success false -> partial', () => { const s = decide('tok', true, false); expect(s.completed).toBe(false); expect(s.partial).toBe(true); });
-  it('valid + ok + true -> completed', () => { const s = decide('tok', true, true); expect(s.completed).toBe(true); expect(s.partial).toBe(false); });
+  afterEach(() => vi.unstubAllEnvs());
+  it('rejects GET without consuming a token', async () => { expect((await invoke({ method: 'GET' })).code).toBe(405); expect(m.verifyOtp).not.toHaveBeenCalled(); });
+  it('rejects normal bearer-only clear', async () => { expect((await invoke({ body: {}, headers: { authorization: 'Bearer ordinary-session' } })).code).toBe(400); expect(m.from).not.toHaveBeenCalled(); });
+  it.each([null, { tokenHash: 12, newPassword: 'new-password' }, { tokenHash: 'hash', newPassword: 'short' }, { tokenHash: 'hash', newPassword: 'x'.repeat(1025) }])('validates before consuming link: %j', async value => { expect((await invoke({ body: value })).code).toBe(400); expect(m.verifyOtp).not.toHaveBeenCalled(); });
+  it('rejects invalid/expired/replayed tokens without writing', async () => { m.verifyOtp.mockResolvedValue({ data: { user: null, session: null }, error: { message: 'private-detail' } }); const r = await invoke(); expect(r.code).toBe(401); expect(JSON.stringify(r.payload)).not.toContain('private-detail'); expect(m.updateUser).not.toHaveBeenCalled(); expect(m.from).not.toHaveBeenCalled(); });
+  it('cannot clear again when Supabase rejects replay of a consumed link', async () => { expect((await invoke()).code).toBe(200); m.verifyOtp.mockResolvedValue({ data: { user: null, session: null }, error: { message: 'consumed' } }); expect((await invoke()).code).toBe(401); expect(m.updateUser).toHaveBeenCalledTimes(1); expect(m.update).toHaveBeenCalledTimes(1); });
+  it('updates verified session then clears only verified active profile', async () => { const r = await invoke({ body: { ...body, id: 'victim', type: 'signup' } }); expect(r.payload).toEqual({ success: true }); expect(m.verifyOtp).toHaveBeenCalledWith({ token_hash: body.tokenHash, type: 'recovery' }); expect(m.updateUser).toHaveBeenCalledWith({ password: body.newPassword }); expect(m.eq).toHaveBeenCalledWith('id', 'verified-user'); expect(m.eq).toHaveBeenCalledWith('is_active', true); expect(m.eq).not.toHaveBeenCalledWith('id', 'victim'); expect(m.updateUser.mock.invocationCallOrder[0]).toBeLessThan(m.update.mock.invocationCallOrder[0]); expect(m.signOut).toHaveBeenCalledWith({ scope: 'local' }); });
+  it('does not clear on password update failure', async () => { m.updateUser.mockResolvedValue({ data: { user: null }, error: { message: 'private-detail' } }); const r = await invoke(); expect(r.code).toBe(400); expect(m.from).not.toHaveBeenCalled(); expect(JSON.stringify(r.payload)).not.toContain('private-detail'); });
+  it.each([{ data: null, error: { message: 'private-detail' } }, { data: null, error: null }])('reports cleanup failure/missing active profile as partial: %j', async result => { m.maybeSingle.mockResolvedValue(result); const r = await invoke(); expect(r.code).toBe(500); expect(r.payload).toMatchObject({ success: false, passwordUpdated: true }); expect(JSON.stringify(r.payload)).not.toContain('private-detail'); });
+  it('creates nonpersistent isolated auth clients per request', async () => { await Promise.all([invoke(), invoke()]); const calls = m.createClient.mock.calls.filter(c => c[1] === 'public-test'); expect(calls).toHaveLength(2); for (const c of calls) expect(c[2].auth).toMatchObject({ persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }); });
+  it('sanitizes thrown errors and discards recovered session', async () => { m.updateUser.mockRejectedValue(new Error('private-session')); const r = await invoke(); expect(r.code).toBe(500); expect(JSON.stringify(r.payload)).not.toContain('private-session'); expect(m.signOut).toHaveBeenCalled(); });
+  it('signout failure cannot override successful reset', async () => { m.signOut.mockRejectedValue(new Error('discard failed')); expect((await invoke()).payload).toEqual({ success: true }); });
 });
