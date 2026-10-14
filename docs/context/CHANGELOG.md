@@ -4,6 +4,21 @@ Entries are newest first. Each entry covers a development session or sprint.
 
 ---
 
+## 2026-10-13 — Recovery email delivery follow-up
+
+- Owner UAT reached token generation but the email delivery step failed.
+- Approved recovery sender configured as `FollOps <no-reply@pickupja.com>`;
+  its domain is verified on the stored Resend account. Global senders and keys
+  are not changed.
+- Recovery delivery now resolves its key env-first with saved-setting fallback
+  and has a recovery-only configured sender. Failure categories are sanitized.
+- Reset links use a trusted public CRM origin instead of a generated deployment
+  hostname that can require Vercel SSO.
+- Local verification, independent reviews, deployment, and real email evidence
+  are recorded in `WP-EMAIL-RECOVERY-DELIVERY.md`.
+
+---
+
 ## 2026-10-13 — Password recovery repair (implementation branch)
 
 - Public recovery is outside the CRM login/data providers and no longer uses

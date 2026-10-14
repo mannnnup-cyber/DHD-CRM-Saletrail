@@ -136,6 +136,8 @@ parseable by AI tools and harness systems.
       { "key": "VITE_SUPABASE_ANON_KEY", "purpose": "Supabase anon/public key" }
     ],
     "serverside": [
+      { "key": "RECOVERY_FROM_EMAIL", "purpose": "Recovery-only sender with a verified Resend domain; env first, app_settings fallback; does not change other mail senders" },
+      { "key": "RECOVERY_APP_URL", "purpose": "Trusted public HTTPS recovery-link origin; defaults to public CRM alias, never request host or protected generated Vercel URL" },
       { "key": "SUPABASE_PROJECT_URL", "purpose": "Supabase URL for API handlers" },
       { "key": "SUPABASE_ANON_KEY", "purpose": "Supabase anon key for API handlers" },
       { "key": "SUPABASE_SECRET_KEY", "purpose": "Preferred privileged Supabase credential (server-side only)" },

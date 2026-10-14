@@ -116,14 +116,39 @@ const sendReactivateEmail = (to: string, name: string, role: string, tempPasswor
   </div>`);
 
 const sendResetLinkEmail = async (to: string, name: string, actionLink: string) => {
-  if (!RESEND_API_KEY) return { sent: false };
+  let key = (process.env.RESEND_API_KEY || '').trim();
+  let sender = process.env.RECOVERY_FROM_EMAIL || '';
+  if (!sender.trim()) sender = '';
+  if (!key || !sender) {
+    try {
+      const { data, error } = await supabaseAdmin.from('app_settings')
+        .select('setting_key, setting_value').in('setting_key', ['RESEND_API_KEY', 'RECOVERY_FROM_EMAIL'])
+        .order('updated_at', { ascending: false });
+      if (error) return { sent: false, reason: 'configuration_unavailable' };
+      const settings: Record<string, string> = {};
+      for (const row of data || []) {
+        if (['RESEND_API_KEY', 'RECOVERY_FROM_EMAIL'].includes(row.setting_key) && !settings[row.setting_key] &&
+            typeof row.setting_value === 'string' && row.setting_value.trim()) settings[row.setting_key] = row.setting_value;
+      }
+      key ||= (settings.RESEND_API_KEY || '').trim();
+      sender ||= settings.RECOVERY_FROM_EMAIL || '';
+    } catch { return { sent: false, reason: 'configuration_unavailable' }; }
+  }
+  if (!key) return { sent: false, reason: 'missing_key' };
+  sender ||= 'DHD SalesTrail <support@dirtyhanddesigns.com>';
+  // Only a single mailbox, optionally with a simple display name, is accepted.
+  const mailbox = sender.match(/^(?:([^<>"\r\n]{1,80}) <)?([^\s<>@]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63})(>)?$/);
+  const validAddress = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
+  if (sender.length > 320 || /[\x00-\x1f\x7f]/.test(sender) || !mailbox ||
+      Boolean(mailbox[1]) !== Boolean(mailbox[3]) || mailbox[2].length > 254 ||
+      !validAddress.test(mailbox[2]) || /(^\.|\.\.|\.@)/.test(mailbox[2])) return { sent: false, reason: 'invalid_sender' };
   const escapedName = name.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
   try {
     // Recovery delivery must never log provider responses containing the link.
     const result = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'DHD SalesTrail <support@dirtyhanddesigns.com>', to: [to], subject: 'Reset your FollOps password', html: `
+      method: 'POST', signal: AbortSignal.timeout(15_000),
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: sender, to: [to], subject: 'Reset your FollOps password', html: `
         ${logoHeader()}
         <h2 style="color:#111;margin:0 0 8px 0;">Reset your FollOps password</h2>
         <p style="color:#555;margin:0 0 24px 0;">Hi <strong>${escapedName}</strong>, a password reset was requested for your account.</p>
@@ -131,8 +156,17 @@ const sendResetLinkEmail = async (to: string, name: string, actionLink: string) 
         <p style="color:#888;font-size:13px;margin:0;">If you didn't request this, ignore this email. Your current password has not changed.</p>
       </div>` })
     });
-    return { sent: result.ok };
-  } catch { return { sent: false }; }
+    if (result.ok) return { sent: true };
+    if (result.status === 401) return { sent: false, reason: 'invalid_credentials' };
+    if (result.status === 429) return { sent: false, reason: 'rate_limited' };
+    if (result.status >= 500) return { sent: false, reason: 'provider_unavailable' };
+    const failure = await result.json().catch(() => ({}));
+    const code = typeof failure?.name === 'string' ? failure.name : failure?.code;
+    const message = typeof failure?.message === 'string' ? failure.message.toLowerCase() : '';
+    if (code === 'invalid_api_key' || code === 'invalid_access' || message.includes('api key is invalid')) return { sent: false, reason: 'invalid_credentials' };
+    if (code === 'domain_not_verified' || (message.includes('domain') && message.includes('not verified'))) return { sent: false, reason: 'sender_unverified' };
+    return { sent: false, reason: 'provider_rejected' };
+  } catch { return { sent: false, reason: 'provider_unavailable' }; }
 };
 
 // ─── Warning helper ──────────────────────────────────────────────────────────
@@ -350,7 +384,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const { data: profile } = await supabaseAdmin.from('user_profiles')
             .select('email, name').eq('id', id).eq('is_active', true).single();
           if (!profile) return res.json({ success: false, error: 'Active user not found' });
-          const appOrigin = new URL(APP_URL);
+          // Generated deployment hosts can require SSO; recovery needs a stable public origin.
+          const appOrigin = new URL(process.env.RECOVERY_APP_URL || 'https://dhd-crm-saletrail.vercel.app');
           if (appOrigin.protocol !== 'https:' || appOrigin.username || appOrigin.password) {
             return res.status(503).json({ success: false, error: 'Recovery is temporarily unavailable' });
           }
@@ -364,7 +399,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // The fragment stays out of HTTP requests and avoids SDK hash collisions.
           const actionLink = `${appOrigin.origin}/#/recovery?token_hash=${encodeURIComponent(hash)}&type=recovery`;
           const emailResult = await sendResetLinkEmail(profile.email, profile.name || '', actionLink);
-          if (!emailResult.sent) return res.json({ success: false, error: "Recovery link could not be delivered. The user's existing password has not been changed." });
+          if (!emailResult.sent) {
+            const messages: Record<string, string> = {
+              missing_key: 'Recovery email is not configured.',
+              configuration_unavailable: 'Recovery email configuration is temporarily unavailable.',
+              invalid_sender: 'Recovery email sender configuration is invalid.',
+              invalid_credentials: 'Recovery email credentials were rejected by the provider.',
+              sender_unverified: 'Recovery email sender domain is not verified.',
+              rate_limited: 'Recovery email provider rate limit reached. Try again later.',
+              provider_unavailable: 'Recovery email provider is temporarily unavailable. Try again later.',
+              provider_rejected: 'Recovery email was rejected by the provider.'
+            };
+            return res.json({ success: false, deliveryError: emailResult.reason, error: `${messages[emailResult.reason] || 'Recovery link could not be delivered.'} The user's existing password has not been changed.` });
+          }
           return res.json({ success: true, message: 'Recovery link sent to user.' });
         } catch {
           return res.status(500).json({ success: false, error: 'Recovery request failed. The existing password has not been changed.' });
