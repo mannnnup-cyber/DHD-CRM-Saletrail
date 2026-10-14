@@ -41,6 +41,28 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 
 ## Frontend
 
+### Password recovery (implementation branch, 2026-10-13)
+
+The public `/#/recovery` route is outside the CRM auth/data provider and login
+gate. Recovery uses `/api/recovery-clear`, not the legacy browser Supabase
+client. Custom reset emails contain a generated recovery token hash inside the
+URL fragment; the page captures it in memory and removes it from the address
+bar. Loading the page does not consume the link. Submitting the password does.
+
+The server creates a fresh anon-key auth client for each request, verifies the
+token with OTP type `recovery`, and updates the password with that recovered
+user session. Only after that update succeeds may the privileged DB client
+clear `must_change_password` for the verified user's active profile. A normal
+bearer token or caller-supplied user ID cannot authorize flag cleanup. Recovery
+sessions are not persisted or returned to the browser. Cleanup failure after a
+password update is reported as partial completion and requires support.
+The rewritten recovery endpoint requires `SUPABASE_SECRET_KEY` for profile
+access; it does not accept the legacy service-role key. Other handlers' existing
+credential compatibility behavior is unchanged.
+
+This branch implementation still requires verification of real recovery-email
+delivery and the deployed application before release can be called complete.
+
 - Entry point: `src/main.tsx`
 - App shell and route table: `src/App.tsx`
 - Auth context (real Supabase auth via `/api/users?action=login`, session

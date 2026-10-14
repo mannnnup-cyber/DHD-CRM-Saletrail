@@ -26,6 +26,7 @@ parseable by AI tools and harness systems.
     "criticalNote": "The browser Supabase client in src/lib/supabase.ts falls back to {} if env vars are missing. Never call supabase.from() directly from page components — always use /api/* fetch calls instead. DataContext wraps all supabase calls with .catch(() => []) which silently hides this failure."
   },
   "routes": [
+    { "path": "/recovery", "file": "src/pages/Recovery.tsx", "purpose": "Public password recovery outside CRM auth/data providers; fragment token kept in memory and removed from URL; submits password and one-time recovery token to server", "dependsOn": ["api/recovery-clear.ts"] },
     { "path": "/", "file": "src/App.tsx", "purpose": "Redirects to /dashboard" },
     { "path": "/dashboard", "file": "src/pages/Dashboard.tsx", "purpose": "Main CRM analytics dashboard with ActionList widget", "dependsOn": ["src/context/AppContext.tsx", "src/components/ActionList.tsx"] },
     { "path": "/contacts", "file": "src/pages/Contacts.tsx", "purpose": "Master contact list with search, filters, WhatsApp button, status badge", "dependsOn": ["src/context/AppContext.tsx", "api/contacts.ts"] },
@@ -64,6 +65,7 @@ parseable by AI tools and harness systems.
     { "name": "DataContext", "file": "src/context/DataContext.tsx", "purpose": "All CRM state, localStorage persistence, Supabase startup load, all mutations. Uses supabase.from() with .catch(() => []) — failures are silent.", "dependsOn": ["src/data/types.ts", "src/data/store.ts", "src/lib/supabase.ts"], "storageKeys": ["dhd_salestrail_state", "dhd_synced_calls"] }
   ],
   "apiEndpoints": [
+    { "file": "api/recovery-clear.ts", "purpose": "POST-only recovery completion: request-scoped anon client verifies recovery OTP, updates password in recovered session, then clears active verified user's forced-change flag; rejects bearer-only cleanup; reports partial cleanup failure without exposing secrets", "risk": "One-time recovery token authorization and password update; no admin password mutation" },
     { "file": "api/crm.ts", "purpose": "Core CRM engine: automation runner (cron), opportunity/action-list rules, team statistics endpoint", "actions": ["runAutomation (cron)", "opportunities", "teamStats"], "risk": "Automation logic creates tasks in Supabase; changes here affect daily pipeline execution" },
     { "file": "api/tasks.ts", "purpose": "Task CRUD: GET (list with contact+rep name joins), POST (create), PATCH (update/toggle complete)", "actions": ["GET /api/tasks", "POST /api/tasks", "PATCH /api/tasks"], "note": "Created because browser Supabase client is broken — Tasks.tsx must use this endpoint" },
     { "file": "api/contacts.ts", "purpose": "Contact identity resolution, list, get by id, migrate leads", "actions": ["list", "get", "resolve", "migrate"] },
@@ -98,6 +100,9 @@ parseable by AI tools and harness systems.
     { "file": "supabase/email_schema.sql", "purpose": "Email and app_settings schema" }
   ],
   "configuration": [
+    { "file": "tests/recovery-email.test.ts", "purpose": "Actual reset initiation handler tests: owner/manager role checks, trusted fragment link generation, and sanitized delivery failures" },
+    { "file": "tests/recovery-clean.test.ts", "purpose": "Actual recovery completion handler tests: one-time token verification, password update prerequisite, same-user active profile cleanup, sanitized failures, and session isolation" },
+    { "file": "tests/recovery-page.test.tsx", "purpose": "React DOM recovery form and public-route tests using jsdom; tests actual user interactions and fetch requests" },
     { "file": "package.json", "purpose": "NPM scripts, runtime dependencies, dev dependencies" },
     { "file": "vite.config.ts", "purpose": "Vite build configuration" },
     { "file": "tsconfig.json", "purpose": "TypeScript compiler configuration" },
@@ -121,6 +126,7 @@ parseable by AI tools and harness systems.
     { "file": "docs/context/DECISIONS.md", "purpose": "Append-only architectural/product decision log" }
   ],
   "tooling": [
+    { "name": "jsdom", "purpose": "Development-only DOM environment for behavioral recovery UI tests; no application runtime dependency" },
     { "name": "GitNexus", "purpose": "Codebase indexing and dependency tracing. Run npx gitnexus analyze after major changes.", "setupCommands": ["npx gitnexus analyze --skip-agents-md", "npx gitnexus setup"] },
     { "name": "Context7", "purpose": "Up-to-date library and API documentation for AI-assisted development", "setupCommands": ["npx ctx7 setup"] }
   ],

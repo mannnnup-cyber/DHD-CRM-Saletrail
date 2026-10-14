@@ -21,6 +21,7 @@ import Invoices from './pages/Invoices';
 import Settings from './pages/Settings';
 import Documentation from './pages/Documentation';
 import WhatsApp from './pages/WhatsApp';
+import Recovery from './pages/Recovery';
 import EmailInbox from './pages/EmailInbox';
 import Contacts from './pages/Contacts';
 import ContactProfile from './pages/ContactProfile';
@@ -367,11 +368,13 @@ const AppInner: React.FC = () => {
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <HashRouter>
-          <AppInner />
-        </HashRouter>
-      </AppProvider>
+      <HashRouter>
+        <Routes>
+          {/* Recovery has its own one-time credentials, independent of CRM login. */}
+          <Route path="/recovery" element={<Recovery />} />
+          <Route path="*" element={<AppProvider><AppInner /></AppProvider>} />
+        </Routes>
+      </HashRouter>
     </ErrorBoundary>
   );
 };

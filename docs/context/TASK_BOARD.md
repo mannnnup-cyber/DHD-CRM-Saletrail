@@ -210,6 +210,14 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 
 ---
 
+## Password recovery repair — 2026-10-13
+
+| Task | Owner | Status | Notes |
+| --- | --- | --- | --- |
+| Fix reset-link completion and prevent bearer-only flag cleanup | AI | Review | `WP-EMAIL-RECOVERY-IMPLEMENT`; 42 tests, type-check, build, independent QA/Security pass; deployed email/recovery UAT remains a release gate |
+| Verify real reset-email delivery and deployed recovery | Owner+AI | Planned | Dedicated test account; no real-user reset or test email sent during local implementation |
+| WhatsApp reconnection | Owner+AI | Blocked | On hold at owner request; server-management access still needed |
+
 ## Work Categories Legend
 
 - **Security** — auth, authorization, RLS, credentials, webhooks, user/customer data, privileged operations
