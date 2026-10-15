@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { projectStoredEmail, deduplicateEmails } from './email';
+import { projectStoredEmail, deduplicateEmails } from './email.js';
 
 const allowedRoles = ['owner', 'manager', 'sales_rep', 'rep'];
 const requestCounts = new Map<string, { since: number; count: number }>();

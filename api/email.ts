@@ -1,4 +1,4 @@
-import { authenticateEmail, listInbox } from '../src/lib/inbox/email-server';
+import { authenticateEmail, listInbox } from '../src/lib/inbox/email-server.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
