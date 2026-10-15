@@ -6,7 +6,8 @@ import {
   ChevronRight, CheckCircle, AlertCircle, Info, Layout,
   List, FileText
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { authHeaders } from '../lib/auth';
+import { useApp } from '../context/AppContext';
 
 interface DbEmail {
   id: string;
@@ -169,7 +170,7 @@ function mapDbEmail(db: DbEmail): Email {
   };
 }
 
-export default function EmailInbox() {
+function EmailInbox() {
   const [emails, setEmails]               = useState<Email[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [loading, setLoading]             = useState(true);
@@ -211,29 +212,20 @@ export default function EmailInbox() {
   const loadEmails = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/email?action=list');
+      const r = await emailFetch('/api/email?action=list');
       const data = await r.json();
-      if (data.tableError) setDbMissing(true);
+      if (!r.ok || !data.success) { setEmails([]); addToast(data.error || 'Email access denied.', 'error'); setLoading(false); return; }
       if (data.success && (data.emails || []).length > 0) {
         setDbMissing(false);
         setEmails((data.emails || []).map(mapDbEmail));
-      } else {
-        const cached = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
-        if (cached.length > 0) setEmails(cached.map(mapDbEmail));
-      }
-    } catch (e) {
-      console.error('Error loading emails:', e);
-      try {
-        const cached = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
-        if (cached.length > 0) setEmails(cached.map(mapDbEmail));
-      } catch { /* ignore */ }
-    }
+      } else { setEmails([]); }
+    } catch { setEmails([]); addToast('Unable to load stored emails.', 'error'); }
     setLoading(false);
-  }, []);
+  }, [addToast]);
 
   const loadStats = useCallback(async () => {
     try {
-      const r = await fetch('/api/email?action=stats');
+      const r = await emailFetch('/api/email?action=stats');
       const data = await r.json();
       if (data.success) setStats(data.stats);
     } catch {}
@@ -241,7 +233,7 @@ export default function EmailInbox() {
 
   const loadTemplates = useCallback(async () => {
     try {
-      const r = await fetch('/api/email?action=templates');
+      const r = await emailFetch('/api/email?action=templates');
       const data = await r.json();
       if (data.success) setTemplates(data.templates || []);
     } catch {}
@@ -266,18 +258,7 @@ export default function EmailInbox() {
   }, []);
 
   // ── Real-time new emails ───────────────────────────────────────────────────
-  useEffect(() => {
-    if (!supabase || typeof supabase.channel !== 'function') return;
-    const ch = supabase.channel('emails_rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'emails' }, (payload: any) => {
-        const email = mapDbEmail(payload.new as DbEmail);
-        setEmails(prev => prev.find(e => e.id === email.id) ? prev : [email, ...prev]);
-        addToast(`New email from ${email.fromName}: ${email.subject}`, 'info');
-        loadStats();
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [addToast, loadStats]);
+
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const doSync = async (silent = false) => {
@@ -291,21 +272,13 @@ export default function EmailInbox() {
         storedSettings = raw ? JSON.parse(raw) : {};
       } catch { /* ignore */ }
 
-      const r = await fetch('/api/email?action=sync', {
+      const r = await emailFetch('/api/email?action=sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: storedSettings })
       });
       const data = await r.json();
       if (data.success) {
-        if (data.emails && data.emails.length > 0) {
-          try {
-            const existing = JSON.parse(localStorage.getItem('dhd_cached_emails') || '[]');
-            const existingIds = new Set(existing.map((e: any) => e.message_id));
-            const fresh = data.emails.filter((e: any) => !existingIds.has(e.message_id));
-            localStorage.setItem('dhd_cached_emails', JSON.stringify([...fresh, ...existing].slice(0, 200)));
-          } catch { /* ignore */ }
-        }
         localStorage.setItem('dhd_last_sync', String(Date.now()));
         setLastSynced(new Date());
         if (!silent || data.synced > 0) {
@@ -330,7 +303,7 @@ export default function EmailInbox() {
   const importDemoEmails = async () => {
     setLoading(true);
     try {
-      await fetch('/api/email?action=import', {
+      await emailFetch('/api/email?action=import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emails: DEMO_EMAILS })
@@ -349,7 +322,7 @@ export default function EmailInbox() {
     if (!selectedEmail) return;
     setAnalyzing(emailId);
     try {
-      const r = await fetch('/api/email?action=aiSuggest', {
+      const r = await emailFetch('/api/email?action=aiSuggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -382,7 +355,7 @@ export default function EmailInbox() {
       const payload: any = { to: composeData.to, subject: composeData.subject, body: composeData.body };
       if (composeData.cc)  payload.cc  = composeData.cc;
       if (composeData.bcc) payload.bcc = composeData.bcc;
-      const r = await fetch('/api/email?action=send', {
+      const r = await emailFetch('/api/email?action=send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       const data = await r.json();
@@ -404,7 +377,7 @@ export default function EmailInbox() {
     if (!selectedEmail || !replyBody.trim()) return;
     setSending(true);
     try {
-      const r = await fetch('/api/email?action=reply', {
+      const r = await emailFetch('/api/email?action=reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ threadId: selectedEmail.threadId, replyBody })
       });
@@ -424,20 +397,20 @@ export default function EmailInbox() {
   };
 
   const markRead = async (emailId: string) => {
-    await fetch(`/api/email?action=markRead&emailId=${emailId}`);
+    await emailFetch(`/api/email?action=markRead&emailId=${emailId}`, { method: 'PATCH' });
     setEmails(prev => prev.map(e => e.id === emailId ? { ...e, read: true } : e));
     if (selectedEmail?.id === emailId) setSelectedEmail(prev => prev ? { ...prev, read: true } : null);
   };
 
   const toggleStar = async (email: Email) => {
-    await fetch(`/api/email?action=markStarred&emailId=${email.id}&starred=${!email.starred}`);
+    await emailFetch(`/api/email?action=markStarred&emailId=${email.id}&starred=${!email.starred}`, { method: 'PATCH' });
     setEmails(prev => prev.map(e => e.id === email.id ? { ...e, starred: !e.starred } : e));
     if (selectedEmail?.id === email.id) setSelectedEmail(prev => prev ? { ...prev, starred: !prev.starred } : null);
   };
 
   const deleteEmail = (emailId: string) => {
     askConfirm('Delete this email? This cannot be undone.', async () => {
-      await fetch(`/api/email?action=delete&emailId=${emailId}`);
+      await emailFetch(`/api/email?action=delete&emailId=${emailId}`, { method: 'DELETE' });
       setEmails(prev => prev.filter(e => e.id !== emailId));
       if (selectedEmail?.id === emailId) setSelectedEmail(null);
       loadStats();
@@ -447,7 +420,7 @@ export default function EmailInbox() {
 
   const convertToLead = async (email: Email) => {
     askConfirm(`Convert email from ${email.fromName} to a CRM lead?`, async () => {
-      const r = await fetch(`/api/email?action=convertToLead&emailId=${email.id}`);
+      const r = await emailFetch(`/api/email?action=convertToLead&emailId=${email.id}`, { method: 'POST' });
       const data = await r.json();
       if (data.success) {
         setEmails(prev => prev.map(e => e.id === email.id
@@ -473,7 +446,7 @@ export default function EmailInbox() {
   const applyTemplate = async (templateId: string) => {
     if (!templateId) return;
     try {
-      const r = await fetch('/api/email?action=useTemplate', {
+      const r = await emailFetch('/api/email?action=useTemplate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ templateId, variables: {} })
       });
@@ -1088,4 +1061,14 @@ export default function EmailInbox() {
       )}
     </div>
   );
+}
+
+
+function emailFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } });
+}
+export default function EmailAccessBoundary() {
+  const { state } = useApp();
+  if (!['owner', 'manager'].includes(state.user?.role || '')) return <div role="alert" className="p-8 text-white">Email management requires an owner or manager. <a href="/#/inbox" className="underline">Open Unified Inbox</a> for assigned messages.</div>;
+  return <EmailInbox />;
 }

@@ -1,5 +1,12 @@
 # Milestones
 
+## Email-first Unified Inbox — 2026-10-14
+
+Status: Review. Read-only saved-email Inbox and server-side access controls are
+implemented. Live schema metadata was verified without reading customer messages.
+Independent QA/security and release verification remain gates. This is an email
+slice, not the complete multi-channel Inbox or AI communication phase.
+
 ## Phase 0: AI Workflow Foundation
 
 Status: Done

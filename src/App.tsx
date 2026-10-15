@@ -23,6 +23,7 @@ import Documentation from './pages/Documentation';
 import WhatsApp from './pages/WhatsApp';
 import Recovery from './pages/Recovery';
 import EmailInbox from './pages/EmailInbox';
+import UnifiedInbox from './pages/UnifiedInbox';
 import Contacts from './pages/Contacts';
 import ContactProfile from './pages/ContactProfile';
 import SocialMedia from './pages/SocialMedia';
@@ -346,6 +347,7 @@ const AppInner: React.FC = () => {
             <Route path="/docs" element={<Documentation />} />
             <Route path="/whatsapp" element={<WhatsApp />} />
             <Route path="/email" element={<EmailInbox />} />
+            <Route path="/inbox" element={<UnifiedInbox />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactProfile />} />
             <Route path="/social" element={<SocialMedia />} />

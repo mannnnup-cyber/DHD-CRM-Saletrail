@@ -15,6 +15,24 @@
 
 ## Open Security Items
 
+### Email-first Inbox scoped controls — 2026-10-14
+
+New Inbox access requires a fresh verified JWT and active canonical profile;
+rep identity additionally requires the exact active legacy UUID and verified
+email agreement. Persisted contact assignment filters the database query before
+pagination; unassigned/unresolved/foreign messages are denied to reps. All legacy
+email actions require owner/manager, closing the old read and mutation bypass.
+New privileged paths require SUPABASE_SECRET_KEY. Response projection omits HTML,
+AI analysis and arbitrary metadata; plain rendering prevents email HTML execution
+and remote image loads. Cache fallback/realtime browser reads are removed.
+
+Live metadata confirmed relevant FK columns and RLS-enabled tables with no
+policies. No policies or credentials were changed. Best-effort warm-process
+rate limiting and bounded requests are not distributed enforcement. No global
+CSP is introduced; this work does not clear every historical Gate B requirement
+or the deferred legacy-key P0. Independent review and deployed proof belong to
+WP-INBOX-EMAIL-MVP; other channels/AI/autonomous actions remain outside scope.
+
 ### Recovery repair on implementation branch (2026-10-13)
 
 The bearer-only forced-password-change cleanup endpoint is replaced by verified
