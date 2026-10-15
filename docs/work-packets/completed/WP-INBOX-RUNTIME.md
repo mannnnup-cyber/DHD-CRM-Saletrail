@@ -1,6 +1,6 @@
 # WP-INBOX-RUNTIME — emitted ESM import repair
 
-Status: Review. Branch fix/inbox-runtime from production bec4efd.
+Status: Done. Branch fix/inbox-runtime from production bec4efd.
 
 Production /api/email?action=inbox returned HTTP500 text/plain with
 FUNCTION_INVOCATION_FAILED before the JSON auth guard. /api/users returned its
@@ -31,3 +31,23 @@ Local verification: all 161 tests across 9 files passed, including the native
 Node emitted-module regression; npm run type-check passed. Parent's independent
 native emitted-handler probe also returned 401 JSON with Cache-Control no-store.
 Independent QA/Security and deployed invocation proof are recorded by the lead.
+
+## Release closeout — 2026-10-15
+
+Status: Done. Main PR #7 merged bec4efd; runtime PR #8 merged 8ce7639.
+Native ESM import repair fcc3218 passed independent QA/security, 161 tests across
+9 files, type-check and CI build. Production deployment 7092521728 succeeded.
+Actual live unauthenticated requests return 401 JSON instead of startup 500.
+Hosted synthetic normal-rep verification passed: fresh JWT, missing identity
+mapping denied, five owned messages in three pages including equal microsecond
+and null timestamps, foreign/unresolved messages hidden, verified contacts,
+bounded plaintext/truncation, invalid input 400, legacy reads/mutations 403,
+inactive profile 403. Exact fixture cleanup and absence checks passed.
+The DB automatically creates a legacy users mapping on provisioning; only the
+synthetic mapping was removed/recreated to exercise denial. No owner/manager
+impersonation, customer records copied or outbound messages. Previously created
+user setup test account and Kayci accounts were untouched. Browser component
+checks used synthetic context/API, not a live owner inbox. Email-only/read-only;
+WhatsApp on hold, social/replies future. Process-local quotas, global CSP and
+deferred credential P0 limitations remain. This closeout supersedes earlier
+pending review/release statements below.

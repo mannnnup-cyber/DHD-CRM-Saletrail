@@ -2,6 +2,23 @@
 
 Entries are newest first. Each entry covers a development session or sprint.
 
+## 2026-10-15 — Inbox deployed runtime repair and verification
+
+- PR #7 (bec4efd) deployed the email-only read-only Inbox. PR #8 (8ce7639)
+  fixes native ESM helper import resolution; an emitted-handler regression
+  verifies missing-token 401 JSON and no-store without network access.
+- Independent QA/security passed; all 161 tests across 9 files, type-check and
+  CI build passed. Production deployment and live unauthenticated denial passed.
+- Hosted synthetic normal-rep checks passed: missing mapping denied, five owned
+  emails across three pages including equal microsecond/null timestamps, foreign
+  and unresolved rows hidden, bounded plaintext/truncation, invalid inputs and
+  legacy mutations denied, inactive account denied. Exact fixtures were removed
+  and absence verified. No customer records copied or provider messages sent.
+- Existing user-created setup account and Kayci accounts remain untouched.
+  WhatsApp remains on hold; social/replies and deferred credential work remain.
+
+---
+
 ## 2026-10-14 — Email-first Unified Inbox implementation
 
 - Added read-only Inbox with saved-message selection, contact links, date/UUID
