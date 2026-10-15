@@ -2,10 +2,11 @@
 
 ## Email-first Unified Inbox — 2026-10-14
 
-Status: Review. Read-only saved-email Inbox and server-side access controls are
-implemented. Live schema metadata was verified without reading customer messages.
-Independent QA/security and release verification remain gates. This is an email
-slice, not the complete multi-channel Inbox or AI communication phase.
+Status: Done (email read-only slice). PR #7 and runtime repair PR #8 are deployed.
+Independent QA/security passed; 161 tests, type-check and CI build passed.
+Hosted synthetic verification on 2026-10-15 proved assignment isolation, exact
+pagination, plaintext bounds and access denials; all test fixtures were removed.
+This is not the complete multi-channel Inbox or AI communication phase.
 
 ## Phase 0: AI Workflow Foundation
 

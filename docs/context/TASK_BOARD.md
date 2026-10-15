@@ -165,10 +165,12 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 
 ## Product Development
 
-Unified Inbox email MVP (2026-10-14): Review — read-only email view, bounded
+Unified Inbox email MVP (2026-10-15): Done — read-only email view, bounded
 projection, active caller/verified contact-assignment enforcement, and legacy
-email bypass closure implemented. Independent reviews and deployed verification
-pending. WhatsApp/social/replies remain outside this release.
+email bypass closure deployed in PR #7 plus runtime repair PR #8. Independent
+QA/security passed; 161 tests/type-check/CI build passed. Hosted synthetic
+assignment, pagination, input/access denial and cleanup verification passed.
+WhatsApp/social/replies remain outside this release.
 
 | Task | Owner | Status | Notes |
 | --- | --- | --- | --- |

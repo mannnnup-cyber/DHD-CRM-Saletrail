@@ -1,6 +1,6 @@
 # WP-INBOX-EMAIL-MVP — 2026-10-14
 
-Status: In Progress. Branch feat/email-inbox-mvp from origin/master2903442.
+Status: Done. Branch feat/email-inbox-mvp from origin/master2903442.
 Owner authorized plan and implementation of email-only read-only Unified Inbox.
 
 ## Concrete plan
@@ -87,3 +87,23 @@ rate limiter is defense in depth and does not claim distributed protection.
   detect_changes command/tool exists here; reviewed git diff/status and
   diff-check verify commit scope. Only generated GitNexus skill EOL artifacts
   were restored; all parent context documentation is preserved.
+
+## Release closeout — 2026-10-15
+
+Status: Done. Main PR #7 merged bec4efd; runtime PR #8 merged 8ce7639.
+Native ESM import repair fcc3218 passed independent QA/security, 161 tests across
+9 files, type-check and CI build. Production deployment 7092521728 succeeded.
+Actual live unauthenticated requests return 401 JSON instead of startup 500.
+Hosted synthetic normal-rep verification passed: fresh JWT, missing identity
+mapping denied, five owned messages in three pages including equal microsecond
+and null timestamps, foreign/unresolved messages hidden, verified contacts,
+bounded plaintext/truncation, invalid input 400, legacy reads/mutations 403,
+inactive profile 403. Exact fixture cleanup and absence checks passed.
+The DB automatically creates a legacy users mapping on provisioning; only the
+synthetic mapping was removed/recreated to exercise denial. No owner/manager
+impersonation, customer records copied or outbound messages. Previously created
+user setup test account and Kayci accounts were untouched. Browser component
+checks used synthetic context/API, not a live owner inbox. Email-only/read-only;
+WhatsApp on hold, social/replies future. Process-local quotas, global CSP and
+deferred credential P0 limitations remain. This closeout supersedes earlier
+pending review/release statements below.

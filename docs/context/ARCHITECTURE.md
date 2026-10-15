@@ -41,7 +41,7 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 
 ## Frontend
 
-### Email-first Unified Inbox (implementation, 2026-10-14)
+### Email-first Unified Inbox (deployed and verified, 2026-10-15)
 
 `/#/inbox` reads `/api/email?action=inbox` through authenticated fetch calls.
 The server verifies a fresh JWT and active canonical profile using modern secret
@@ -63,6 +63,13 @@ secret; existing unrelated credential compatibility is unchanged. A bounded
 warm-process rate limiter provides best-effort protection, not a distributed
 quota. No global CSP, RLS policy, migration, credential rotation, or provider
 activation is performed by this slice. Deferred credential exposure remains open.
+
+PR #8 fixes native ESM startup by using emitted `.js` helper import specifiers.
+A native emitted-handler regression catches resolution failures missed by the
+bundler. Production merge 8ce7639 passed hosted synthetic rep assignment and
+pagination checks. Auth provisioning automatically creates a legacy users row;
+the verification harness removed only its own synthetic mapping to test denial.
+UI browser checks used synthetic component data, not a private owner inbox.
 
 ### Team account setup (deployed and verified, 2026-10-14)
 
