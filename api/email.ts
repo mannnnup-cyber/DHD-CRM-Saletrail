@@ -1,3 +1,4 @@
+import { authenticateEmail, listInbox } from '../src/lib/inbox/email-server';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
@@ -324,14 +325,26 @@ async function getPredictiveScore(email: { subject: string; body: string; from: 
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  const action = req.query.action as string;
+  const action = req.query.action;
+  if (typeof action !== 'string' || action.length > 30) return res.status(400).json({ success: false, error: 'Invalid email action.' });
+  const caller = await authenticateEmail(req, res);
+  if (!caller) return;
+  if (action === 'inbox') return listInbox(req, res, caller);
+  // Legacy management is privileged; reps use only the scoped plaintext Inbox.
+  if (!['owner', 'manager'].includes(caller.role)) return res.status(403).json({ success: false, error: 'Email management requires an owner or manager.' });
+  const methods: Record<string, string> = {
+    list: 'GET', threads: 'GET', thread: 'GET', stats: 'GET', templates: 'GET', predictive: 'GET',
+    sync: 'POST', analyze: 'POST', send: 'POST', reply: 'POST', convertToLead: 'POST', aiSuggest: 'POST', useTemplate: 'POST', import: 'POST',
+    markRead: 'PATCH', markStarred: 'PATCH', delete: 'DELETE'
+  };
+  if (methods[action] && req.method !== methods[action]) return res.status(405).json({ success: false, error: `${methods[action]} required.` });
 
   try {
     switch (action) {
@@ -1189,7 +1202,6 @@ Return ONLY the email body text — no subject line, no "Here is a draft:" pream
         });
     }
   } catch (err: any) {
-    console.error('Email API Error:', err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: 'Email operation could not be completed.' });
   }
 }

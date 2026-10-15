@@ -27,6 +27,11 @@ workflows.
 
 ## Current Application Capabilities
 
+The email-first Unified Inbox adds a read-only view of saved messages and their
+verified contacts. Owners/managers can view the shared store; reps see only
+messages linked to their verified assigned contacts. Missing legacy identity
+agreement denies access. WhatsApp/social and replies are outside this slice.
+
 - Dashboard analytics and recent activity.
 - Lead import and CRM contact management.
 - Sales pipeline tracking.

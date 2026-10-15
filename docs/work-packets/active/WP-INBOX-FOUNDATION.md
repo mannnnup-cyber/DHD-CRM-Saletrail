@@ -1,4 +1,13 @@
 # WP-INBOX-FOUNDATION — Canonical Interaction/Event Foundation
+
+## Subsequent implementation authorization — 2026-10-14
+
+The owner subsequently requested planning and implementation of the email-first
+read-only Inbox. WP-INBOX-EMAIL-MVP owns that isolated implementation and its
+review/release evidence. Its live schema/identity checks supersede the earlier
+source-only unknowns for this slice; historical planning authorization below does
+not cancel the owner's later request. Other channels, migrations, credential
+rotation and broader AI capabilities remain outside that implementation scope.
 ## Current review — 2026-10-14 (supersedes historical baseline and blanket dependencies below)
 
 Status: Done (plan/baseline review). Independent security review passed 2026-10-14; parent reviewed scope. This authorization covers plan/baseline refresh, not live Inbox implementation or deployment.

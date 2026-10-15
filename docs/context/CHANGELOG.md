@@ -2,6 +2,18 @@
 
 Entries are newest first. Each entry covers a development session or sprint.
 
+## 2026-10-14 — Email-first Unified Inbox implementation
+
+- Added read-only Inbox with saved-message selection, contact links, date/UUID
+  pagination and explicit unavailable-channel states.
+- New API projection uses bounded plaintext; no email HTML/remote images, sends,
+  sync, AI, contact creation or read mutations are initiated by the new page.
+- Email API verifies JWT/active profile; reps require verified legacy identity and
+  persisted contact ownership. All old management actions require owner/manager.
+- Removed old browser email cache/realtime fallback and authenticated its callers.
+- No schema/RLS/credential/provider changes; independent reviews and deployment
+  evidence are tracked in WP-INBOX-EMAIL-MVP.
+
 ---
 
 ## 2026-10-13 — Recovery email delivery follow-up

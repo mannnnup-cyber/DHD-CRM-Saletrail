@@ -41,6 +41,29 @@ fetch calls. `DataContext.tsx` is the exception — it wraps every Supabase call
 
 ## Frontend
 
+### Email-first Unified Inbox (implementation, 2026-10-14)
+
+`/#/inbox` reads `/api/email?action=inbox` through authenticated fetch calls.
+The server verifies a fresh JWT and active canonical profile using modern secret
+configuration. Rep access additionally requires an active legacy users row with
+the exact Auth UUID and matching verified email; contact ownership is applied
+through the persisted email/contact join before pagination. No email/name-based
+identity translation is attempted. Owner/manager roles may read the shared store.
+
+Only bounded plaintext fields and verified contact links are returned. The UI
+does not render email HTML, load remote images, mark read, sync, send, or invoke AI.
+Date/UUID keyset pagination retains database timestamp precision and has an
+explicit null-date phase. Store/row UUID identity prevents repeated projection
+results; the existing unique message_id constraint is not cross-mailbox evidence.
+
+All legacy email actions now require an active owner/manager and use explicit
+mutation methods. Their frontend sends auth headers; browser realtime and local
+email cache fallback are removed. New Inbox auth/projection requires the modern
+secret; existing unrelated credential compatibility is unchanged. A bounded
+warm-process rate limiter provides best-effort protection, not a distributed
+quota. No global CSP, RLS policy, migration, credential rotation, or provider
+activation is performed by this slice. Deferred credential exposure remains open.
+
 ### Team account setup (deployed and verified, 2026-10-14)
 
 Invitation/reactivation provisions a passwordless Auth identity and sends a

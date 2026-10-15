@@ -165,6 +165,11 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 
 ## Product Development
 
+Unified Inbox email MVP (2026-10-14): Review — read-only email view, bounded
+projection, active caller/verified contact-assignment enforcement, and legacy
+email bypass closure implemented. Independent reviews and deployed verification
+pending. WhatsApp/social/replies remain outside this release.
+
 | Task | Owner | Status | Notes |
 | --- | --- | --- | --- |
 | Unified Inbox foundation baseline and next slice | AI | Done | 2026-10-14: existing pure contract/helpers reviewed at 9502f46; synthetic email projection acceptance criteria in WP-INBOX-FOUNDATION. Live activation blocked by caller/data authorization and privacy/schema gates; WhatsApp on hold. No product code added by this review. |
