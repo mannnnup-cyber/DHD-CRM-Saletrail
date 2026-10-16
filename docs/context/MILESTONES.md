@@ -1,5 +1,14 @@
 # Milestones
 
+## BrightBean Social Inbox — implementation deployed
+
+Owner/manager social message history, account filter, threads, drafts and explicit
+send controls deployed in PR #10 (4595f07). Independent QA/security, 189 tests,
+type-check, build and hosted authentication/access-denial checks passed.
+Fresh incoming delivery, eligible real replies and the live owner-browser view
+remain acceptance follow-ups. Available history is old Facebook DMs; YouTube
+reports error. This does not complete every channel or verify exactly-once sends.
+
 ## Email-first Unified Inbox — 2026-10-14
 
 Status: Done (email read-only slice). PR #7 and runtime repair PR #8 are deployed.

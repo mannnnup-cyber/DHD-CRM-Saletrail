@@ -2,6 +2,24 @@
 
 Entries are newest first. Each entry covers a development session or sprint.
 
+## BrightBean social Inbox release
+
+- PR #10 (4595f07) adds owner/manager social history, account filter, pagination,
+  threads and explicit draft/edit/discard/send. All social API actions now verify
+  active CRM identity, modern secret, provider permissions and account scope.
+- Uncertain send requires refresh and informed acknowledgement before retry;
+  uncertain draft creation retains retry identity with explicit recovery. No
+  exactly-once external delivery guarantee. Empty platform receipts stay unconfirmed.
+- All 189 tests across 12 files, type-check/build and independent QA/security
+  passed. Actual-component browser checks used synthetic data; hosted startup,
+  anonymous/rep/inactive denials and exact temporary identity cleanup passed.
+- Provider history reads work; latest sampled page contains old Facebook DMs and
+  no eligible reply windows. Facebook/Instagram report connected, YouTube error.
+  Fresh incoming/reply delivery and live owner-browser view remain unverified.
+  No real customer draft/send, RLS/migration/credential/WhatsApp change performed.
+
+---
+
 ## 2026-10-15 — Inbox deployed runtime repair and verification
 
 - PR #7 (bec4efd) deployed the email-only read-only Inbox. PR #8 (8ce7639)

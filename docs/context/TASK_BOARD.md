@@ -159,7 +159,7 @@ Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.
 | Fix pre-existing: WooCommerce REST 403 | Team | Pending | Store rejects stored consumer key |
 | Fix pre-existing: Resend outbound (domain verification?) | Owner | Pending | |
 | Disable evolution_user DB role | Owner | Pending | Role exists with publicly-known password (was in docker-compose.yml) |
-| BrightBean `/accounts/` HTTP 500 | Owner+AI | Pending | Upstream regression, unconfirmed (since 2026-09-07) |
+| BrightBean `/accounts/` HTTP 500 | Owner+AI | Done | Read-only check now returns 200; YouTube connection remains separate |
 | YouTube BrightBean token expired | Owner | Pending | Reconnect in Studio |
 | Automation cron not running | AI | Pending | CRON_SECRET unset + header mismatch |
 
@@ -201,7 +201,7 @@ WhatsApp/social/replies remain outside this release.
 | --- | --- | --- | --- |
 | WooCommerce REST 403 fix | Team | Pending | Store rejects stored consumer key |
 | Resend outbound email fix | Owner | Pending | Domain verification? |
-| BrightBean `/accounts/` HTTP 500 | Owner+AI | Pending | Upstream regression |
+| BrightBean `/accounts/` HTTP 500 | Owner+AI | Done | Endpoint verified 200; social message history accessible |
 | BrightBean YouTube OAuth reconnect | Owner | Pending | Token expired |
 | Evolution API webhook signature checks | AI | Pending | Currently fail open |
 | WooCommerce webhook secret (`WC_WEBHOOK_SECRET`) | Owner+AI | Pending | No active webhook today |
@@ -246,7 +246,9 @@ User-created test account retained. See completed WP-EMAIL-ONBOARDING.
 Implementation on feat/brightbean-inbox adds owner/manager list/detail, account
 filter, provider cursor pagination, drafts, explicit sends and uncertain retry
 reconciliation. All social actions now require active canonical authentication.
-Independent review/release verification remains pending until the work packet is
-closed. Real first-page history is available, but fresh inbound messages and live
+PR #10 is deployed as 4595f07. Independent QA/security, all 189 tests, type-check,
+build and hosted startup/access-denial checks passed; temporary identity cleanup
+was verified. Live owner-browser view remains pending. Real first-page history
+is available, but fresh inbound messages and live
 customer reply delivery were not exercised. Gmail app-password update remains
 an owner blocker; WhatsApp remains on hold. No provider/customer mutation tests.
