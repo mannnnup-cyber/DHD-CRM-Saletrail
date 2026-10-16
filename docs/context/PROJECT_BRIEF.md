@@ -70,3 +70,10 @@ deployed recovery remain release verification requirements.
 - Moving runtime dependencies.
 - Storing private credentials in documentation.
 - Replacing existing app documentation.
+
+Social Inbox (implementation branch, 2026-10-15): owners/managers can read the
+configured BrightBean account scope, review reply drafts and explicitly send
+eligible replies. Reps remain denied pending a verified assignment design.
+Provider history may be old and reply windows may have expired; live inbound and
+reply delivery are separate release checks. WhatsApp remains unavailable and
+email collection still requires the owner's mailbox app-password repair.

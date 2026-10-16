@@ -240,3 +240,13 @@ User-created test account retained. See completed WP-EMAIL-ONBOARDING.
 - **UX/Brand** — visual design, branding, usability, accessibility
 - **Integrations** — external service connections and their fixes
 - **Technical Debt** — cleanup, migration, refactoring, infrastructure
+
+## BrightBean Social Inbox — 2026-10-15
+
+Implementation on feat/brightbean-inbox adds owner/manager list/detail, account
+filter, provider cursor pagination, drafts, explicit sends and uncertain retry
+reconciliation. All social actions now require active canonical authentication.
+Independent review/release verification remains pending until the work packet is
+closed. Real first-page history is available, but fresh inbound messages and live
+customer reply delivery were not exercised. Gmail app-password update remains
+an owner blocker; WhatsApp remains on hold. No provider/customer mutation tests.
