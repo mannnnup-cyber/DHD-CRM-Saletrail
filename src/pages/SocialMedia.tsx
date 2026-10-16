@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { authHeaders } from '../lib/auth';
 import {
   Share2, RefreshCw, ExternalLink, AlertCircle, CheckCircle2, Loader2,
   Instagram, Facebook, Linkedin, Youtube, ChevronDown, ChevronUp,
@@ -84,7 +85,7 @@ const AccountCard: React.FC<{ account: SocialAccount; canAnalytics: boolean }> =
   const loadAnalytics = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/social?action=analytics&account_id=${account.id}&days=30`);
+      const res = await fetch(`/api/social?action=analytics&account_id=${account.id}&days=30`, { headers: authHeaders(), cache: 'no-store' });
       const json = await res.json();
       if (json.success && json.analytics) {
         if (json.analytics.analytics_available === false) {
@@ -172,7 +173,7 @@ const SocialMedia: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/social?action=status');
+      const res = await fetch('/api/social?action=status', { headers: authHeaders(), cache: 'no-store' });
       const json: StatusResponse = await res.json();
       if (!json.success) throw new Error(json.error || 'Failed to load social media status');
       setStatus(json);

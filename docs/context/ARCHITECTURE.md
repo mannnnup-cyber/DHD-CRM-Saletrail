@@ -203,11 +203,10 @@ hosts are not used for reset links. Delivery errors remain sanitized.
 
 - **BrightBean Studio** (https://studio.brightbean.xyz) — free hosted, open-source
   (AGPL-3.0) social media management platform. CRM proxies its REST API via `api/social.ts`.
-- API key lives in `app_settings` (key `BRIGHTBEAN_API_KEY`, password type,
-  masked in Settings) with `process.env.BRIGHTBEAN_API_KEY` as fallback —
-  DB wins over env, same pattern as Evolution API settings.
-- Known issue: BrightBean `/accounts/` returns HTTP 500 from studio.brightbean.xyz
-  since 2026-09-07 (key accepted; `/me/` works). YouTube token still needs owner reconnect.
+- API key resolves from server `BRIGHTBEAN_API_KEY` environment first, then the
+  password-masked `app_settings` value. Credentials are request-scoped.
+- BrightBean `/accounts/` returned 200 on 2026-10-15; the historical HTTP 500 no
+  longer reproduces. YouTube reports a connection error requiring owner review.
 
 ## Integrations
 
@@ -217,14 +216,14 @@ hosts are not used for reset links. Delivery errors remain sanitized.
 | Green API | WhatsApp send/receive (primary) | Active |
 | Evolution API | WhatsApp send/receive (secondary, Railway) | Active (Docker) |
 | WooCommerce | Order/customer sync | Broken — REST 403 |
-| IMAP | Email inbox sync | Active |
-| BrightBean Studio | Social media scheduling/publishing | Partial — `/accounts/` 500 |
+| IMAP | Email inbox sync | Gmail app-password update required |
+| BrightBean Studio | Social history and draft/reply integration | Accounts 200; historical inbox accessible; fresh inbound unverified; YouTube connection error |
 | Vercel | Deployment, serverless API runtime, daily cron | Active |
 | Android Companion App | GSM call sync from rep devices | Active |
 | GitNexus | Codebase indexing for AI-assisted development | Active |
 | Context7 | Up-to-date framework/library docs | Active |
 | OpenAI / Anthropic Claude | AI enrichment and email analysis | Active |
-| Resend | Outbound email | Broken — domain verification? |
+| Resend | Outbound email | Recovery/setup sender verified; other global outbound unverified |
 
 ## Environment Variables
 
@@ -264,3 +263,35 @@ AI agents must not code from a blank prompt. Each implementation task must start
 reading the context docs, checking the file map, identifying the blast radius via
 GitNexus impact analysis, verifying current library usage through Context7 or official
 docs when needed, making the smallest safe change, then updating `docs/context/`.
+
+### BrightBean social Inbox (implementation branch, 2026-10-15)
+
+Unified Inbox adds an owner/manager Social tab with provider list/detail, account
+filter and cursor pages, saved drafts, explicit send and discard. Reps are denied
+because no verified provider-to-CRM assignment exists. Every social API action,
+including existing status/accounts/analytics, verifies a fresh JWT and active
+canonical profile using request-scoped SUPABASE_SECRET_KEY clients. Provider keys
+resolve env first, saved setting fallback. Requests stay on the configured HTTPS
+/api/v1 origin with redirects rejected, bounded responses/inputs and timeouts.
+Each operation refreshes provider permissions and workspace/account allowlist;
+mutations additionally read the current message/reply and sending checks current
+reply eligibility. No browser database calls or database/schema changes.
+
+Only bounded plaintext fields leave the proxy. Attachments, raw metadata, HTML
+rendering and tracking images are excluded. Manual refresh replaces polling.
+Provider-persisted creation claims reuse an actor/message/request identity and
+reject changed payloads. Draft creation never sends. Existing reply send uses the
+provider row lock/state protection; it is not an exactly-once platform guarantee.
+An uncertain send retains only a reply retry marker in sessionStorage, blocks
+edit/discard/send until thread refresh, then requires explicit platform checking
+before retry. Uncertain draft creation retains only its request identity; starting
+a different draft requires explicit reconciliation/review. Message bodies are not
+persisted in browser storage. Provider sent status without a platform receipt is
+shown as such, never claimed as confirmed delivery.
+
+Read-only hosted capability checks found usable inbox endpoints and three
+allowlisted accounts; the old accounts HTTP 500 no longer reproduces. Available
+first-page messages were historical Facebook DMs with expired reply windows.
+This does not prove fresh inbound ingestion or real reply delivery. No real
+customer draft/send was tested. Gmail mailbox app-password repair remains
+separate; this social feature does not repair the collector or reconnect OAuth.

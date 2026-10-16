@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { authHeaders } from '../lib/auth';
 import { useApp } from '../context/AppContext';
 import type { InboxEmail } from '../lib/inbox/email';
+import SocialInbox from '../components/SocialInbox';
 
 export default function UnifiedInbox() {
   const { state } = useApp();
+  const [channel, setChannel] = useState<'email' | 'social'>('email');
   const [items, setItems] = useState<InboxEmail[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -14,6 +16,7 @@ export default function UnifiedInbox() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   useEffect(() => {
+    if (channel !== 'email') return;
     const controller = new AbortController();
     setLoading(true); setError(''); setItems([]); setSelected(null); setNextCursor(null);
     const query = `/api/email?action=inbox&limit=25${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
@@ -26,14 +29,15 @@ export default function UnifiedInbox() {
       .catch(err => { if (!controller.signal.aborted) setError(err.message || 'Unable to load stored emails.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [cursor, refresh, state.user?.id]);
+  }, [cursor, refresh, state.user?.id, channel]);
   const message = items.find(item => item.id === selected);
   return <section className="p-4 lg:p-6 text-white" aria-label="Unified Inbox">
     <header className="flex justify-between items-start gap-4 mb-5">
-      <div><h1 className="text-2xl font-semibold">Unified Inbox</h1><p className="text-gray-400 mt-1">Stored email · Read only · Most recent first</p></div>
-      <button disabled={loading} onClick={() => setRefresh(value => value + 1)} className="bg-gray-800 rounded-lg px-4 py-2 disabled:opacity-50">Refresh</button>
+      <div><h1 className="text-2xl font-semibold">Unified Inbox</h1><p className="text-gray-400 mt-1">{channel === 'email' ? 'Stored email · Read only · Most recent first' : 'Social messages · Review drafts before sending'}</p></div>
+      {channel === 'email' && <button disabled={loading} onClick={() => setRefresh(value => value + 1)} className="bg-gray-800 rounded-lg px-4 py-2 disabled:opacity-50">Refresh</button>}
     </header>
-    <div className="flex gap-2 mb-5" aria-label="Channels"><span className="rounded-lg bg-amber-500 text-black px-3 py-2">Email</span><span className="rounded-lg bg-gray-800 text-gray-400 px-3 py-2">WhatsApp unavailable</span><span className="rounded-lg bg-gray-800 text-gray-400 px-3 py-2">Social unavailable</span></div>
+    <div className="flex gap-2 mb-5" aria-label="Channels"><button disabled={loading && channel === 'email'} aria-pressed={channel === 'email'} onClick={() => setChannel('email')} className={`rounded-lg px-3 py-2 ${channel === 'email' ? 'bg-amber-500 text-black' : 'bg-gray-800'}`}>Email</button><span className="rounded-lg bg-gray-800 text-gray-400 px-3 py-2">WhatsApp unavailable</span><button disabled={loading && channel === 'email'} aria-pressed={channel === 'social'} onClick={() => setChannel('social')} className={`rounded-lg px-3 py-2 ${channel === 'social' ? 'bg-amber-500 text-black' : 'bg-gray-800'}`}>Social</button></div>
+    {channel === 'social' ? (['owner', 'manager'].includes(state.user?.role || '') ? <SocialInbox key={state.user?.id} actorId={state.user?.id || ''} /> : <p role="alert">Social access requires an owner or manager. Provider assignments to CRM reps are not verified.</p>) : <>
     {loading ? <p role="status">Loading stored emails...</p> : error ? <p role="alert" className="text-red-400">{error}</p> : items.length === 0 ? <p role="status">No accessible stored emails on this page.</p> :
       <div className="grid md:grid-cols-[minmax(250px,1fr)_2fr] gap-4">
         <div className="space-y-2" aria-label="Email messages">{items.map(item => <button key={item.id} aria-pressed={selected === item.id} onClick={() => setSelected(item.id)} className={`block w-full text-left rounded-xl border p-4 ${selected === item.id ? 'border-amber-500 bg-gray-800' : 'border-gray-800 bg-gray-900'}`}>
@@ -50,5 +54,6 @@ export default function UnifiedInbox() {
       <button disabled={loading || history.length === 0} onClick={() => { const previous = history[history.length - 1]; setHistory(history.slice(0, -1)); setCursor(previous); }} className="bg-gray-800 rounded-lg px-4 py-2 disabled:opacity-40">Previous page</button>
       <button disabled={loading || !nextCursor} onClick={() => { setHistory([...history, cursor]); setCursor(nextCursor); }} className="bg-gray-800 rounded-lg px-4 py-2 disabled:opacity-40">Next page</button>
     </nav>
+    </>}
   </section>;
 }

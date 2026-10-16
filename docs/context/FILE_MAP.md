@@ -185,3 +185,20 @@ the fixed recovery OTP type. Delivery failure exposes pending status for retry.
 Update this file whenever routes, shared components, state shape, database tables,
 serverless API handlers, integrations, environment variables, or developer tooling change.
 Also update CHANGELOG.md with a summary of what changed and why.
+
+## Social Inbox implementation — 2026-10-15
+
+- src/components/SocialInbox.tsx: actual provider social list/detail, account
+  filter, cursor pages, explicit draft/send controls and uncertain retry recovery.
+- src/lib/inbox/social.ts: bounded plaintext message/reply/account contracts.
+- src/lib/inbox/social-server.ts: all social action auth, request-scoped keys,
+  fixed provider routes, permission/scope checks and safe reply lifecycle.
+- api/social.ts: native ESM-compatible authenticated server entrypoint.
+- src/pages/UnifiedInbox.tsx: Email/Social channel selection; owner/manager social.
+- src/pages/SocialMedia.tsx: bearer-authenticated existing analytics/status calls.
+- tests/social-api.test.ts, social-ui.test.tsx, social-runtime.test.ts: synthetic
+  actual-handler, actual-component and emitted native ESM verification.
+- Server configuration: SUPABASE_PROJECT_URL or SUPABASE_URL,
+  SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SECRET_KEY;
+  BRIGHTBEAN_API_KEY env first then app_settings fallback; BRIGHTBEAN_API_URL
+  trusted HTTPS origin at /api/v1 (defaults to hosted BrightBean).
