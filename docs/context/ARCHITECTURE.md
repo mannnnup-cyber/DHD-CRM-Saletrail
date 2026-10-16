@@ -264,7 +264,13 @@ reading the context docs, checking the file map, identifying the blast radius vi
 GitNexus impact analysis, verifying current library usage through Context7 or official
 docs when needed, making the smallest safe change, then updating `docs/context/`.
 
-### BrightBean social Inbox (implementation branch, 2026-10-15)
+### BrightBean social Inbox (deployed, 2026-10-15)
+
+PR #10 merged as 4595f07 and production deployment succeeded. All 189 tests,
+type-check, build and independent QA/security passed. Hosted startup, anonymous,
+normal-rep read/mutation and inactive-account denials passed; temporary test
+identity absence was verified. Live owner-browser reads and fresh inbound/reply
+delivery remain unverified; available provider history is not proof of freshness.
 
 Unified Inbox adds an owner/manager Social tab with provider list/detail, account
 filter and cursor pages, saved drafts, explicit send and discard. Reps are denied

@@ -1,6 +1,6 @@
 # WP-SOCIAL-INBOX — BrightBean social messages and controlled replies
 
-Status: In Progress. Owner authorized plan and implementation 2026-10-15.
+Status: Done (implementation deployed; operational acceptance follow-ups below). Owner authorized plan and implementation 2026-10-15.
 Baseline origin/master 91399c14a8c5a821e9f582e54b09935ffd56c1a4.
 Branch feat/brightbean-inbox; isolated worktree work/social-inbox.
 Implementation owner social_implementation; independent QA/security required.
@@ -87,3 +87,21 @@ but impact cannot resolve duplicate handler UID reliably; plain handler/load
 match unrelated files. This CLI ambiguity was reported before edits. New social
 symbols were not in the baseline index. detect_changes is unavailable; explicit
 git diff/status/diff-check verification scopes the commit instead.
+
+## Lead release closeout
+
+Final implementation b3baab39337b71ea0b100a663b91838dba531f19 passed exact-SHA
+independent QA/security. Parent reran final full suite: 189/189 across 12 files.
+Type-check/build passed. PR #10 merged 4595f07c03ca91e72fb5e246bdb3903f255dda92;
+CI/preview and production deployment succeeded. Hosted actual API returned 401
+JSON/no-store for anonymous requests; fresh normal-rep JWT was denied across
+status/accounts/analytics/inbox/message/createDraft/sendReply, inactive denied.
+Only a separate synthetic normal account was created; exact Auth/profile/legacy
+cleanup absence was verified. No privileged test identity or provider mutation.
+Actual-component browser synthetic checks passed draft/no-send, explicit mocked
+send, pagination, escaped markup/no images, uncertain send refresh/ack guards.
+Live browser had no signed-in session; owner view is not claimed verified.
+Real provider history/permissions/schema reads passed, but newest sampled DMs
+were from 2024 and no reply was eligible. Fresh inbound delivery and a controlled
+real reply require a new test message and owner participation. YouTube reconnect
+remains owner work. Gmail app-password blocker and WhatsApp hold unchanged.
