@@ -192,6 +192,7 @@ function EmailInbox() {
   const [toasts, setToasts]               = useState<Toast[]>([]);
   const [confirmModal, setConfirmModal]   = useState<{ msg: string; onConfirm: () => void } | null>(null);
   const [lastSynced, setLastSynced]       = useState<Date | null>(null);
+  const [syncNotice, setSyncNotice] = useState<{ error: boolean; text: string } | null>(null);
   const [syncing, setSyncing]             = useState(false);
   const [dbMissing, setDbMissing]         = useState(false);
 
@@ -245,18 +246,6 @@ function EmailInbox() {
     loadTemplates();
   }, [loadEmails, loadStats, loadTemplates]);
 
-  // Auto-sync on mount if IMAP is configured and last sync was >30 min ago
-  useEffect(() => {
-    try {
-      const settings = JSON.parse(localStorage.getItem('dhd_crm_settings') || '{}');
-      if (!settings.IMAP_HOST || !settings.IMAP_USER || !settings.IMAP_PASSWORD) return;
-      const lastSyncTs = parseInt(localStorage.getItem('dhd_last_sync') || '0', 10);
-      const minsAgo = (Date.now() - lastSyncTs) / 60000;
-      if (minsAgo > 30) doSync(true); // silent = true
-    } catch { /* ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // ── Real-time new emails ───────────────────────────────────────────────────
 
 
@@ -266,19 +255,14 @@ function EmailInbox() {
     setSyncing(true);
     if (!silent) setLoading(true);
     try {
-      let storedSettings: Record<string, string> = {};
-      try {
-        const raw = localStorage.getItem('dhd_crm_settings');
-        storedSettings = raw ? JSON.parse(raw) : {};
-      } catch { /* ignore */ }
-
       const r = await emailFetch('/api/email?action=sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: storedSettings })
+        body: JSON.stringify({ skipAi: true })
       });
       const data = await r.json();
       if (data.success) {
+        setSyncNotice({ error: false, text: `Saved ${data.synced} new emails. AI analysis was skipped for this sync.` });
         localStorage.setItem('dhd_last_sync', String(Date.now()));
         setLastSynced(new Date());
         if (!silent || data.synced > 0) {
@@ -288,10 +272,13 @@ function EmailInbox() {
         await loadStats();
       } else {
         const detail = data.error || data.message || 'Unknown error';
+        setSyncNotice({ error: true, text: `${detail}${typeof data.synced === 'number' ? ` (${data.synced} saved)` : ''}` });
+        await loadEmails(); await loadStats();
         const hint = data.hint ? ` · ${data.hint}` : '';
         if (!silent) addToast(`Sync failed: ${detail}${hint}`, 'error');
       }
     } catch {
+      setSyncNotice({ error: true, text: 'Email sync failed. Check your session and try again.' });
       if (!silent) addToast('Failed to sync emails', 'error');
     }
     setSyncing(false);
@@ -539,6 +526,7 @@ function EmailInbox() {
   return (
     <div className="h-full flex flex-col">
 
+      {syncNotice && <div role={syncNotice.error ? 'alert' : 'status'} className="m-4 rounded-lg border p-3 text-sm">{syncNotice.text}</div>}
       {/* Toasts */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map(t => (

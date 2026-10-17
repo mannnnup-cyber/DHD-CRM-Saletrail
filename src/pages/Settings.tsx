@@ -237,14 +237,7 @@ const Settings: React.FC = () => {
     try {
       if (type === 'email') {
         const r = await fetch('/api/settings?action=testEmail', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            host: localValues['IMAP_HOST'],
-            port: localValues['IMAP_PORT'],
-            user: localValues['IMAP_USER'],
-            password: localValues['IMAP_PASSWORD']
-          })
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: '{}'
         });
         const data = await r.json();
         setMessage({ type: data.success ? 'success' : 'error', text: data.message || data.error });
@@ -861,8 +854,9 @@ const Settings: React.FC = () => {
                   className="mt-6 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
                 >
                   {testing === 'email' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                  Validate IMAP Settings
+                  Test Saved IMAP Login
                 </button>
+                <p className="mt-2 text-sm text-gray-400">Save changes before testing. This checks the saved login without importing messages.</p>
               </div>
 
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">

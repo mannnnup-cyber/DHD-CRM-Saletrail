@@ -202,3 +202,6 @@ Also update CHANGELOG.md with a summary of what changed and why.
   SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SECRET_KEY;
   BRIGHTBEAN_API_KEY env first then app_settings fallback; BRIGHTBEAN_API_URL
   trusted HTTPS origin at /api/v1 (defaults to hosted BrightBean).
+
+
+Email repair: src/lib/inbox/mailbox-server.ts owns uncached saved configuration, trusted provider/TLS validation and bounded read-only login check. api/settings.ts testEmail now authenticates owner/manager and uses saved settings only. tests/email-sync.test.ts exercises sync/validation with synthetic mocked IMAP and database.

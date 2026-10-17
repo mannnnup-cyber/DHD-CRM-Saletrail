@@ -1,3 +1,5 @@
+import { authenticateEmail } from '../src/lib/inbox/email-server.js';
+import { verifySavedMailbox } from '../src/lib/inbox/mailbox-server.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
@@ -8,7 +10,7 @@ const supabase = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -16,6 +18,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const action = req.query.action as string;
 
+  if (action === 'testEmail') {
+    if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'POST required.' });
+    const caller = await authenticateEmail(req, res);
+    if (!caller) return;
+    if (!['owner', 'manager'].includes(caller.role)) return res.status(403).json({ success: false, error: 'Email settings require an owner or manager.' });
+    try { await verifySavedMailbox(caller.admin); return res.json({ success: true, message: 'Saved IMAP login verified. No messages were imported.' }); }
+    catch (error) { return res.status(502).json({ success: false, error: error instanceof Error ? error.message : 'Saved IMAP validation failed.' }); }
+  }
   if (!supabase) {
     return res.status(500).json({ success: false, error: 'Database not configured' });
   }
@@ -150,26 +160,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         return res.json({ success: true, message: 'Settings saved successfully' });
-      }
-
-      case 'testEmail': {
-        // Test IMAP connection
-        const { host, user, password } = req.body;
-
-        // For now, return success - actual IMAP test would require native module
-        // In production, this would use imap library to test connection
-        if (!host || !user || !password) {
-          return res.json({
-            success: false,
-            error: 'Missing required IMAP settings'
-          });
-        }
-
-        return res.json({
-          success: true,
-          message: 'IMAP settings validated. Click "Save" to apply.',
-          hint: 'Test sync will verify actual connection when you click "Sync Emails"'
-        });
       }
 
       case 'testResend': {

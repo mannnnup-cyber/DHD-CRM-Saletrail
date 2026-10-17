@@ -252,3 +252,6 @@ was verified. Live owner-browser view remains pending. Real first-page history
 is available, but fresh inbound messages and live
 customer reply delivery were not exercised. Gmail app-password update remains
 an owner blocker; WhatsApp remains on hold. No provider/customer mutation tests.
+
+
+WP-EMAIL-SYNC-REPAIR (2026-10-16): In Review pending tests and independent QA/security. Server saved credentials replace browser overrides; explicit AI-free manual sync, real saved-login check, truthful persistence count/error notices. Live email import remains a release verification requirement.
