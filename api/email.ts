@@ -441,7 +441,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         let dbSettings: Record<string, string>;
         try { dbSettings = await loadMailboxSettings(syncDb); config = mailboxConfig(dbSettings); }
         catch (error) { return res.status(503).json({ success: false, error: error instanceof Error ? error.message : 'Saved email settings are unavailable.' }); }
-        const AI_ANALYSIS_ENABLED = req.body?.skipAi !== true && dbSettings['AI_ANALYSIS_ENABLED'] === 'true';
+        // Older open tabs omit skipAi; AI requires a deliberate, explicit opt-in.
+        const AI_ANALYSIS_ENABLED = req.body?.skipAi === false && dbSettings['AI_ANALYSIS_ENABLED'] === 'true';
 
         return new Promise((resolve) => {
           const imap = new Imap(config);
