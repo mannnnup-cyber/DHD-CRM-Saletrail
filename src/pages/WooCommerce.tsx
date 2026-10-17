@@ -7,14 +7,17 @@ import {
   Mail, Phone, SortDesc, FileDown, Star
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { supabase } from '../lib/supabase';
+import { authHeaders } from '../lib/auth';
+import { useAuth } from '../context/AuthContext';
+
+async function wooFetch(url:string,init:RequestInit={}) { return fetch(url,{...init,headers:{...authHeaders(),...init.headers},cache:'no-store'}); }
 
 interface WCOrder {
   id: string; orderId: number; orderNumber: string; status: string;
   pipelineStage: string; customerName: string; customerEmail: string;
   customerPhone: string; company: string; address: string; total: number;
   currency: string; lineItems: { name: string; quantity: number; price: number; total: number }[];
-  dateCreated: string; paymentMethod: string; notes: string;
+  dateCreated: string; paymentMethod: string; notes: string; refundAmount:number;
 }
 
 interface WCCustomer {
@@ -50,6 +53,7 @@ const STATUS_COLORS: Record<string, string> = {
   failed:     'bg-red-500/20 text-red-400',
 };
 
+const escapeHtml=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const fmt = (n: number, cur = 'JMD') => `$${n.toLocaleString()} ${cur}`;
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-JM', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
 const daysSince = (d: string) => d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : 0;
@@ -60,8 +64,11 @@ const openInWhatsApp = (phone: string, name: string) => {
 };
 
 export default function WooCommerce() {
+  const {user}=useAuth();
+  const allowed=!!user&&['owner','manager'].includes(user.role);
   const { addDeal, addLead } = useApp();
 
+  const [manualStage,setManualStage]=useState('');
   const [configured, setConfigured]     = useState<boolean | null>(null);
   const [storeUrl, setStoreUrl]         = useState('');
   const [connStatus, setConnStatus]     = useState<'idle' | 'testing' | 'connected' | 'failed'>('idle');
@@ -77,6 +84,9 @@ export default function WooCommerce() {
   const [loadingMore, setLoadingMore]   = useState(false);
   const [syncing, setSyncing]           = useState(false);
   const [lastSync, setLastSync]         = useState('');
+  const [syncProgress,setSyncProgress]=useState('');
+  const stopSync=useRef(false);
+  const [syncState,setSyncState]=useState<any>(null);
   const [searchOrder, setSearchOrder]   = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [productFilter, setProductFilter] = useState('');
@@ -120,36 +130,15 @@ export default function WooCommerce() {
 
   // Init
   useEffect(() => {
-    fetch('/api/woocommerce?action=configured').then(r => r.json())
+    for (const key of ['wc_orders','wc_last_sync','wc_imported_orders','wc_imported_customers']) localStorage.removeItem(key);
+    if(!allowed){setOrders([]);return;}
+    wooFetch('/api/woocommerce?action=syncStatus').then(r=>r.json()).then(d=>{if(d.success)setSyncState(d.state);}).catch(()=>{});
+    wooFetch('/api/woocommerce?action=configured').then(r => r.json())
       .then(d => { setConfigured(d.configured); if (d.storeUrl) setStoreUrl(d.storeUrl); })
       .catch(() => setConfigured(false));
-    const sv = localStorage.getItem('wc_last_sync'); if (sv) setLastSync(sv);
-    const so = localStorage.getItem('wc_orders'); if (so) setOrders(JSON.parse(so));
-    const si = localStorage.getItem('wc_imported_orders'); if (si) setImportedOrders(new Set(JSON.parse(si)));
-    const sc = localStorage.getItem('wc_imported_customers'); if (sc) setImportedC(new Set(JSON.parse(sc)));
-  }, []);
-
-  // Real-time new orders
-  useEffect(() => {
-    if (!supabase || typeof supabase.channel !== 'function') return;
-    const ch = supabase.channel('wc_orders_rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'woocommerce_orders' }, (payload: any) => {
-        const row = payload.new;
-        showToast(row.order_number, row.customer_name);
-        const mapped: WCOrder = {
-          id: `wc_${row.wc_order_id}`, orderId: row.wc_order_id, orderNumber: row.order_number,
-          status: row.status, pipelineStage: row.pipeline_stage || 'New Lead',
-          customerName: row.customer_name || '', customerEmail: row.customer_email || '',
-          customerPhone: row.customer_phone || '', company: row.company || '',
-          address: row.address || '', total: row.total || 0, currency: row.currency || 'JMD',
-          lineItems: (() => { try { return JSON.parse(row.line_items || '[]'); } catch { return []; } })(),
-          dateCreated: row.date_created, paymentMethod: row.payment_method || '', notes: row.customer_note || '',
-        };
-        setOrders(prev => prev.find(o => o.id === mapped.id) ? prev : [mapped, ...prev]);
-        setTotalOrders(prev => prev + 1);
-      }).subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, []);
+    for (const key of ['wc_orders','wc_last_sync','wc_imported_orders','wc_imported_customers']) localStorage.removeItem(key);
+    return()=>{stopSync.current=true;};
+  }, [allowed]);
 
   // ── API helpers ───────────────────────────────────────────────────────────
   const buildUrl = (page: number, from = '', to = '') => {
@@ -160,25 +149,34 @@ export default function WooCommerce() {
   };
 
   const syncOrders = useCallback(async () => {
-    setSyncing(true); setError('');
+    setSyncing(true); setError('');stopSync.current=false;
     try {
-      const d = await fetch(buildUrl(1)).then(r => r.json());
+      let count=0,complete=false;
+      for(let batches=0;batches<200;batches++){
+      if(stopSync.current)break;
+      const batch = await wooFetch('/api/woocommerce?action=syncOrders',{method:'POST'}).then(r=>r.json());
+      if(!batch.success)throw new Error(batch.error || 'Sync failed. Existing saved orders are retained.');
+      count+=batch.checked;setSyncProgress(`Checked ${count} orders; last batch saved ${batch.saved}. ${batch.complete?'Pass complete.':'Continuing…'}`);
+      if(batch.complete){complete=true;break;}
+      }
+      if(!complete)setSyncProgress(`Paused after checking ${count} orders. Resume with Sync Now; progress is saved.`);
+      const status=await wooFetch('/api/woocommerce?action=syncStatus').then(r=>r.json());if(status.success)setSyncState(status.state);
+      const d = await wooFetch(buildUrl(1)).then(r => r.json());
       if (d.success) {
         setOrders(d.orders); setTotalOrders(d.total || d.orders.length);
         setTotalPages(d.pages || 1); setCurrentPage(1);
         const t = new Date().toLocaleString(); setLastSync(t);
-        localStorage.setItem('wc_orders', JSON.stringify(d.orders));
-        localStorage.setItem('wc_last_sync', t);
+
       } else setError(d.error || 'Failed to sync');
     } catch (e: any) { setError(e.message); }
     setSyncing(false);
   }, []);
 
   const applyDateFilter = async () => {
-    if (!dateFrom && !dateTo) return syncOrders();
+
     setSyncing(true); setError('');
     try {
-      const d = await fetch(buildUrl(1, dateFrom, dateTo)).then(r => r.json());
+      const d = await wooFetch(buildUrl(1, dateFrom, dateTo)).then(r => r.json());
       if (d.success) { setOrders(d.orders); setTotalOrders(d.total || d.orders.length); setTotalPages(d.pages || 1); setCurrentPage(1); }
       else setError(d.error || 'Failed');
     } catch (e: any) { setError(e.message); }
@@ -190,7 +188,7 @@ export default function WooCommerce() {
     setLoadingMore(true);
     try {
       const np = currentPage + 1;
-      const d = await fetch(buildUrl(np, dateFrom, dateTo)).then(r => r.json());
+      const d = await wooFetch(buildUrl(np, dateFrom, dateTo)).then(r => r.json());
       if (d.success) {
         setOrders(prev => { const ids = new Set(prev.map(o => o.id)); return [...prev, ...d.orders.filter((o: WCOrder) => !ids.has(o.id))]; });
         setCurrentPage(np);
@@ -202,7 +200,7 @@ export default function WooCommerce() {
   const syncCustomers = useCallback(async () => {
     setSyncingC(true); setError('');
     try {
-      const d = await fetch('/api/woocommerce?action=customers&per_page=100&page=1').then(r => r.json());
+      const d = await wooFetch('/api/woocommerce?action=customers&per_page=100&page=1').then(r => r.json());
       if (d.success) { setCustomers(d.customers); setTotalCustomers(d.total || d.customers.length); setCustomerPages(d.pages || 1); setCustomerPage(1); }
       else setError(d.error || 'Failed');
     } catch (e: any) { setError(e.message); }
@@ -214,7 +212,7 @@ export default function WooCommerce() {
     setLoadingMoreC(true);
     try {
       const np = customerPage + 1;
-      const d = await fetch(`/api/woocommerce?action=customers&per_page=100&page=${np}`).then(r => r.json());
+      const d = await wooFetch(`/api/woocommerce?action=customers&per_page=100&page=${np}`).then(r => r.json());
       if (d.success) {
         setCustomers(prev => { const ids = new Set(prev.map(c => c.id)); return [...prev, ...d.customers.filter((c: WCCustomer) => !ids.has(c.id))]; });
         setCustomerPage(np);
@@ -224,16 +222,16 @@ export default function WooCommerce() {
   }, [customerPage, customerPages, loadingMoreC]);
 
   useEffect(() => {
-    if (configured !== true) return;
-    syncOrders();
-    const iv = setInterval(syncOrders, 15 * 60 * 1000);
-    return () => clearInterval(iv);
+    if (configured !== true||!allowed) return;
+    let active=true;
+    wooFetch(buildUrl(1)).then(r=>r.json()).then(d=>{if(!active)return;if(!d.success)throw new Error(d.error||'Stored orders unavailable.');setOrders(d.orders);setTotalOrders(d.total);setTotalPages(d.pages);setCurrentPage(1);}).catch(e=>{if(active)setError(e.message);});
+    return()=>{active=false;};
   }, [configured, syncOrders]);
 
   const testConnection = async () => {
     setConnStatus('testing'); setError('');
     try {
-      const d = await fetch('/api/woocommerce?action=test').then(r => r.json());
+      const d = await wooFetch('/api/woocommerce?action=test').then(r => r.json());
       if (d.success) { setConnStatus('connected'); setConnInfo(d.store); }
       else { setConnStatus('failed'); setError(d.error || 'Connection failed'); }
     } catch (e: any) { setConnStatus('failed'); setError(e.message); }
@@ -242,15 +240,17 @@ export default function WooCommerce() {
   // ── Import ────────────────────────────────────────────────────────────────
   const importOrder = async (order: WCOrder) => {
     if (importedRef.current.has(order.id)) return;
+    const stage=STAGE_MAP[order.status]?.label||manualStage;
+    if(!stage){setError(`No CRM stage mapping for ${order.status}. Select a manual import stage in Stage Mapping first.`);return;}
     setImportingOrder(order.id);
     try {
       await addDeal({
         name: `${order.customerName} — WC#${order.orderNumber}`, value: order.total,
-        stage: order.pipelineStage as any,
-        notes: [order.notes, `WooCommerce #${order.orderNumber}`, order.paymentMethod ? `Payment: ${order.paymentMethod}` : '', order.lineItems.map(i => `${i.name} ×${i.quantity}`).join(', ')].filter(Boolean).join('\n'),
+        stage: stage as any,
+        notes: [order.notes, `WooCommerce #${order.orderNumber}`, order.paymentMethod ? `Payment: ${order.paymentMethod}` : '', order.lineItems.map(i => `${i.name} ×${escapeHtml(i.quantity)}`).join(', ')].filter(Boolean).join('\n'),
         source: 'WooCommerce'
       } as any);
-      setImportedOrders(prev => { const n = new Set([...prev, order.id]); importedRef.current = n; localStorage.setItem('wc_imported_orders', JSON.stringify([...n])); return n; });
+      setImportedOrders(prev => { const n = new Set([...prev, order.id]); importedRef.current = n; return n; });
     } catch (e: any) { setError('Import failed: ' + e.message); }
     setImportingOrder(null);
   };
@@ -268,7 +268,7 @@ export default function WooCommerce() {
     setImportingC(c.id);
     try {
       await addLead({ name: c.name, email: c.email, phone: c.phone, company: c.company, source: 'WooCommerce', status: 'new', notes: `WC customer — ${c.ordersCount} orders, ${fmt(c.totalSpent)} total spent` } as any);
-      const n = new Set([...importedC, c.id]); setImportedC(n); localStorage.setItem('wc_imported_customers', JSON.stringify([...n]));
+      const n = new Set([...importedC, c.id]); setImportedC(n);
     } catch (e: any) { setError('Import failed: ' + e.message); }
     setImportingC(null);
   };
@@ -280,7 +280,7 @@ export default function WooCommerce() {
       `Customer: ${o.customerName}`, o.customerEmail && `Email: ${o.customerEmail}`,
       o.customerPhone && `Phone: ${o.customerPhone}`, o.company && `Company: ${o.company}`,
       o.address && `Address: ${o.address}`, o.paymentMethod && `Payment: ${o.paymentMethod}`, '',
-      'Items:', ...o.lineItems.map(i => `  ${i.name} × ${i.quantity}  —  ${fmt(i.total, o.currency)}`),
+      'Items:', ...o.lineItems.map(i => `  ${i.name} × ${escapeHtml(i.quantity)}  —  ${fmt(i.total, o.currency)}`),
       '', `Total: ${fmt(o.total, o.currency)}`, o.notes && `Note: ${o.notes}`,
     ].filter(Boolean).join('\n'));
     setCopiedOrder(o.id); setTimeout(() => setCopiedOrder(null), 2000);
@@ -288,14 +288,14 @@ export default function WooCommerce() {
 
   const printOrder = (o: WCOrder) => {
     const w = window.open('', '_blank'); if (!w) return;
-    w.document.write(`<!DOCTYPE html><html><head><title>Order #${o.orderNumber}</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:600px;margin:auto;color:#111}h2{margin-bottom:4px}table{width:100%;border-collapse:collapse;margin:12px 0}th{text-align:left;padding:8px;background:#f5f5f5;font-size:.85em}td{padding:8px;border-bottom:1px solid #eee;font-size:.9em}.tr{font-weight:bold;border-top:2px solid #333}.note{background:#fffbea;padding:10px;border-left:3px solid #f0c040;margin-top:12px}@media print{body{padding:20px}}</style></head><body><h2>Order #${o.orderNumber}</h2><p style="color:#555">${fmtDate(o.dateCreated)} · ${o.status} · ${o.paymentMethod||''}</p><p>${o.customerName}<br>${o.customerEmail||''}<br>${o.customerPhone||''}<br>${o.company||''}<br>${o.address||''}</p><table><tr><th>Item</th><th>Qty</th><th style="text-align:right">Total</th></tr>${o.lineItems.map(i=>`<tr><td>${i.name}</td><td>${i.quantity}</td><td style="text-align:right">${fmt(i.total,o.currency)}</td></tr>`).join('')}<tr class="tr"><td colspan="2">Total</td><td style="text-align:right">${fmt(o.total,o.currency)}</td></tr></table>${o.notes?`<div class="note"><strong>Note:</strong> ${o.notes}</div>`:''}<script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.write(`<!DOCTYPE html><html><head><title>Order #${escapeHtml(o.orderNumber)}</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:600px;margin:auto;color:#111}h2{margin-bottom:4px}table{width:100%;border-collapse:collapse;margin:12px 0}th{text-align:left;padding:8px;background:#f5f5f5;font-size:.85em}td{padding:8px;border-bottom:1px solid #eee;font-size:.9em}.tr{font-weight:bold;border-top:2px solid #333}.note{background:#fffbea;padding:10px;border-left:3px solid #f0c040;margin-top:12px}@media print{body{padding:20px}}</style></head><body><h2>Order #${escapeHtml(o.orderNumber)}</h2><p style="color:#555">${fmtDate(o.dateCreated)} · ${escapeHtml(o.status)} · ${escapeHtml(o.paymentMethod||'')}</p><p>${escapeHtml(o.customerName)}<br>${escapeHtml(o.customerEmail||'')}<br>${escapeHtml(o.customerPhone||'')}<br>${escapeHtml(o.company||'')}<br>${escapeHtml(o.address||'')}</p><table><tr><th>Item</th><th>Qty</th><th style="text-align:right">Total</th></tr>${o.lineItems.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td>${escapeHtml(i.quantity)}</td><td style="text-align:right">${fmt(i.total,o.currency)}</td></tr>`).join('')}<tr class="tr"><td colspan="2">Total</td><td style="text-align:right">${fmt(o.total,o.currency)}</td></tr></table>${o.notes?`<div class="note"><strong>Note:</strong> ${escapeHtml(o.notes)}</div>`:''}<script>window.onload=function(){window.print()}<\/script></body></html>`);
     w.document.close();
   };
 
   const exportCSV = () => {
     const hdr = ['Order #','Date','Customer','Email','Phone','Company','Status','Total','Currency','Items','Payment','Note'];
-    const rows = filteredOrders.map(o => [o.orderNumber, fmtDate(o.dateCreated), o.customerName, o.customerEmail, o.customerPhone, o.company, o.status, o.total, o.currency, o.lineItems.map(i=>`${i.name} x${i.quantity}`).join('; '), o.paymentMethod, o.notes]);
-    const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+    const rows = filteredOrders.map(o => [o.orderNumber, fmtDate(o.dateCreated), o.customerName, o.customerEmail, o.customerPhone, o.company, o.status, o.total, o.currency, o.lineItems.map(i=>`${i.name} x${escapeHtml(i.quantity)}`).join('; '), o.paymentMethod, o.notes]);
+    const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v??'').replace(/^[\s]*[=+@-]/,"'$&").replace(/"/g,'""')}"`).join(',')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
     a.download = `orders-${new Date().toISOString().slice(0,10)}.csv`; a.click();
   };
@@ -306,7 +306,7 @@ export default function WooCommerce() {
     for (const o of orders) {
       const key = o.customerEmail || o.customerName; if (!key) continue;
       const ex = map.get(key);
-      const value = !['cancelled','refunded','failed'].includes(o.status) ? o.total : 0;
+      const value = !['cancelled','refunded','failed'].includes(o.status) ? Math.max(0,o.total-(o.refundAmount||0)) : 0;
       if (ex) { ex.totalSpent += value; ex.ordersCount++; if (o.dateCreated > ex.lastOrder) ex.lastOrder = o.dateCreated; }
       else map.set(key, { id: `oc_${key}`, name: o.customerName || o.customerEmail, email: o.customerEmail, phone: o.customerPhone, company: o.company, address: o.address, totalSpent: value, ordersCount: 1, lastOrder: o.dateCreated, currency: o.currency });
     }
@@ -339,7 +339,7 @@ export default function WooCommerce() {
 
   const filteredRevenue = filteredOrders
     .filter(o => !['cancelled','refunded','failed'].includes(o.status))
-    .reduce((s, o) => s + o.total, 0);
+    .reduce((s, o) => s + Math.max(0,o.total-(o.refundAmount||0)), 0);
 
   const filteredCurrency = filteredOrders[0]?.currency || 'JMD';
 
@@ -364,7 +364,7 @@ export default function WooCommerce() {
     total:      totalOrders || orders.length,
     processing: orders.filter(o => o.status === 'processing').length,
     completed:  orders.filter(o => o.status === 'completed').length,
-    revenue:    orders.filter(o => o.status === 'completed').reduce((s,o) => s+o.total, 0),
+    revenue:    orders.filter(o => o.status === 'completed').reduce((s,o) => s+Math.max(0,o.total-(o.refundAmount||0)), 0),
     customers:  ordersCustomers.length,
   };
 
@@ -376,14 +376,18 @@ export default function WooCommerce() {
   const filteredRC = customers.filter(c => { const q = searchC.toLowerCase(); return !q || c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.phone.includes(q); });
 
   // ── Render ────────────────────────────────────────────────────────────────
+  if(!allowed)return <div className="p-6 text-gray-300">WooCommerce requires an owner or manager account.</div>;
   return (
     <div className="space-y-6">
+      {syncProgress&&<p role="status" className="text-green-300">{syncProgress}</p>}
+      {syncing&&<button onClick={()=>{stopSync.current=true;setSyncProgress(p=>p+' Stopping after current batch.');}} className="text-amber-300">Stop sync after current batch</button>}
+      {syncState&&<p className="text-gray-400 text-sm">{syncState.mode==='initial'?'Initial import':'Modified-order catch-up'} · next page {syncState.page} · last successful batch {syncState.last_success_at?new Date(syncState.last_success_at).toLocaleString():'not recorded'}. {syncState.last_error} Automatic catch-up runs daily when configured.</p>}
 
       {/* New order toast */}
       {newOrderToast && (
         <div className="fixed top-4 right-4 z-50 flex items-center gap-3 p-4 bg-green-600 text-white rounded-xl shadow-2xl border border-green-500">
           <Bell className="w-5 h-5 flex-shrink-0" />
-          <div><p className="font-semibold text-sm">New Order #{newOrderToast.orderNumber}</p><p className="text-green-200 text-xs">{newOrderToast.customerName}</p></div>
+          <div><p className="font-semibold text-sm">{newOrderToast.orderNumber}</p><p className="text-green-200 text-xs">{newOrderToast.customerName}</p></div>
           <button onClick={() => setNewOrderToast(null)} className="ml-2 text-green-200 hover:text-white"><XCircle className="w-4 h-4" /></button>
         </div>
       )}
@@ -487,7 +491,7 @@ export default function WooCommerce() {
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[o.status] || 'bg-gray-500/20 text-gray-400'}`}>{o.status}</span>
                         </div>
                         {o.lineItems.length > 0 && (
-                          <p className="text-gray-400 text-xs mt-1 truncate">{o.lineItems.map(i => `${i.name} ×${i.quantity}`).join(', ')}</p>
+                          <p className="text-gray-400 text-xs mt-1 truncate">{o.lineItems.map(i => `${i.name} ×${escapeHtml(i.quantity)}`).join(', ')}</p>
                         )}
                       </div>
                     ))}
@@ -556,6 +560,7 @@ export default function WooCommerce() {
         </div>
       )}
 
+      <p className="text-gray-500 text-xs">Order total uses the saved database count. Order/customer spend summaries cover loaded orders net of recorded refunds; product totals are gross item values. Totals are not consolidated across currencies.</p>
       {/* Clickable stat cards */}
       {orders.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -669,7 +674,7 @@ export default function WooCommerce() {
                 <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
                   className="bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-purple-500" />
                 <button onClick={applyDateFilter} disabled={syncing} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">Apply</button>
-                {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(''); setDateTo(''); syncOrders(); }} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium">Clear</button>}
+                {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(''); setDateTo(''); wooFetch(buildUrl(1)).then(r=>r.json()).then(d=>{if(d.success){setOrders(d.orders);setTotalOrders(d.total);setTotalPages(d.pages);setCurrentPage(1);}else setError(d.error||'Stored orders unavailable.');}).catch(e=>setError(e.message)); }} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium">Clear</button>}
               </div>
 
               {/* Toolbar: count + revenue + bulk import + export */}
@@ -725,7 +730,7 @@ export default function WooCommerce() {
                           <span className={`hidden md:inline-flex px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[order.status] || 'bg-gray-500/20 text-gray-400'}`}>{order.status}</span>
                           <div className="hidden md:flex items-center gap-2">
                             <ArrowRight className="w-3 h-3 text-gray-500" />
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">{STAGE_MAP[order.status]?.label || 'New Lead'}</span>
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">{order.status}</span>
                           </div>
                           <p className="text-amber-400 font-bold text-sm whitespace-nowrap">{fmt(order.total, order.currency)}</p>
                         </div>
@@ -749,7 +754,7 @@ export default function WooCommerce() {
                       {expandedOrder === order.id && (
                         <div className="border-t border-gray-700/50 p-4 bg-gray-900/30 space-y-3">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            {[{ label:'Phone', value: order.customerPhone }, { label:'Company', value: order.company }, { label:'Payment', value: order.paymentMethod }, { label:'Address', value: order.address }].map(f => (
+                            {[{ label:'Phone', value: order.customerPhone }, { label:'Company', value: order.company }, { label:'Payment', value: order.paymentMethod }, { label:'Refunded', value: fmt(order.refundAmount||0,order.currency) }, { label:'Address', value: order.address }].map(f => (
                               <div key={f.label}><p className="text-gray-500 text-xs">{f.label}</p><p className="text-white text-sm">{f.value || 'N/A'}</p></div>
                             ))}
                           </div>
@@ -932,7 +937,9 @@ export default function WooCommerce() {
       {/* ── STAGE MAPPING TAB ── */}
       {activeTab === 'mapping' && (
         <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 space-y-4">
-          <h3 className="text-white font-semibold flex items-center gap-2"><ArrowRight className="w-5 h-5 text-purple-400" /> WooCommerce → CRM Pipeline Mapping</h3>
+          <h3 className="text-white font-semibold flex items-center gap-2"><ArrowRight className="w-5 h-5 text-purple-400" /> Manual CRM import defaults</h3>
+<label className="text-gray-300 block">Unmapped status import stage<select aria-label="Unmapped status import stage" value={manualStage} onChange={e=>setManualStage(e.target.value)} className="ml-3 bg-gray-800 p-2 rounded"><option value="">Choose explicitly</option>{['New Lead','Consultation','Quote Sent','Design Review','In Production','Delivered','Lost'].map(s=><option key={s}>{s}</option>)}</select></label>
+          <p className="text-gray-400 text-sm">These defaults apply only when you explicitly import a deal. Sync never creates deals or changes their stages. Custom store statuses remain unchanged.</p>
           <div className="space-y-3">
             {Object.entries(STAGE_MAP).map(([wcStatus, pipeline]) => (
               <div key={wcStatus} className="flex items-center gap-4 p-3 bg-gray-900/30 rounded-lg">
@@ -985,7 +992,7 @@ export default function WooCommerce() {
           <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2"><Zap className="w-5 h-5 text-yellow-400" /> Real-time Webhook (New Orders)</h3>
             <ol className="space-y-3">
-              {['WooCommerce → Settings → Advanced → Webhooks → Add webhook','Name: DHD CRM — New Order · Status: Active · Topic: Order created','Delivery URL: https://dhd-crm-saletrail.vercel.app/api/woocommerce-webhook','Click Save webhook. Repeat for "Order updated" topic.'].map((step, i) => (
+              {['WooCommerce → Settings → Advanced → Webhooks → Add webhook','Name: DHD CRM — New Order · Status: Active · Topic: Order created','Delivery URL: https://dhd-crm-saletrail.vercel.app/api/woocommerce-webhook','Set the same private secret as server WC_WEBHOOK_SECRET before activation. Initialize sync first.','Click Save webhook. Repeat for "Order updated" topic.'].map((step, i) => (
                 <li key={i} className="flex items-start gap-3">
                   <span className="w-6 h-6 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i+1}</span>
                   <span className="text-gray-300 text-sm">{step}</span>

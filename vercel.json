@@ -16,12 +16,22 @@
     },
     "api/crm.ts": {
       "maxDuration": 120
+    },
+    "api/woocommerce.ts": {
+      "maxDuration": 60
+    },
+    "api/woocommerce-webhook.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/crm?target=automation&action=run",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/woocommerce?action=cron",
+      "schedule": "15 9 * * *"
     }
   ]
 }

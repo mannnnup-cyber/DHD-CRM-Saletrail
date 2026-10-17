@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import * as cheerio from 'cheerio';
+import { authenticateWoo, safeHeaders, sendError, WooError } from '../src/lib/woocommerce-server.js';
 
 const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
 const _key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -51,6 +52,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
 
   const { action, id } = req.query as Record<string, string>;
+  let wooAdmin:any=null;
+  const wooOnly=['searchOrders','linkOrder'].includes(action);
+  const includeWoo=req.query.includeWoo==='true';
+  if(wooOnly||includeWoo) {
+    safeHeaders(res);
+    try { wooAdmin=await authenticateWoo(req); if(req.method!==(action==='linkOrder'?'POST':'GET'))throw new WooError(405,'Invalid WooCommerce request method.'); }catch(e){return sendError(res,e);}
+  }
 
   if (!action && !id) {
     const { data, error } = await supabase.from('contacts').select('*').order('created_at', { ascending: false }).range(0, 4999);
@@ -63,15 +71,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       { data: contact, error: ce },
       { data: interactions },
       { data: gsmCalls },
-      { data: wooOrders },
+      { data: wooOrders, error: wooError },
     ] = await Promise.all([
       supabase.from('contacts').select('*').eq('id', id).single(),
       supabase.from('interactions').select('*').eq('contact_id', id).order('timestamp', { ascending: false }).limit(100),
       supabase.from('cellular_calls').select('id, phone_number, direction, duration, started_at, rep_name, rep_phone, status').eq('contact_id', id).order('started_at', { ascending: false }).limit(50),
-      supabase.from('woo_orders').select('id, woo_order_id, status, total_amount, currency, customer_name, customer_email, customer_phone, line_items, created_at').eq('contact_id', id).order('created_at', { ascending: false }).limit(20),
+      wooAdmin ? wooAdmin.from('woo_orders').select('id, woo_order_id, status, total_amount, currency, customer_name, customer_email, customer_phone, line_items, created_at, provider_created_at').eq('contact_id', id).order('created_at', { ascending: false }).limit(20) : Promise.resolve({data:[]}),
     ]);
     if (ce) return res.status(404).json({ error: 'Contact not found' });
-    return res.status(200).json({ contact, interactions: interactions || [], gsmCalls: gsmCalls || [], wooOrders: wooOrders || [] });
+    if(wooError)return res.status(503).json({error:'Linked WooCommerce orders are unavailable.'});
+    return res.status(200).json({ contact, interactions: interactions || [], gsmCalls: gsmCalls || [], wooOrders: (wooOrders || []).map((row:any)=>({...row,created_at:row.provider_created_at||row.created_at})) });
   }
 
   if (action === 'resolve' && req.method === 'POST') {
@@ -128,34 +137,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Search woo_orders for a contact by email/phone (unlinked orders)
   if (action === 'searchOrders' && req.method === 'GET') {
-    const email = (req.query.email as string || '').trim();
-    const phone = (req.query.phone as string || '').trim();
-    if (!email && !phone) return res.status(400).json({ error: 'email or phone required' });
-    const filters: string[] = [];
-    if (email) filters.push(`customer_email.ilike.%${email}%`);
-    if (phone) {
-      const normalized = phone.replace(/\D/g, '').slice(-10);
-      filters.push(`customer_phone.ilike.%${normalized}%`);
-    }
-    const { data, error } = await supabase
-      .from('woo_orders')
-      .select('id, woo_order_id, status, total_amount, currency, customer_name, customer_email, customer_phone, line_items, created_at, contact_id')
-      .or(filters.join(','))
-      .order('created_at', { ascending: false })
-      .limit(30);
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ orders: data || [] });
+    const email = typeof req.query.email==='string'?req.query.email.trim().toLowerCase():'';
+    const phone = typeof req.query.phone==='string'?req.query.phone.trim():'';
+    if ((!email&&!phone)||email.length>255||phone.length>50) return res.status(400).json({error:'A bounded email or exact phone is required.'});
+    let query=wooAdmin.from('woo_orders').select('id,woo_order_id,status,total_amount,currency,customer_name,customer_email,customer_phone,line_items,created_at,provider_created_at,contact_id');
+    query=email?query.eq('customer_email',email):query.eq('customer_phone',phone);
+    const {data,error}=await query.order('created_at',{ascending:false}).limit(30);
+    if(error)return res.status(503).json({error:'Stored orders could not be loaded.'});
+    return res.status(200).json({ orders: (data || []).map((row:any)=>({...row,created_at:row.provider_created_at||row.created_at})) });
   }
 
   // Link a woo_order to a contact
   if (action === 'linkOrder' && id && req.method === 'POST') {
-    const { orderId } = req.body;
-    if (!orderId) return res.status(400).json({ error: 'orderId required' });
-    const { error } = await supabase
+    const { orderId } = req.body || {};
+    const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuid.test(orderId)||!uuid.test(id)) return res.status(400).json({ error: 'Valid contact and order IDs required' });
+    const contact=await wooAdmin.from('contacts').select('id').eq('id',id).maybeSingle();
+    if(contact.error||!contact.data)return res.status(404).json({error:'Contact not found.'});
+    const { error } = await wooAdmin
       .from('woo_orders')
       .update({ contact_id: id })
-      .eq('id', orderId);
-    if (error) return res.status(500).json({ error: error.message });
+      .eq('id', orderId).select('id').single();
+    if (error) return res.status(503).json({ error: 'Order link could not be saved.' });
     return res.status(200).json({ success: true });
   }
 

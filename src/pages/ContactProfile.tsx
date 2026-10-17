@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/auth';
+import { useAuth } from '../context/AuthContext';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -107,6 +109,8 @@ function timeAgo(iso: string): string {
 }
 
 const ContactProfile: React.FC = () => {
+  const {user}=useAuth();
+  const canViewWoo=!!user&&['owner','manager'].includes(user.role);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [contact, setContact] = useState<Contact | null>(null);
@@ -153,7 +157,7 @@ const ContactProfile: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const r = await fetch(`/api/contacts?id=${id}`);
+      const r = await fetch(`/api/contacts?id=${id}${canViewWoo?'&includeWoo=true':''}`,{headers:authHeaders(),cache:'no-store'});
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
       setContact(json.contact);
@@ -1090,6 +1094,7 @@ const ContactProfile: React.FC = () => {
             </div>
             <button
               onClick={async () => {
+                if(!canViewWoo)return;
                 setShowOrderSearch(v => !v);
                 if (!showOrderSearch && orderSearchResults.length === 0) {
                   setOrderSearchLoading(true);
@@ -1097,17 +1102,18 @@ const ContactProfile: React.FC = () => {
                     const params = new URLSearchParams();
                     if (contact.email) params.set('email', contact.email);
                     if (contact.phone) params.set('phone', contact.phone);
-                    const r = await fetch(`/api/contacts?action=searchOrders&${params}`);
+                    const r = await fetch(`/api/contacts?action=searchOrders&${params}`,{headers:authHeaders(),cache:'no-store'});
+                    if(!r.ok)throw new Error('Order search failed.');
                     const data = await r.json();
                     setOrderSearchResults(data.orders || []);
-                  } catch (_) {}
+                  } catch (e) {setError(e instanceof Error?e.message:'Order search failed.');}
                   finally { setOrderSearchLoading(false); }
                 }
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-xs font-medium transition-colors border border-emerald-500/20"
             >
               <Search className="w-3.5 h-3.5" />
-              Find Orders
+              {canViewWoo?'Find Orders':'Orders require owner/manager'}
             </button>
           </div>
 
@@ -1156,14 +1162,15 @@ const ContactProfile: React.FC = () => {
                               onClick={async () => {
                                 setOrderLinkingId(o.id);
                                 try {
-                                  await fetch(`/api/contacts?action=linkOrder&id=${id}`, {
+                                  const linked=await fetch(`/api/contacts?action=linkOrder&id=${id}`, {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers: { 'Content-Type': 'application/json',...authHeaders() },
                                     body: JSON.stringify({ orderId: o.id }),
                                   });
+                                  if(!linked.ok)throw new Error('Order link failed.');
                                   await load();
                                   setOrderSearchResults(prev => prev.map(r => r.id === o.id ? { ...r, contact_id: id } : r));
-                                } catch (_) {}
+                                } catch (e) {setError(e instanceof Error?e.message:'Order link failed.');}
                                 finally { setOrderLinkingId(null); }
                               }}
                               className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"

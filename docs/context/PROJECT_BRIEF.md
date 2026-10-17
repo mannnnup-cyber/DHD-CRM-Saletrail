@@ -77,3 +77,6 @@ eligible replies. Reps remain denied pending a verified assignment design.
 Provider history may be old and reply windows may have expired; live inbound and
 reply delivery are separate release checks. WhatsApp remains unavailable and
 email collection still requires the owner's mailbox app-password repair.
+
+
+WooCommerce repair review slice (2026-10-17): owners/managers read stored orders even during store outages, explicitly resume historical import, retain custom statuses/payments/refunds and manually create leads/deals. Signed store events refresh canonical orders; scheduled reconciliation catches missed modifications. Reps remain denied pending verified order assignment. Complete live integration depends on reviewed schema deployment and store access verification.
