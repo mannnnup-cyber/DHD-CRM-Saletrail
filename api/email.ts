@@ -1,3 +1,4 @@
+import { loadMailboxSettings, mailboxConfig } from '../src/lib/inbox/mailbox-server.js';
 import { authenticateEmail, listInbox } from '../src/lib/inbox/email-server.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
@@ -430,93 +431,69 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (importErr: any) {
           return res.status(500).json({
             success: false,
-            error: 'IMAP packages not available: ' + importErr.message,
+            error: 'Email sync is temporarily unavailable.',
             hint: 'Run npm install imap mailparser and redeploy'
           });
         }
 
-        // Prefer settings passed directly in the request body (from localStorage on the client)
-        // so this works even if the app_settings table doesn't exist in Supabase yet
-        const bodySettings: Record<string, string> = req.body?.settings || {};
-        const dbSettings = Object.keys(bodySettings).length > 0 ? bodySettings : await getSettings();
-
-        // Secret credentials prefer server env (Vercel) with app_settings as
-        // fallback, so rotated credentials never need to be stored in the DB.
-        // Non-secret IMAP host/port/user also accept env for completeness.
-        const IMAP_HOST = process.env.IMAP_HOST || dbSettings['IMAP_HOST'] || '';
-        const IMAP_PORT = parseInt(process.env.IMAP_PORT || dbSettings['IMAP_PORT'] || '993');
-        const IMAP_USER = process.env.IMAP_USER || dbSettings['IMAP_USER'] || '';
-        const IMAP_PASSWORD = process.env.IMAP_PASSWORD || dbSettings['IMAP_PASSWORD'] || '';
-        const IMAP_USE_TLS = (process.env.IMAP_USE_TLS ?? dbSettings['IMAP_USE_TLS']) !== 'false';
-        const AI_ANALYSIS_ENABLED = dbSettings['AI_ANALYSIS_ENABLED'] !== 'false';
-
-        if (!IMAP_HOST || !IMAP_USER || !IMAP_PASSWORD) {
-          return res.json({
-            success: false,
-            error: 'IMAP not configured',
-            message: 'Configure IMAP settings in Settings > Email tab',
-            setupUrl: '/settings'
-          });
-        }
+        const syncDb = caller.admin;
+        let config: ReturnType<typeof mailboxConfig>;
+        let dbSettings: Record<string, string>;
+        try { dbSettings = await loadMailboxSettings(syncDb); config = mailboxConfig(dbSettings); }
+        catch (error) { return res.status(503).json({ success: false, error: error instanceof Error ? error.message : 'Saved email settings are unavailable.' }); }
+        const AI_ANALYSIS_ENABLED = req.body?.skipAi !== true && dbSettings['AI_ANALYSIS_ENABLED'] === 'true';
 
         return new Promise((resolve) => {
-          const imap = new Imap({
-            user: IMAP_USER,
-            password: IMAP_PASSWORD,
-            host: IMAP_HOST,
-            port: IMAP_PORT,
-            tls: IMAP_USE_TLS,
-            tlsOptions: { rejectUnauthorized: false },
-            connTimeout: 20000,
-            authTimeout: 15000
-          });
+          const imap = new Imap(config);
+          let resolved = false;
+          let deadline: ReturnType<typeof setTimeout>;
+          const finish = (payload: any, status = 200) => { if (resolved) return; resolved = true; clearTimeout(deadline); imap.destroy(); resolve(res.status(status).json(payload)); };
+          deadline = setTimeout(() => finish({ success: false, error: 'Email sync timed out. Some emails may have been saved; retry safely.' }, 504), 50000);
 
           function openInbox(cb: (err: Error | null, box: any) => void) {
-            imap.openBox('INBOX', true, cb);
+            try { imap.openBox('INBOX', true, cb); } catch { finish({ success: false, error: 'Unable to open the saved mailbox.' }, 502); }
           }
 
           imap.once('ready', () => {
             openInbox(async (err, box) => {
               if (err) {
-                imap.end();
-                return resolve(res.status(500).json({ success: false, error: err.message }));
+                return finish({ success: false, error: 'Unable to read the saved mailbox.' }, 502);
               }
 
               const totalEmails = box.messages.total;
-              const fetchedEmails: any[] = [];
+              let failed = 0;
 
               if (totalEmails === 0) {
-                imap.end();
-                return resolve(res.json({ success: true, synced: 0, total: 0 }));
+                return finish({ success: true, synced: 0, total: 0 });
               }
 
               // Fetch last 50 emails — fetch full raw message so simpleParser
               // can decode multipart MIME, quoted-printable, base64 itself
               const fetchRange = Math.max(1, totalEmails - 49);
-              const fetch = imap.seq.fetch(`${fetchRange}:*`, {
+              let fetch: any;
+              try { fetch = imap.seq.fetch(`${fetchRange}:*`, {
+                markSeen: false,
                 bodies: '',   // '' = entire raw RFC 2822 message
                 struct: true
-              });
+              }); } catch { return finish({ success: false, error: 'Unable to fetch mailbox messages.' }, 502); }
 
               let expectedCount = 0;  // incremented synchronously per message
               let processedCount = 0; // incremented after async processing
               let fetchEnded = false;
-              let resolved = false;
               let newEmails = 0;
 
               const tryResolve = () => {
                 if (resolved) return;
                 if (fetchEnded && processedCount >= expectedCount) {
-                  resolved = true;
-                  imap.end();
-                  resolve(res.json({
-                    success: true,
+                  finish({
+                    success: failed === 0,
+                    failed,
+                    error: failed ? 'Some emails could not be saved. Retry the sync.' : undefined,
                     synced: newEmails,
                     total: totalEmails,
                     processed: processedCount,
-                    emails: fetchedEmails,
                     message: `Synced ${newEmails} new emails`
-                  }));
+                  }, failed ? 503 : 200);
                 }
               };
 
@@ -528,17 +505,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 msg.on('body', (stream: any) => {
                   stream.on('data', (chunk: any) => {
-                    if (rawEmail.length < 500000) rawEmail += chunk.toString('utf8');
+                    if (rawEmail.length < 500000) rawEmail += chunk.toString('utf8').slice(0, 500000 - rawEmail.length);
                   });
                 });
 
                 msg.once('attributes', (attrs: any) => {
+                  (msg as any)._uid = attrs.uid;
                   const flags: string[] = attrs.flags || [];
                   (msg as any)._isRead = flags.some((f: string) => f === '\\Seen');
                 });
 
                 msg.once('end', async () => {
                   try {
+                    if (resolved) return;
                     // simpleParser handles multipart MIME, QP, base64, charsets
                     const parsed = await simpleParser(rawEmail);
 
@@ -550,7 +529,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       : (parsed.to as any)?.[0]?.value?.[0]?.address || '';
                     const subject   = parsed.subject || '(no subject)';
                     const msgDate   = parsed.date ? parsed.date.toISOString() : new Date().toISOString();
-                    const messageId = parsed.messageId || `imap-${seqno}-${Date.now()}`;
+                    if (!parsed.messageId && (!(msg as any)._uid || !box.uidvalidity)) throw new Error('Stable message identity unavailable');
+                    const messageId = parsed.messageId || `imap-${Buffer.from(config.user).toString('base64url')}-${box.uidvalidity}-${(msg as any)._uid}`;
                     const inReplyTo = parsed.inReplyTo || '';
                     const refs      = (parsed as any).references
                       ? (Array.isArray((parsed as any).references) ? (parsed as any).references : [(parsed as any).references])
@@ -590,19 +570,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                     // Check duplicate + save
                     let alreadyExists = false;
-                    if (supabase) {
-                      const { data: existing } = await supabase
+                    if (syncDb) {
+                      const { data: existing, error: duplicateError } = await syncDb
                         .from('emails').select('id')
                         .eq('message_id', messageId).maybeSingle();
+                      if (duplicateError) throw new Error('Duplicate lookup failed');
                       alreadyExists = !!existing;
                     }
 
                     if (!alreadyExists) {
-                      // Resolve or create a Contact for the sender
-                      const contactId = supabase ? await resolveContact(supabase, { name: fromName, email: fromEmail, source: 'WEBSITE' }) : null;
+                      // Link only an existing exact-email contact; importing newsletters must not create CRM leads.
+                      const { data: existingContact } = await syncDb.from('contacts').select('id').eq('email', fromEmail.toLowerCase().trim()).limit(1).maybeSingle();
+                      const contactId = existingContact?.id || null;
                       if (contactId) emailData.contact_id = contactId;
 
-                      if (AI_ANALYSIS_ENABLED) {
+                      if (AI_ANALYSIS_ENABLED && !resolved) {
                         try {
                           const aiResult = await analyzeWithAI({ subject, body: bodyPreview, from: fromEmail });
                           emailData.category = aiResult.category;
@@ -611,8 +593,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         } catch { /* AI optional */ }
                       }
 
-                      if (supabase) {
-                        const { data: inserted, error: insertErr } = await supabase
+                      if (syncDb && !resolved) {
+                        const { data: inserted, error: insertErr } = await syncDb
                           .from('emails')
                           .insert(emailData)
                           .select('id')
@@ -621,7 +603,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                           newEmails++;
                           // Log to unified interactions table
                           if (contactId && inserted) {
-                            await supabase.from('interactions').insert({
+                            await syncDb.from('interactions').insert({
                               contact_id: contactId,
                               type: 'EMAIL',
                               direction: 'INBOUND',
@@ -632,67 +614,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             });
                           }
                         } else {
-                          // If insert fails (table missing), still count it so localStorage cache works
-                          newEmails++;
+                          if (insertErr.code !== '23505') failed++;
                         }
-                      } else {
-                        newEmails++;
                       }
                     }
 
-                    fetchedEmails.push(emailData);
+
                   } catch (err) {
-                    console.error('Error processing message', seqno, err);
+                    failed++;
                   }
                   processedCount++;
                   tryResolve();
                 });
               });
 
-              fetch.once('error', (err: any) => {
-                if (!resolved) {
-                  resolved = true;
-                  imap.end();
-                  resolve(res.status(500).json({ success: false, error: err.message }));
-                }
-              });
+              fetch.once('error', () => finish({ success: false, synced: newEmails, error: 'Unable to read the saved mailbox.' }, 502));
 
               fetch.once('end', () => {
                 fetchEnded = true;
                 tryResolve();
               });
 
-              // Hard timeout at 55s (under Vercel's 60s limit)
-              setTimeout(() => {
-                if (!resolved) {
-                  resolved = true;
-                  imap.end();
-                  resolve(res.json({
-                    success: true, synced: newEmails, total: totalEmails,
-                    processed: processedCount, emails: fetchedEmails, timeout: true,
-                    message: `Synced ${newEmails} emails (timeout)`
-                  }));
-                }
-              }, 55000);
             });
           });
 
-          imap.once('error', (err: any) => {
-            const msg: string = err.message || String(err);
-            let hint = `Tried ${IMAP_HOST}:${IMAP_PORT} with user "${IMAP_USER}". `;
-            if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('timed out')) {
-              hint += 'Connection timed out — verify the host and port are correct. Gmail: imap.gmail.com:993. Outlook: outlook.office365.com:993.';
-            } else if (msg.toLowerCase().includes('auth') || msg.toLowerCase().includes('credentials') || msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('login')) {
-              hint += 'Authentication failed — check your password. Gmail requires an App Password, not your regular password.';
-            } else if (msg.toLowerCase().includes('self signed') || msg.toLowerCase().includes('certificate')) {
-              hint += 'TLS certificate error — try disabling TLS or use port 143.';
-            } else {
-              hint += 'Check IMAP credentials and that your email provider allows IMAP access.';
-            }
-            resolve(res.json({ success: false, error: msg, hint }));
-          });
-
-          imap.connect();
+          imap.once('error', () => finish({ success: false, error: 'IMAP connection failed. Check saved credentials and provider availability.' }, 502));
+          imap.once('end', () => finish({ success: false, error: 'IMAP connection ended before sync completed.' }, 502));
+          try { imap.connect(); } catch { finish({ success: false, error: 'Unable to connect to the saved mailbox.' }, 502); }
         });
       }
 

@@ -425,3 +425,6 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 - File map with parseable JSON.
 - GitNexus and Context7 documented.
 - Build verified.
+
+
+2026-10-16 — Repair email sync saved-credential resolution and certificate validation, remove browser credential payload/automatic import, skip AI in manual sync, count persisted emails truthfully and show durable status. Replace fake IMAP validation with authenticated saved-mailbox read-only login. Existing-contact linking only; no automatic contact creation during import.
