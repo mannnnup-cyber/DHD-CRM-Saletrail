@@ -255,3 +255,6 @@ an owner blocker; WhatsApp remains on hold. No provider/customer mutation tests.
 
 
 WP-EMAIL-SYNC-REPAIR (2026-10-16): In Review pending tests and independent QA/security. Server saved credentials replace browser overrides; explicit AI-free manual sync, real saved-login check, truthful persistence count/error notices. Live email import remains a release verification requirement.
+
+
+WP-WOOCOMMERCE-REPAIR (2026-10-17): In Review. Authenticated saved orders, fail-closed raw HMAC/canonical refetch, shared versioned persistence, resumable initial/catch-up with durable lease/retries, explicit UI continuation and preserved manual controls. Migration authored for independent review only; live application/store 403 fix, complete initial import and signed delivery remain release gates. Existing 46 historical orders must be retained. No claims that whole CRM legacy contact API is secured.

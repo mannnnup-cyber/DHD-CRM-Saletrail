@@ -428,3 +428,12 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 
 
 2026-10-16 — Repair email sync saved-credential resolution and certificate validation, remove browser credential payload/automatic import, skip AI in manual sync, count persisted emails truthfully and show durable status. Replace fake IMAP validation with authenticated saved-mailbox read-only login. Existing-contact linking only; no automatic contact creation during import.
+
+
+## 2026-10-17 — WooCommerce repair (review branch)
+
+- Active owner/manager Woo API and contact-order path authorization.
+- Exact raw-byte HMAC verification, canonical refetch and fail-closed configuration.
+- Reviewed additive canonical order/checkpoint migration with conditional versions, lease and retries.
+- Explicit resumable import, preserved manual controls, safe print/export and refund-aware loaded summaries.
+- Live migration/store/signed delivery verification remains required.
