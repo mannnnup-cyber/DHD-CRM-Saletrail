@@ -3,6 +3,7 @@ import {useApp} from '../context/AppContext';
 import {authHeaders} from '../lib/auth';
 import {jamaicaDisplay,jamaicaToUtc,toJamaicaInput} from '../lib/publishing/calendar';
 import PublishingCalendar from '../components/PublishingCalendar';
+import ContentPlanning from '../components/ContentPlanning';
 
 export async function studioRequest(action:string,body?:any,query:Record<string,string>={}) {
   const params=new URLSearchParams({module:'publishing',action,...query});
@@ -32,7 +33,8 @@ export default function ContentStudio(){
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">Content Studio</h1><p className="text-gray-400">Plan, review and monitor • America/Jamaica</p></div><button className={button} disabled={busy} onClick={()=>void run(refresh)}>Refresh</button></header>
     <p className="text-sm border border-amber-700 rounded-lg p-3 text-amber-200">No post publishes without an approved revision in FollOps. Direct edits or publishing in BrightBean Studio remain outside this policy. Live publication has not been verified.</p>
     {error&&<p role="alert" className="p-3 rounded-lg bg-red-950 text-red-200">{error}</p>}{notice&&<p role="status" className="p-3 bg-green-950 rounded-lg">{notice}</p>}{busy&&<p role="status">Working…</p>}
-    <nav aria-label="Content Studio sections" className="flex flex-wrap gap-2">{['Dashboard','Calendar','Composer','Approvals','Scheduled','History','Media','Health'].map(name=><button className={`px-3 py-2 rounded-lg ${tab===name?'bg-amber-500 text-black':'bg-gray-800'}`} key={name} onClick={()=>setTab(name)}>{name}</button>)}</nav>
+    <nav aria-label="Content Studio sections" className="flex flex-wrap gap-2">{['Dashboard','Calendar','Composer','Approvals','Scheduled','History','Media','AI Studio','Brand','Campaigns','Health'].map(name=><button className={`px-3 py-2 rounded-lg ${tab===name?'bg-amber-500 text-black':'bg-gray-800'}`} key={name} onClick={()=>setTab(name)}>{name}</button>)}</nav>
+    {['AI Studio','Brand','Campaigns'].includes(tab)&&<ContentPlanning tab={tab} store={store} onSaved={refresh} onCaption={value=>{clear();setCaption(value);setTab('Composer');setNotice('AI text is an unapproved draft. Choose accounts, image and schedule, then save.');}} onError={setError}/>}
     {tab==='Calendar'&&<div className="overflow-auto"><PublishingCalendar campaigns={store?.campaigns||[]} onOpen={post=>void run(()=>show(post))} onError={setError}/></div>}
     {tab==='Dashboard'&&<div className="space-y-3"><h2 className="text-xl">Your content</h2><p>{store?`${store.total} stored posts`:'Storage not initialized or unavailable.'}</p><button className={button} onClick={()=>{clear();setTab('Composer');}}>Create a post</button><p className="text-gray-400">Approval queue: {posts.filter((p:any)=>p.state==='awaiting_approval').length} on this page. Resolve uncertain outcomes before creating replacement posts.</p></div>}
     {tab==='Health'&&<div className="space-y-4"><h2 className="text-xl">Integration health</h2>{readiness?<><p>{readiness.workspace.name} • {readiness.workspace.timezone}</p>{readiness.accounts.map((a:any)=><p key={a.id}>{a.platform} — {a.name}: <strong>{a.connection}</strong> (connected metadata; publication unverified)</p>)}<p>Permissions: {readiness.permissions.join(', ')}</p></>:<p>BrightBean readiness unavailable.</p>}

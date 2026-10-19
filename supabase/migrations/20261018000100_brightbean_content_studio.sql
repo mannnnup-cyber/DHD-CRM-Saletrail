@@ -72,6 +72,11 @@ create table public.social_attributions (
  evidence text not null check(length(evidence) between 1 and 1000), created_by uuid not null references public.user_profiles(id), created_at timestamptz not null default now(),
  check(contact_id is not null or deal_id is not null)
 );
+create table public.social_ai_suggestions (
+ id uuid primary key, workspace_id uuid not null references public.social_workspaces(id), actor_id uuid not null references public.user_profiles(id),
+ kind text not null, prompt_fingerprint text not null, state text not null default 'pending' check(state in ('pending','completed','failed')),
+ output text, created_at timestamptz not null default now()
+);
 
 create function public.social_require_actor(p_workspace uuid,p_actor uuid,p_owner boolean default false) returns text
 language plpgsql security invoker set search_path='' as $$
@@ -99,6 +104,13 @@ begin
   return jsonb_build_object('initialized',true);
  end if;
  r:=public.social_require_actor(p_workspace,p_actor,p_action in ('approve','reject','grant','revoke'));
+ if p_action='aiReserve' then
+  perform pg_advisory_xact_lock(hashtextextended(p_actor::text||'ai',0));
+  if exists(select 1 from public.social_ai_suggestions where id=(p_input->>'requestId')::uuid) then raise exception 'social_operation_exists'; end if;
+  if (select count(*) from public.social_ai_suggestions where actor_id=p_actor and created_at>now()-interval '24 hours')>=20 then raise exception 'social_ai_daily_limit'; end if;
+  insert into public.social_ai_suggestions(id,workspace_id,actor_id,kind,prompt_fingerprint) values((p_input->>'requestId')::uuid,p_workspace,p_actor,p_input->>'kind',p_input->>'fingerprint');
+  insert into public.social_audit(workspace_id,actor_id,event) values(p_workspace,p_actor,'ai_requested');return jsonb_build_object('reserved',true);
+ end if;
  if p_action in ('grant','revoke') then
   v_id:=(p_input->>'actorId')::uuid;
   if not exists(select 1 from public.user_profiles where id=v_id and is_active=true and role in ('owner','manager')) then raise exception 'social_access_denied'; end if;
@@ -251,7 +263,7 @@ begin
 end $$;
 
 do $$ declare t text; begin
- foreach t in array array['social_workspaces','social_memberships','social_brands','social_campaigns','social_media','social_posts','social_revisions','social_approvals','social_operations','social_deliveries','social_audit','social_attributions'] loop
+ foreach t in array array['social_workspaces','social_memberships','social_brands','social_campaigns','social_media','social_posts','social_revisions','social_approvals','social_operations','social_deliveries','social_audit','social_attributions','social_ai_suggestions'] loop
   execute format('alter table public.%I enable row level security',t);
   execute format('revoke all on public.%I from public, anon, authenticated',t);
   execute format('grant select,insert,update,delete on public.%I to service_role',t);
