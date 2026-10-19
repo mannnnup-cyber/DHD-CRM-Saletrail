@@ -1,0 +1,313 @@
+{
+  "schema_version": "dhd-content-pack/1",
+  "pack_id": "dhd-business-group-pilot-2026-10",
+  "pack_version": 1,
+  "created_at": "2026-10-19",
+  "brand": "Dirty Hand Designs",
+  "timezone": "America/Jamaica",
+  "status": "draft_only",
+  "campaign": {
+    "external_key": "dhd-business-group-pilot-2026-10",
+    "name": "DHD Business & Group Branding Pilot",
+    "description": "Six evergreen concepts supporting business/group branding and preparation for November. Not an approved Print Madness promotion."
+  },
+  "channels": {
+    "instagram": "https://www.instagram.com/dirtyhanddesigns",
+    "facebook": "https://www.facebook.com/dirtyhanddesigns",
+    "youtube": "https://www.youtube.com/channel/UCJ-qX2pEbHvw0I9Uq8ghaOA",
+    "website": "https://dirtyhanddesigns.com",
+    "whatsapp": "https://wa.me/18765202038"
+  },
+  "import_contract": "Proposed interchange format; not an existing FollOps API. Importing creates or updates unapproved drafts only.",
+  "automatic_publication_allowed": false,
+  "notes": [
+    "Six concepts, twelve platform-specific draft intents; six unique images.",
+    "Suggested dates/times are placeholders, not analytics-derived or approved.",
+    "If dates have passed, flag for rescheduling; do not silently move them.",
+    "No account ID, provider upload, approval, schedule, or publication is included."
+  ],
+  "posts": [
+    {
+      "id": "DHD-PILOT-001",
+      "version": 1,
+      "key": "team-uniforms",
+      "title": "Your team. Your look.",
+      "pillar": "Business identity",
+      "goal": "qualified_quote_enquiries",
+      "format": "single_image",
+      "asset": {
+        "path": "assets/01-team-uniforms.jpg",
+        "mime": "image/jpeg",
+        "alt": "Concept mockup of a navy branded polo and orange cap with sample YOUR BRAND embroidery.",
+        "provenance": "AI-generated concept mockup; not a customer job photograph",
+        "sha256": "691deb07abea6f23761ab2c10d49f05b5ce05958ce001b73984e0537c34518b4",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 586699
+      },
+      "review": {
+        "status": "draft",
+        "owner_approved": false,
+        "blockers": [
+          "Owner review of provisional visual identity and generated image required",
+          "Confirm offered products and operational availability before publication"
+        ]
+      },
+      "variants": [
+        {
+          "id": "DHD-PILOT-001-IG",
+          "platform": "instagram",
+          "account_handle": "dirtyhanddesigns",
+          "account_id": null,
+          "caption": "Your team should look like your team.\n\nA coordinated polo and cap can help customers recognise the people behind your business. Start with the items your staff will actually wear, then choose the logo placement and finish.\n\nWhatsApp 876-520-2038 with your logo, item and quantity for a quotation.\n\nConcept mockup; final items and branding are agreed with your quotation.\n\n#DirtyHandDesigns #BusinessBranding #Jamaica",
+          "first_comment": "",
+          "suggested_at": "2026-10-26T12:30:00-05:00"
+        },
+        {
+          "id": "DHD-PILOT-001-FB",
+          "platform": "facebook",
+          "account_name": "Dirty Hand Designs",
+          "account_id": null,
+          "caption": "Make your team easier to recognise.\n\nPlanning uniforms for your business? Dirty Hand Designs can help you choose branded polos and caps, with printing or embroidery suited to the job.\n\nRequest a quotation on WhatsApp: https://wa.me/18765202038\nSend your logo, preferred items and quantities.\n\nConcept mockup; final items and branding are agreed with your quotation.",
+          "first_comment": "",
+          "suggested_at": "2026-10-26T18:30:00-05:00"
+        }
+      ]
+    },
+    {
+      "id": "DHD-PILOT-002",
+      "version": 1,
+      "key": "print-or-stitch",
+      "title": "Print or stitch?",
+      "pillar": "Choose the right finish",
+      "goal": "saves_and_informed_enquiries",
+      "format": "single_image",
+      "asset": {
+        "path": "assets/02-print-or-stitch.jpg",
+        "mime": "image/jpeg",
+        "alt": "Concept comparison of a flat printed design on white cotton and raised orange embroidery on a navy polo, labelled PRINT and EMBROIDERY.",
+        "provenance": "AI-generated concept mockup; not a customer job photograph",
+        "sha256": "bd2539ddbe3c48c8d2a0819ec2c00cb9b489ba8184acc86bd8abe9b715092b66",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 628980
+      },
+      "review": {
+        "status": "draft",
+        "owner_approved": false,
+        "blockers": [
+          "Owner review of provisional visual identity and generated image required",
+          "Confirm offered products and operational availability before publication"
+        ]
+      },
+      "variants": [
+        {
+          "id": "DHD-PILOT-002-IG",
+          "platform": "instagram",
+          "account_handle": "dirtyhanddesigns",
+          "account_id": null,
+          "caption": "The right finish starts with the right question.\n\nWhat are you branding, and how will it be used?\n\nPrint can suit bold artwork and larger graphics. Embroidery gives suitable garments a stitched finish, often used for chest logos and caps. Small lettering, artwork detail, fabric and placement all affect the choice.\n\nSave this before your next branded order.\n\nConcept samples shown; the finish is confirmed after artwork and item review.\n\n#DirtyHandDesigns #PrintAndStitch #Jamaica",
+          "first_comment": "",
+          "suggested_at": "2026-10-28T12:30:00-05:00"
+        },
+        {
+          "id": "DHD-PILOT-002-FB",
+          "platform": "facebook",
+          "account_name": "Dirty Hand Designs",
+          "account_id": null,
+          "caption": "Printing or embroidery? Start with the item and the artwork.\n\nA bold graphic on a T-shirt and a small chest logo on a polo may call for different finishes. Fabric, design detail, lettering size and placement matter.\n\nThese concept samples illustrate the difference; artwork and garment review determine what will work for your job.\n\nSave this guide for your next branded order.",
+          "first_comment": "",
+          "suggested_at": "2026-10-28T18:30:00-05:00"
+        }
+      ]
+    },
+    {
+      "id": "DHD-PILOT-003",
+      "version": 1,
+      "key": "group-identity",
+      "title": "One group. One identity.",
+      "pillar": "Group belonging",
+      "goal": "qualified_group_enquiries",
+      "format": "single_image",
+      "asset": {
+        "path": "assets/03-group-identity.jpg",
+        "mime": "image/jpeg",
+        "alt": "Concept arrangement of coordinated navy, white and orange group shirts with sample YOUR GROUP branding.",
+        "provenance": "AI-generated concept mockup; not a customer job photograph",
+        "sha256": "ebc4400ee4576c5d241cec2c1c09e297443b61d5f9fdc0ba27d0e68d26217b2a",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 519946
+      },
+      "review": {
+        "status": "draft",
+        "owner_approved": false,
+        "blockers": [
+          "Owner review of provisional visual identity and generated image required",
+          "Confirm offered products and operational availability before publication"
+        ]
+      },
+      "variants": [
+        {
+          "id": "DHD-PILOT-003-IG",
+          "platform": "instagram",
+          "account_handle": "dirtyhanddesigns",
+          "account_id": null,
+          "caption": "Different people. One group look.\n\nFor your club, church or team, coordinated shirts can bring the group identity together. A clear quantity, size list and artwork brief make the quotation easier to prepare.\n\nWhatsApp 876-520-2038 with your group name, quantities and date needed.\n\nConcept mockups shown; colours, styles and availability are confirmed in your quotation.\n\n#DirtyHandDesigns #GroupShirts #Jamaica",
+          "first_comment": "",
+          "suggested_at": "2026-10-30T12:30:00-05:00"
+        },
+        {
+          "id": "DHD-PILOT-003-FB",
+          "platform": "facebook",
+          "account_name": "Dirty Hand Designs",
+          "account_id": null,
+          "caption": "Bring your group identity together.\n\nPlanning shirts for a church, club or team? Prepare your artwork, quantities, size list and date needed so we can assess the job and quote clearly.\n\nStart your group enquiry: https://wa.me/18765202038\n\nConcept mockups shown. Final colours, styles, availability and production timing require confirmation.",
+          "first_comment": "",
+          "suggested_at": "2026-10-30T18:30:00-05:00"
+        }
+      ]
+    },
+    {
+      "id": "DHD-PILOT-004",
+      "version": 1,
+      "key": "artwork-checklist",
+      "title": "Better artwork. Better start.",
+      "pillar": "Order preparation",
+      "goal": "saves_and_better_quote_briefs",
+      "format": "single_image",
+      "asset": {
+        "path": "assets/04-artwork-checklist.jpg",
+        "mime": "image/jpeg",
+        "alt": "Concept desktop layout with a polo, thread and logo sketch beside a four-item quotation checklist: logo file, item and quantity, print or stitch placement, date needed.",
+        "provenance": "AI-generated concept mockup; not a customer job photograph",
+        "sha256": "c4632fa3d7d422fdd86ac85c56dc2d3572e086f899663af7e9c292372997f48c",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 535408
+      },
+      "review": {
+        "status": "draft",
+        "owner_approved": false,
+        "blockers": [
+          "Owner review of provisional visual identity and generated image required",
+          "Confirm offered products and operational availability before publication"
+        ]
+      },
+      "variants": [
+        {
+          "id": "DHD-PILOT-004-IG",
+          "platform": "instagram",
+          "account_handle": "dirtyhanddesigns",
+          "account_id": null,
+          "caption": "Four details that help us understand your job.\n\n1. Your clearest available logo file.\n2. The item and quantity.\n3. Where you want the branding placed.\n4. The date you need the finished order.\n\nA screenshot may not show enough detail for production. Send the original artwork if you have it; we will review what is suitable before the job is confirmed.\n\nSave this checklist for your next quotation.\n\nConcept workspace illustration.\n\n#DirtyHandDesigns #BrandingTips #Jamaica",
+          "first_comment": "",
+          "suggested_at": "2026-11-02T12:30:00-05:00"
+        },
+        {
+          "id": "DHD-PILOT-004-FB",
+          "platform": "facebook",
+          "account_name": "Dirty Hand Designs",
+          "account_id": null,
+          "caption": "A useful quotation starts with a clear brief.\n\nHave these ready:\n• Your clearest available logo file.\n• The item and quantity.\n• The branding placement.\n• The date needed.\n\nSend original artwork where available. We still need to review the artwork, items and production requirements before confirming the job.\n\nSave this checklist for your next quotation.\n\nConcept workspace illustration.",
+          "first_comment": "",
+          "suggested_at": "2026-11-02T18:30:00-05:00"
+        }
+      ]
+    },
+    {
+      "id": "DHD-PILOT-005",
+      "version": 1,
+      "key": "beyond-the-shirt",
+      "title": "Your brand. Beyond the shirt.",
+      "pillar": "Everyday brand visibility",
+      "goal": "product_consideration",
+      "format": "single_image",
+      "asset": {
+        "path": "assets/05-beyond-the-shirt.jpg",
+        "mime": "image/jpeg",
+        "alt": "Concept branded merchandise display of a cream tote bag, white mug and navy cap with sample YOUR BRAND marks.",
+        "provenance": "AI-generated concept mockup; not a customer job photograph",
+        "sha256": "d40a7a9ea910c6e9670d178d1e7830250b831cbcffcf9129e63a5524c1c2d153",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 562750
+      },
+      "review": {
+        "status": "draft",
+        "owner_approved": false,
+        "blockers": [
+          "Owner review of provisional visual identity and generated image required",
+          "Confirm offered products and operational availability before publication"
+        ]
+      },
+      "variants": [
+        {
+          "id": "DHD-PILOT-005-IG",
+          "platform": "instagram",
+          "account_handle": "dirtyhanddesigns",
+          "account_id": null,
+          "caption": "Where else could your brand show up?\n\nA cap for the team. A mug for the desk. A bag that gets used again.\n\nChoose merchandise around the people receiving it and how they will use it. Artwork, material and available stock determine the branding options.\n\nSave this idea for your next team or customer-gift brief.\n\nConcept mockups shown; products and finishes require confirmation.\n\n#DirtyHandDesigns #BrandedMerchandise #Jamaica",
+          "first_comment": "",
+          "suggested_at": "2026-11-04T12:30:00-05:00"
+        },
+        {
+          "id": "DHD-PILOT-005-FB",
+          "platform": "facebook",
+          "account_name": "Dirty Hand Designs",
+          "account_id": null,
+          "caption": "Choose branded items people have a reason to use.\n\nCaps, mugs and bags offer different ways to carry a business identity. Think about the recipient and the occasion before building a merchandise package.\n\nAvailability, artwork and materials affect the final options.\n\nSave this idea for your next team or customer-gift brief.\n\nConcept mockups shown; final products and branding require confirmation.",
+          "first_comment": "",
+          "suggested_at": "2026-11-04T18:30:00-05:00"
+        }
+      ]
+    },
+    {
+      "id": "DHD-PILOT-006",
+      "version": 1,
+      "key": "first-impression",
+      "title": "Small business. Big first impression.",
+      "pillar": "Business identity",
+      "goal": "starter_branding_enquiries",
+      "format": "single_image",
+      "asset": {
+        "path": "assets/06-first-impression.jpg",
+        "mime": "image/jpeg",
+        "alt": "Concept small-business branding kit with a navy polo, tote and cap carrying sample YOUR BRAND marks; no real customer is depicted.",
+        "provenance": "AI-generated concept mockup; not a customer job photograph",
+        "sha256": "26c23b1ed93b3da46fc7b845ffa2665d180609159730ea5323f806ec6ddbbb8c",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 540383
+      },
+      "review": {
+        "status": "draft",
+        "owner_approved": false,
+        "blockers": [
+          "Owner review of provisional visual identity and generated image required",
+          "Confirm offered products and operational availability before publication"
+        ]
+      },
+      "variants": [
+        {
+          "id": "DHD-PILOT-006-IG",
+          "platform": "instagram",
+          "account_handle": "dirtyhanddesigns",
+          "account_id": null,
+          "caption": "Your first branded items should earn their place.\n\nStart with what your business will use: a polo for customer-facing work, a cap for the team, or a bag that fits the job. Build from your needs and budget rather than buying a little of everything.\n\nWhatsApp 876-520-2038 to discuss a starter branding quotation.\n\nConcept kit shown, not a fixed-price package. Items and availability are confirmed individually.\n\n#DirtyHandDesigns #SmallBusinessJamaica #BusinessBranding",
+          "first_comment": "",
+          "suggested_at": "2026-11-06T12:30:00-05:00"
+        },
+        {
+          "id": "DHD-PILOT-006-FB",
+          "platform": "facebook",
+          "account_name": "Dirty Hand Designs",
+          "account_id": null,
+          "caption": "Starting a business? Build a practical first impression.\n\nChoose the branded items that fit how you work. A customer-facing team may need polos; another business may find caps or bags more useful.\n\nDiscuss a starter branding quotation on WhatsApp: https://wa.me/18765202038\n\nThis is a concept kit, not a fixed-price package. Product availability, artwork, quantities and final pricing require confirmation.",
+          "first_comment": "",
+          "suggested_at": "2026-11-06T18:30:00-05:00"
+        }
+      ]
+    }
+  ]
+}
