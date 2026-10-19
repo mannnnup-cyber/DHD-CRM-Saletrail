@@ -77,3 +77,7 @@ eligible replies. Reps remain denied pending a verified assignment design.
 Provider history may be old and reply windows may have expired; live inbound and
 reply delivery are separate release checks. WhatsApp remains unavailable and
 email collection still requires the owner's mailbox app-password repair.
+
+## BrightBean Content Studio - 2026-10-19
+
+Content Studio adds owner-reviewed image publishing through BrightBean, campaigns, Jamaica-time calendars, editable AI suggestions, independent destination monitoring and evidence-based CRM attribution. Image-first scope; live publication is a separate owner-authorized UAT gate. See ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md.

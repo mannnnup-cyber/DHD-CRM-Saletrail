@@ -140,8 +140,10 @@ begin
  perform pg_advisory_xact_lock(hashtextextended(v_id::text,0));
  select * into p from public.social_posts where id=v_id and workspace_id=p_workspace for update;
  if p_action='save' then
-  if p.id is not null and (p.version is distinct from (p_input->>'version')::integer or p.state not in ('draft','awaiting_approval','approved','cancelled')) then raise exception 'social_revision_conflict'; end if;
+  if p.id is not null and (p.version is distinct from (p_input->>'version')::integer or p.state not in ('draft','awaiting_approval','approved','cancelled','failed')) then raise exception 'social_revision_conflict'; end if;
   if exists(select 1 from public.social_operations where post_id=v_id and state in ('in_flight','uncertain')) then raise exception 'social_operation_unresolved'; end if;
+  -- Only a definite rejected creation with no provider delivery can be revised safely.
+  if p.state='failed' and exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version) then raise exception 'social_state_conflict'; end if;
   if jsonb_typeof(p_input->'accounts')<>'array' or jsonb_array_length(p_input->'accounts') not between 1 and 2 then raise exception 'social_accounts_invalid'; end if;
   if exists(select 1 from jsonb_array_elements(p_input->'accounts') a where not exists(select 1 from public.social_workspaces w,jsonb_array_elements(w.accounts) wa where w.id=p_workspace and wa->>'id'=a->>'id' and wa->>'platform'=a->>'platform')) then raise exception 'social_account_denied'; end if;
   if length(p_input->>'caption') not between 1 and 10000 or length(coalesce(p_input->>'firstComment',''))>2200 then raise exception 'social_content_invalid'; end if;
@@ -172,7 +174,7 @@ end $$;
 
 create function public.social_claim(p_workspace uuid,p_actor uuid,p_kind text,p_identity text,p_fingerprint text,p_post uuid default null,p_version integer default null,p_account uuid default null) returns jsonb
 language plpgsql security invoker set search_path='' as $$
-declare o public.social_operations; p public.social_posts;
+declare o public.social_operations; p public.social_posts; known_provider uuid;
 begin
  perform public.social_require_actor(p_workspace,p_actor,p_kind<>'reconcile' and p_kind<>'upload');
  if p_kind not in ('upload','create_schedule','update','cancel','reconcile') or (p_kind<>'upload' and (p_post is null or p_version is null or p_account is null)) then raise exception 'social_kind_invalid'; end if;
@@ -198,9 +200,11 @@ begin
    if not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and account_id=p_account) then raise exception 'social_delivery_unavailable'; end if;
    update public.social_operations set state='uncertain',error_class='lease_expired',updated_at=now() where post_id=p.id and version=p.version and account_id=p_account and state='in_flight' and lease_until<now();
    if exists(select 1 from public.social_operations where post_id=p.id and version=p.version and account_id=p_account and state='in_flight') then raise exception 'social_operation_running'; end if;
+   if p_kind='cancel' and exists(select 1 from public.social_operations where post_id=p.id and version=p.version and account_id=p_account and kind='cancel' and state='uncertain') then raise exception 'social_operation_unresolved'; end if;
+   select provider_id into known_provider from public.social_deliveries where post_id=p.id and version=p.version and account_id=p_account;
   end if;
  end if;
- insert into public.social_operations(workspace_id,post_id,version,account_id,kind,identity,request_fingerprint,actor_id) values(p_workspace,p_post,p_version,p_account,p_kind,p_identity,p_fingerprint,p_actor) returning * into o;
+ insert into public.social_operations(workspace_id,post_id,version,account_id,kind,identity,request_fingerprint,actor_id,provider_id) values(p_workspace,p_post,p_version,p_account,p_kind,p_identity,p_fingerprint,p_actor,known_provider) returning * into o;
  insert into public.social_audit(workspace_id,post_id,actor_id,event,details) values(p_workspace,p_post,p_actor,'operation_claimed',jsonb_build_object('operationId',o.id,'kind',p_kind));
  return jsonb_build_object('dispatch',true,'operation',to_jsonb(o));
 end $$;
@@ -215,7 +219,7 @@ begin
  if p_state not in ('succeeded','failed','uncertain') then raise exception 'social_state_invalid'; end if;
  -- Late responses cannot assert completion after another operator may have started reconciliation.
  if o.lease_until<now() then p_state:='uncertain'; p_error:='lease_expired'; end if;
- update public.social_operations set state=p_state,provider_id=p_provider,result=p_result,error_class=p_error,updated_at=now() where id=o.id returning * into o;
+ update public.social_operations set state=p_state,provider_id=coalesce(p_provider,provider_id),result=p_result,error_class=p_error,updated_at=now() where id=o.id returning * into o;
  if o.post_id is not null then
   select * into p from public.social_posts where id=o.post_id for update;
   if p_state='succeeded' and p_provider is not null and o.kind in ('create_schedule','cancel','reconcile','update') then
@@ -226,6 +230,7 @@ begin
    v_state:=coalesce(child->>'status','uncertain');
    if v_state='published' and (coalesce(child->>'nativeId','')='' or child->>'publishedAt' is null) then v_state:='uncertain'; end if;
    if o.kind='cancel' and v_state='draft' then v_state:='cancelled'; end if;
+   if o.kind='reconcile' and v_state='draft' and exists(select 1 from public.social_operations where post_id=p.id and version=p.version and account_id=o.account_id and provider_id=p_provider and kind='cancel' and state='uncertain') then v_state:='cancelled'; end if;
    if v_state not in ('draft','scheduled','publishing','published','failed','cancelled','uncertain') then v_state:='uncertain'; end if;
    insert into public.social_deliveries(post_id,version,account_id,platform,provider_id,status,native_id,published_at,error_class,observed_at) values(p.id,o.version,o.account_id,child->>'platform',p_provider,v_state,child->>'nativeId',(child->>'publishedAt')::timestamptz,case when child->>'error' is null then null else 'provider_failure' end,o.created_at)
    on conflict(post_id,version,account_id) do update set status=excluded.status,native_id=excluded.native_id,published_at=excluded.published_at,error_class=excluded.error_class,verified_at=now(),observed_at=excluded.observed_at where social_deliveries.observed_at<=excluded.observed_at and (social_deliveries.status<>'published' or excluded.status='published');
@@ -235,7 +240,7 @@ begin
   end if;
   if exists(select 1 from public.social_operations where post_id=p.id and version=p.version and state='uncertain') then v_state:='uncertain';
   elsif exists(select 1 from public.social_operations where post_id=p.id and version=p.version and state='in_flight') then v_state:='publishing';
-  elsif (select count(*) from public.social_deliveries where post_id=p.id and version=p.version)<jsonb_array_length(p.snapshot->'accounts') then v_state:=case when p_state='failed' then 'failed' else 'partial' end;
+  elsif (select count(*) from public.social_deliveries where post_id=p.id and version=p.version)<jsonb_array_length(p.snapshot->'accounts') then v_state:=case when p_state='failed' and not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version) then 'failed' else 'partial' end;
   elsif not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and status<>'published') then v_state:='published';
   elsif not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and status='published') and not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and status<>'cancelled') then v_state:='cancelled';
   elsif not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and status<>'scheduled') then v_state:='scheduled';
@@ -256,10 +261,21 @@ begin
  if o.id is null or o.kind<>'create_schedule' or (o.state<>'uncertain' and not(o.state='in_flight' and o.lease_until<now())) then raise exception 'social_recovery_unavailable'; end if;
  select * into p from public.social_posts where id=o.post_id and version=o.version for update;
  if p.id is null or p_result->>'caption' is distinct from p.snapshot->>'caption' or p_result->>'firstComment' is distinct from p.snapshot->>'firstComment' then raise exception 'social_recovery_content'; end if;
+ if (p_result->>'scheduledAt')::timestamptz is distinct from p.scheduled_at then raise exception 'social_recovery_schedule'; end if;
+ if o.provider_id is not null and o.provider_id::text is distinct from p_result->>'id' then raise exception 'social_recovery_provider'; end if;
  if exists(select 1 from public.social_deliveries where provider_id=(p_result->>'id')::uuid and (post_id<>p.id or version<>p.version or account_id<>o.account_id)) then raise exception 'social_recovery_duplicate'; end if;
  update public.social_operations set state='in_flight',actor_id=p_actor,lease_token=token,lease_until=now()+interval '60 seconds' where id=o.id;
  insert into public.social_audit(workspace_id,post_id,actor_id,event,details) values(p_workspace,p.id,p_actor,'owner_media_and_schedule_attestation',jsonb_build_object('operationId',o.id,'providerId',p_result->>'id'));
  return public.social_finish(p_workspace,p_actor,o.id,token,'succeeded',(p_result->>'id')::uuid,p_result,null);
+end $$;
+
+create function public.social_report(p_workspace uuid,p_actor uuid) returns jsonb
+language plpgsql security invoker set search_path='' as $$
+begin
+ perform public.social_require_actor(p_workspace,p_actor);
+ return jsonb_build_object('states',(select coalesce(jsonb_object_agg(state,total),'{}') from (select state,count(*) total from public.social_posts where workspace_id=p_workspace group by state) x),
+ 'campaigns',(select coalesce(jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'posts',(select count(*) from public.social_posts p where p.campaign_id=c.id),'verifiedPublished',(select count(*) from public.social_posts p where p.campaign_id=c.id and p.state='published'),'manualLinks',(select count(*) from public.social_attributions a where a.campaign_id=c.id))),'[]') from public.social_campaigns c where c.workspace_id=p_workspace),
+ 'attributions',(select coalesce(jsonb_agg(to_jsonb(a)),'[]') from (select campaign_id,contact_id,deal_id,evidence,created_at from public.social_attributions where workspace_id=p_workspace order by created_at desc limit 100) a));
 end $$;
 
 do $$ declare t text; begin
@@ -273,4 +289,6 @@ grant usage,select on sequence public.social_audit_id_seq to service_role;
 revoke all on sequence public.social_audit_id_seq from public,anon,authenticated;
 revoke all on function public.social_require_actor(uuid,uuid,boolean),public.social_command(uuid,uuid,text,jsonb),public.social_claim(uuid,uuid,text,text,text,uuid,integer,uuid),public.social_finish(uuid,uuid,uuid,uuid,text,uuid,jsonb,text),public.social_recover(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
 grant execute on function public.social_require_actor(uuid,uuid,boolean),public.social_command(uuid,uuid,text,jsonb),public.social_claim(uuid,uuid,text,text,text,uuid,integer,uuid),public.social_finish(uuid,uuid,uuid,uuid,text,uuid,jsonb,text),public.social_recover(uuid,uuid,uuid,jsonb) to service_role;
+revoke all on function public.social_report(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.social_report(uuid,uuid) to service_role;
 commit;

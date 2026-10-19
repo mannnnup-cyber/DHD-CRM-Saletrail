@@ -100,3 +100,7 @@ redeploy).
 - Never commit `.env` files or production credentials
 - Do not rotate credentials without explicit owner authorization
 - Security agent may recommend changes but must not autonomously mutate production credentials, RLS, production DB state, or destructive infrastructure
+
+## BrightBean Content Studio - 2026-10-19
+
+Content Studio uses fresh identity/canonical role, workspace membership, provider account allowlist, owner-only approval/external publication commands, SQL fingerprints and duplicate/lease fences. New tables RLS-enabled with no browser grants, functions INVOKER/empty search_path. Full PNG/JPEG validation and ephemeral preview URLs. Default-off writes/AI. Local PostgreSQL tests are not hosted security proof. Existing production dependency graph audit has 30 findings including two critical; no advisories found for new pinned image decoders. See ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md for limitations/UAT/rollback.

@@ -306,3 +306,7 @@ separate; this social feature does not repair the collector or reconnect OAuth.
 Email import repair (2026-10-16): sync resolves uncached saved settings through the authenticated modern-secret admin, ignores browser settings, requires supported public provider DNS/TLS993 with certificate validation and SNI. Manual imports cap at latest50 and can disable AI per request; the UI skips AI and never auto-imports on mount. Import counts reflect successful email inserts only. Existing contacts match exact email; sync no longer creates contacts automatically. Saved-login validation uses authenticated owner/manager read-only INBOX access without importing messages. Other legacy Settings actions are unchanged.
 
 AI import safety follow-up: omitted skipAi defaults to no analysis, protecting older open browser tabs. AI requires explicit skipAi:false and the saved enabled setting together.
+
+## BrightBean Content Studio - 2026-10-19
+
+Publishing is isolated under src/lib/publishing and dispatched by api/social.ts only when module=publishing. FollOps owns durable revisions, approval fingerprints, operation leases, audit and CRM evidence; BrightBean owns media and actual scheduling/delivery. Additive 13-table/6-invoker-RPC migration is authored but not applied. Browser roles have no new table/RPC grants. Mandatory modern SUPABASE_SECRET_KEY; write and AI gates default off. No new cron or API function. See ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md.

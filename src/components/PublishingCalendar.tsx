@@ -1,10 +1,11 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useState,useRef} from 'react';
 import {calendarDays,conflicts,jamaicaDisplay,jamaicaToUtc,toJamaicaInput} from '../lib/publishing/calendar';
-import {studioRequest} from '../pages/ContentStudio';
+import {studioRequest} from '../lib/publishing/client';
 export default function PublishingCalendar({campaigns,onOpen,onError}:{campaigns:any[];onOpen:(post:any)=>void;onError:(message:string)=>void}){
  const [view,setView]=useState<'month'|'week'|'list'>('month'),[anchor,setAnchor]=useState(toJamaicaInput(new Date().toISOString()).slice(0,10)),[rows,setRows]=useState<any[]>([]),[total,setTotal]=useState(0),[offset,setOffset]=useState(0),[platform,setPlatform]=useState(''),[campaign,setCampaign]=useState(''),[status,setStatus]=useState(''),[busy,setBusy]=useState(false);
- const days=calendarDays(anchor,view==='week'?'week':'month');
- async function load(){setBusy(true);try{const query:any={from:jamaicaToUtc(`${days[0]}T00:00`),to:new Date(Date.parse(jamaicaToUtc(`${days.at(-1)}T00:00`))+86400000).toISOString(),offset:String(offset)};if(campaign)query.campaign=campaign;if(status)query.status=status;const result=await studioRequest('store',undefined,query);setRows(result.posts);setTotal(result.total);}catch(e){onError((e as Error).message);}finally{setBusy(false);}}
+ const requestSequence=useRef(0);
+ const days=calendarDays(anchor||toJamaicaInput(new Date().toISOString()).slice(0,10),view==='week'?'week':'month');
+ async function load(){const sequence=++requestSequence.current;setBusy(true);try{const query:any={from:jamaicaToUtc(`${days[0]}T00:00`),to:new Date(Date.parse(jamaicaToUtc(`${days.at(-1)}T00:00`))+86400000).toISOString(),offset:String(offset)};if(campaign)query.campaign=campaign;if(status)query.status=status;const result=await studioRequest('store',undefined,query);if(sequence===requestSequence.current){setRows(result.posts);setTotal(result.total);}}catch(e){if(sequence===requestSequence.current)onError((e as Error).message);}finally{if(sequence===requestSequence.current)setBusy(false);}}
  useEffect(()=>{void load();},[anchor,view,campaign,status,offset]);
  const visible=rows.filter(p=>!platform||p.snapshot.accounts.some((a:any)=>a.platform===platform));const clashes=conflicts(visible);
  async function drop(event:React.DragEvent,date:string){event.preventDefault();const post=rows.find(p=>p.id===event.dataTransfer.getData('text/plain'));if(!post)return;if(!['draft','awaiting_approval','approved','cancelled'].includes(post.state)){onError('Cancel and verify the existing provider schedule before changing its date.');return;}setBusy(true);try{const time=post.scheduled_at?toJamaicaInput(post.scheduled_at).slice(11):'09:00';await studioRequest('save',{id:post.id,version:post.version,caption:post.snapshot.caption,firstComment:post.snapshot.firstComment,accountIds:post.snapshot.accounts.map((a:any)=>a.id),mediaIds:post.snapshot.media.map((m:any)=>m.id),campaignId:post.campaign_id,scheduledAt:jamaicaToUtc(`${date}T${time}`)});await load();}catch(e){onError((e as Error).message);}finally{setBusy(false);}}

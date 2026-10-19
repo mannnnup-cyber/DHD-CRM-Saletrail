@@ -428,3 +428,7 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 
 
 2026-10-16 — Repair email sync saved-credential resolution and certificate validation, remove browser credential payload/automatic import, skip AI in manual sync, count persisted emails truthfully and show durable status. Replace fake IMAP validation with authenticated saved-mailbox read-only login. Existing-contact linking only; no automatic contact creation during import.
+
+## BrightBean Content Studio - 2026-10-19
+
+Added isolated Content Studio: image composer/media mapping, durable drafts/revisions/approvals, per-account operation ledger, Jamaica calendar, cancellation/reconciliation, editable AI/brands/campaigns, provider analytics and manually evidenced CRM links. Existing inbox server behavior preserved; no production deployment. See ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md.

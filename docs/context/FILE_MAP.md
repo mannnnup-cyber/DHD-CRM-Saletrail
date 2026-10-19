@@ -205,3 +205,7 @@ Also update CHANGELOG.md with a summary of what changed and why.
 
 
 Email repair: src/lib/inbox/mailbox-server.ts owns uncached saved configuration, trusted provider/TLS validation and bounded read-only login check. api/settings.ts testEmail now authenticates owner/manager and uses saved settings only. tests/email-sync.test.ts exercises sync/validation with synthetic mocked IMAP and database.
+
+## BrightBean Content Studio - 2026-10-19
+
+New /#/content-studio route: src/pages/ContentStudio.tsx; components PublishingCalendar, PublishingPreview, ContentPlanning, PublishingAnalytics. src/lib/publishing/{provider,server,store,commands,ai,analytics,client,calendar}.ts; migration 20261018000100_brightbean_content_studio.sql; tests/publishing-*.test.{ts,tsx}. Server env: SOCIAL_PUBLISHING_WRITES_ENABLED, SOCIAL_AI_ENABLED, mandatory SUPABASE_SECRET_KEY plus existing server BrightBean/AI configuration. Full API action/file inventory: ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md.

@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {studioRequest} from '../pages/ContentStudio';
+import {studioRequest} from '../lib/publishing/client';
 const style='w-full p-2 bg-gray-900 border border-gray-700 rounded-lg',button='bg-amber-500 text-black px-3 py-2 rounded-lg disabled:opacity-40';
 export default function ContentPlanning({tab,store,onSaved,onCaption,onError}:{tab:string;store:any;onSaved:()=>Promise<void>;onCaption:(value:string)=>void;onError:(value:string)=>void}){
  const [brand,setBrand]=useState<Record<string,string>>(store?.brand?.profile||{}),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[kind,setKind]=useState('ideas'),[prompt,setPrompt]=useState(''),[output,setOutput]=useState('');

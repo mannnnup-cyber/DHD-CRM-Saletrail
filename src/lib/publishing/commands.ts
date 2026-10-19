@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import {PNG} from 'pngjs';
+import jpeg from 'jpeg-js';
 import { id, reject, PublishingError, projectMedia, projectPost, text } from './provider.js';
 import { rpc, readPost, positiveVersion } from './store.js';
 
@@ -12,6 +14,7 @@ export function validateImage(bytes: Buffer, mime: string) {
     while(n+9<bytes.length) { if(bytes[n]!==255) break; const marker=bytes[n+1]; if(marker===218) break; const length=bytes.readUInt16BE(n+2); if(length<2 || n+2+length>bytes.length) break; if([192,193,194].includes(marker)){height=bytes.readUInt16BE(n+5);width=bytes.readUInt16BE(n+7);break;} n+=2+length; }
   }
   if (!width || !height || width>10000 || height>10000 || width*height>25000000) reject(400,'Image format or dimensions are invalid. Maximum 25 megapixels.');
+  try {const decoded=mime==='image/png'?PNG.sync.read(bytes,{checkCRC:true}):jpeg.decode(bytes,{useTArray:true,formatAsRGBA:false,tolerantDecoding:false,maxResolutionInMP:25,maxMemoryUsageInMB:96});if(decoded.width!==width||decoded.height!==height)throw new Error();}catch{reject(400,'The image is truncated or cannot be decoded safely.');}
   return {width,height,sha256:createHash('sha256').update(bytes).digest('hex')};
 }
 export function writeGate() { if(process.env.SOCIAL_PUBLISHING_WRITES_ENABLED!=='true') reject(503,'Provider writes are disabled until owner-authorized UAT. Local drafts and approvals remain available.'); }
@@ -24,7 +27,12 @@ export async function executeOperation(caller:any, provider:any, options:{kind:s
   }
   let receiptId:string|null=null;
   try {
-    const raw=await options.send(operation), result=options.project(raw);
+    const raw=await options.send(operation);
+    // An identity is diagnostic until its entire receipt is verified; never replay the write.
+    if(raw?.workspace_id===provider.workspace && typeof raw.id==='string') {
+      try { receiptId=id(raw.id); } catch { /* Invalid identities are not retained. */ }
+    }
+    const result=options.project(raw);
     receiptId=result.id;
     await rpc(caller.admin,'social_finish',{p_workspace:provider.workspace,p_actor:caller.actor,p_operation:operation.id,p_token:operation.lease_token,p_state:'succeeded',p_provider:result.id,p_result:result,p_error:null});
     return {result,operationId:operation.id};
@@ -73,6 +81,8 @@ export async function deliveryCommand(caller:any,provider:any,input:any,kind:'ca
   const saved=await caller.admin.from('social_deliveries').select('*').eq('post_id',post.id).eq('version',post.version).eq('account_id',account.id).maybeSingle();
   if(saved.error||!saved.data)reject(409,'No known provider delivery exists. Use owner recovery for an uncertain creation.');
   const providerId=id(saved.data.provider_id);
+  const pendingCancel=await caller.admin.from('social_operations').select('id').eq('post_id',post.id).eq('version',post.version).eq('account_id',account.id).eq('kind','cancel').eq('state','uncertain').limit(1);
+  if(pendingCancel.error)reject(503,'Delivery history is unavailable.');
   const identity=`${kind}-${post.id}-${post.version}-${account.id}-${id(input.requestId)}`;
   return {success:true,...await executeOperation(caller,provider,{kind,identity,fingerprint:digest({providerId,kind}),post,accountId:account.id,send:async()=>{
     const before=projectPost(await provider.request(`/posts/${providerId}`),provider);
@@ -81,7 +91,7 @@ export async function deliveryCommand(caller:any,provider:any,input:any,kind:'ca
     if(before.children[0].status==='published')return before;
     if(!['scheduled','draft'].includes(before.children[0].status))reject(409,'This delivery cannot currently be cancelled.');
     const raw=await provider.request(`/posts/${providerId}/cancel`,'POST');return projectPost(raw,provider);
-  },project:(value:any)=>{if(value.id!==providerId||value.children.length!==1||value.children[0].accountId!==account.id)throw new PublishingError(502,'Delivery receipt changed.',true);if(kind==='reconcile'&&value.children[0].status==='draft'&&saved.data.status==='cancelled')value.children[0].status='cancelled';return value;}})};
+  },project:(value:any)=>{if(value.id!==providerId||value.children.length!==1||value.children[0].accountId!==account.id)throw new PublishingError(502,'Delivery receipt changed.',true);if(kind==='reconcile'&&value.children[0].status==='draft'&&(saved.data.status==='cancelled'||pendingCancel.data?.length))value.children[0].status='cancelled';return value;}})};
 }
 export async function recoverOperation(caller:any,provider:any,input:any) {
   if(caller.role!=='owner'||input.mediaAndScheduleChecked!==true)reject(403,'An owner must check the image, account and schedule in Studio before recovery.');
