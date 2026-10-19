@@ -1,16 +1,33 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authorizePublishing, publishingProvider, projectPost, projectMedia, PublishingError, reject, id } from './provider.js';
+import { rpc, membership, normalizeDraft, positiveVersion, listStore, readPost } from './store.js';
 
 export async function handlePublishing(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
   try {
     const caller = await authorizePublishing(req);
     const action = typeof req.query.action === 'string' ? req.query.action : 'readiness';
-    if (!['readiness', 'media', 'knownPost'].includes(action)) reject(400, 'Unknown publishing action.');
-    if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); reject(405, 'GET required.'); }
+    const methods: Record<string,string> = { readiness:'GET',media:'GET',knownPost:'GET',store:'GET',detail:'GET',initialize:'POST',grant:'POST',revoke:'POST',save:'POST',submit:'POST',approve:'POST',reject:'POST' };
+    if (!methods[action]) reject(400, 'Unknown publishing action.');
+    if (req.method !== methods[action]) { res.setHeader('Allow', methods[action]); reject(405, `${methods[action]} required.`); }
+    if (req.method !== 'GET' && req.headers['content-type']?.split(';')[0] !== 'application/json') reject(415, 'JSON required.');
     const provider = await publishingProvider(caller.admin);
     if (action === 'readiness') return res.json({ success: true, workspace: { id: provider.workspace, name: provider.name, timezone: 'America/Jamaica' }, accounts: provider.accounts, permissions: provider.permissions, publicationVerified: false, warning: 'Connected metadata does not prove platform publication. FollOps approval does not prevent direct publishing in BrightBean Studio.' });
     if (action === 'knownPost') { const requested = id(req.query.id); const row = await provider.request(`/posts/${requested}`); if (row?.id !== requested) reject(502, 'Post identity could not be verified.'); return res.json({ success: true, post: projectPost(row, provider) }); }
+    if (!['media'].includes(action)) {
+      const input = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+      if (action === 'initialize') { if (caller.role !== 'owner') reject(403,'Only an owner may initialize publishing.'); return res.json({success:true,result:await rpc(caller.admin,'social_command',{p_workspace:provider.workspace,p_actor:caller.actor,p_action:action,p_input:{accounts:provider.accounts.map((a:any)=>({id:a.id,platform:a.platform}))}})}); }
+      await membership(caller,provider.workspace);
+      if (action === 'store') return res.json({success:true,...await listStore(caller,provider.workspace,req.query),role:caller.role,actor:caller.actor});
+      if (action === 'detail') {
+        const post = await readPost(caller,provider.workspace,req.query.id);
+        const [operations,deliveries,approvals,audit,revisions] = await Promise.all(['social_operations','social_deliveries','social_approvals','social_audit','social_revisions'].map(table=>caller.admin.from(table).select('*').eq('post_id',post.id).limit(100)));
+        if ([operations,deliveries,approvals,audit,revisions].some(r=>r.error)) reject(503,'Post history is unavailable.');
+        return res.json({success:true,post,operations:operations.data.map(({lease_token,...safe}:any)=>safe),deliveries:deliveries.data,approvals:approvals.data,audit:audit.data,revisions:revisions.data});
+      }
+      const data = action === 'save' ? normalizeDraft(input,provider) : ['grant','revoke'].includes(action) ? {actorId:id(input.actorId)} : {id:id(input.id),version:positiveVersion(input.version)};
+      return res.json({success:true,result:await rpc(caller.admin,'social_command',{p_workspace:provider.workspace,p_actor:caller.actor,p_action:action,p_input:data})});
+    }
     const query = new URLSearchParams({ limit: '25' });
     if (req.query.cursor !== undefined) { if (typeof req.query.cursor !== 'string' || req.query.cursor.length > 256 || !/^[A-Za-z0-9_+=\/-]+$/.test(req.query.cursor)) reject(400, 'Invalid media cursor.'); query.set('cursor', req.query.cursor); }
     const media = await provider.request(`/media/?${query}`);
