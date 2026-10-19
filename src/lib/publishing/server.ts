@@ -1,14 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authorizePublishing, publishingProvider, projectPost, projectMedia, PublishingError, reject, id } from './provider.js';
 import { rpc, membership, normalizeDraft, positiveVersion, listStore, readPost } from './store.js';
-import { uploadImage, schedulePost } from './commands.js';
+import { uploadImage, schedulePost, deliveryCommand, recoverOperation } from './commands.js';
 
 export async function handlePublishing(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
   try {
     const caller = await authorizePublishing(req);
     const action = typeof req.query.action === 'string' ? req.query.action : 'readiness';
-    const methods: Record<string,string> = { readiness:'GET',media:'GET',knownPost:'GET',store:'GET',detail:'GET',initialize:'POST',grant:'POST',revoke:'POST',save:'POST',submit:'POST',approve:'POST',reject:'POST',upload:'POST',schedule:'POST' };
+    const methods: Record<string,string> = { readiness:'GET',media:'GET',knownPost:'GET',store:'GET',detail:'GET',initialize:'POST',grant:'POST',revoke:'POST',save:'POST',submit:'POST',approve:'POST',reject:'POST',upload:'POST',schedule:'POST',cancel:'POST',reconcile:'POST',recover:'POST' };
     if (!methods[action]) reject(400, 'Unknown publishing action.');
     if (req.method !== methods[action]) { res.setHeader('Allow', methods[action]); reject(405, `${methods[action]} required.`); }
     if (req.method !== 'GET' && req.headers['content-type']?.split(';')[0] !== 'application/json') reject(415, 'JSON required.');
@@ -21,6 +21,8 @@ export async function handlePublishing(req: VercelRequest, res: VercelResponse) 
       await membership(caller,provider.workspace);
       if (action === 'upload') return res.json(await uploadImage(caller,provider,input));
       if (action === 'schedule') return res.json(await schedulePost(caller,provider,input));
+      if (action === 'cancel' || action === 'reconcile') return res.json(await deliveryCommand(caller,provider,input,action));
+      if (action === 'recover') return res.json(await recoverOperation(caller,provider,input));
       if (action === 'store') return res.json({success:true,...await listStore(caller,provider.workspace,req.query),role:caller.role,actor:caller.actor});
       if (action === 'detail') {
         const post = await readPost(caller,provider.workspace,req.query.id);

@@ -66,3 +66,26 @@ export async function schedulePost(caller:any,provider:any,input:any) {
   const identity=`schedule-${post.id}-${post.version}-${account.id}`;
   return {success:true,...await executeOperation(caller,provider,{kind:'create_schedule',identity,fingerprint:digest(payload),post,accountId:account.id,send:()=>provider.request('/posts/','POST',{...payload,idempotency_key:identity}),project:(raw:any)=>{const projected=projectPost(raw,provider);if(projected.children.length!==1||projected.children[0].accountId!==account.id||projected.caption!==snapshot.caption||projected.firstComment!==snapshot.firstComment||projected.scheduledAt!==snapshot.scheduledAt)throw new PublishingError(502,'Publication receipt does not match approval.',true);return projected;}})};
 }
+export async function deliveryCommand(caller:any,provider:any,input:any,kind:'cancel'|'reconcile') {
+  if(kind==='cancel'){writeGate();if(caller.role!=='owner')reject(403,'Only an owner may cancel a schedule.');provider.permission('create_posts');}
+  const post=await readPost(caller,provider.workspace,input.id);if(post.version!==positiveVersion(input.version))reject(409,'Post version changed.');
+  const account=provider.account(id(input.accountId));
+  const saved=await caller.admin.from('social_deliveries').select('*').eq('post_id',post.id).eq('version',post.version).eq('account_id',account.id).maybeSingle();
+  if(saved.error||!saved.data)reject(409,'No known provider delivery exists. Use owner recovery for an uncertain creation.');
+  const providerId=id(saved.data.provider_id);
+  const identity=`${kind}-${post.id}-${post.version}-${account.id}-${id(input.requestId)}`;
+  return {success:true,...await executeOperation(caller,provider,{kind,identity,fingerprint:digest({providerId,kind}),post,accountId:account.id,send:async()=>{
+    const before=projectPost(await provider.request(`/posts/${providerId}`),provider);
+    if(before.id!==providerId||before.children.length!==1||before.children[0].accountId!==account.id)throw new PublishingError(502,'Delivery scope changed.',true);
+    if(kind==='reconcile')return before;
+    if(before.children[0].status==='published')return before;
+    if(!['scheduled','draft'].includes(before.children[0].status))reject(409,'This delivery cannot currently be cancelled.');
+    const raw=await provider.request(`/posts/${providerId}/cancel`,'POST');return projectPost(raw,provider);
+  },project:(value:any)=>{if(value.id!==providerId||value.children.length!==1||value.children[0].accountId!==account.id)throw new PublishingError(502,'Delivery receipt changed.',true);if(kind==='reconcile'&&value.children[0].status==='draft'&&saved.data.status==='cancelled')value.children[0].status='cancelled';return value;}})};
+}
+export async function recoverOperation(caller:any,provider:any,input:any) {
+  if(caller.role!=='owner'||input.mediaAndScheduleChecked!==true)reject(403,'An owner must check the image, account and schedule in Studio before recovery.');
+  const known=projectPost(await provider.request(`/posts/${id(input.providerId)}`),provider);
+  if(known.id!==input.providerId)reject(502,'Provider identity changed.');
+  return {success:true,result:await rpc(caller.admin,'social_recover',{p_workspace:provider.workspace,p_actor:caller.actor,p_operation:id(input.operationId),p_result:known})};
+}
