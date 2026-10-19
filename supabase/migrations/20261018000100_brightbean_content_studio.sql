@@ -58,7 +58,7 @@ create table public.social_operations (
 create table public.social_deliveries (
  post_id uuid references public.social_posts(id), version integer not null, account_id uuid, platform text not null check(platform in ('instagram','facebook')),
  provider_id uuid not null, status text not null, native_id text, published_at timestamptz, error_class text,
- verified_at timestamptz not null default now(), primary key(post_id,version,account_id)
+ verified_at timestamptz not null default now(), observed_at timestamptz not null default now(), primary key(post_id,version,account_id)
 );
 create unique index social_one_create_per_target on public.social_operations(post_id,version,account_id) where kind='create_schedule';
 create table public.social_audit (
@@ -182,6 +182,10 @@ begin
    if exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and account_id=p_account) or exists(select 1 from public.social_operations where post_id=p.id and version=p.version and account_id=p_account and kind='create_schedule') then raise exception 'social_delivery_exists'; end if;
    update public.social_posts set state='publishing',updated_at=now() where id=p.id;
   elsif p_kind not in ('cancel','reconcile','update') then raise exception 'social_kind_invalid'; end if;
+  if p_kind in ('cancel','reconcile','update') then
+   if not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and account_id=p_account) then raise exception 'social_delivery_unavailable'; end if;
+   if exists(select 1 from public.social_operations where post_id=p.id and version=p.version and account_id=p_account and state='in_flight') then raise exception 'social_operation_running'; end if;
+  end if;
  end if;
  insert into public.social_operations(workspace_id,post_id,version,account_id,kind,identity,request_fingerprint,actor_id) values(p_workspace,p_post,p_version,p_account,p_kind,p_identity,p_fingerprint,p_actor) returning * into o;
  insert into public.social_audit(workspace_id,post_id,actor_id,event,details) values(p_workspace,p_post,p_actor,'operation_claimed',jsonb_build_object('operationId',o.id,'kind',p_kind));
@@ -194,7 +198,7 @@ declare o public.social_operations; p public.social_posts; child jsonb; v_state 
 begin
  perform public.social_require_actor(p_workspace,p_actor);
  select * into o from public.social_operations where id=p_operation and workspace_id=p_workspace for update;
- if o.id is null or o.actor_id<>p_actor or o.lease_token<>p_token or o.state<>'in_flight' then raise exception 'social_operation_fence'; end if;
+ if o.id is null or o.actor_id is distinct from p_actor or o.lease_token is distinct from p_token or o.state<>'in_flight' then raise exception 'social_operation_fence'; end if;
  if p_state not in ('succeeded','failed','uncertain') then raise exception 'social_state_invalid'; end if;
  -- Late responses cannot assert completion after another operator may have started reconciliation.
  if o.lease_until<now() then p_state:='uncertain'; p_error:='lease_expired'; end if;
@@ -203,13 +207,15 @@ begin
   select * into p from public.social_posts where id=o.post_id for update;
   if p_state='succeeded' and p_provider is not null and o.kind in ('create_schedule','cancel','reconcile','update') then
    child:=p_result->'children'->0;
-   if jsonb_array_length(p_result->'children')<>1 or child->>'accountId'<>o.account_id::text then raise exception 'social_result_scope'; end if;
-   v_state:=child->>'status';
+   if p.version is distinct from o.version or jsonb_typeof(p_result->'children') is distinct from 'array' or jsonb_array_length(p_result->'children') is distinct from 1 or child->>'accountId' is distinct from o.account_id::text or p_result->>'id' is distinct from p_provider::text then raise exception 'social_result_scope'; end if;
+   if not exists(select 1 from jsonb_array_elements(p.snapshot->'accounts') a where a->>'id'=o.account_id::text and a->>'platform'=child->>'platform') then raise exception 'social_result_scope'; end if;
+   if o.kind in ('cancel','reconcile','update') and not exists(select 1 from public.social_deliveries where post_id=p.id and version=p.version and account_id=o.account_id and provider_id=p_provider) then raise exception 'social_provider_identity'; end if;
+   v_state:=coalesce(child->>'status','uncertain');
    if v_state='published' and (coalesce(child->>'nativeId','')='' or child->>'publishedAt' is null) then v_state:='uncertain'; end if;
    if o.kind='cancel' and v_state='draft' then v_state:='cancelled'; end if;
    if v_state not in ('draft','scheduled','publishing','published','failed','cancelled','uncertain') then v_state:='uncertain'; end if;
-   insert into public.social_deliveries(post_id,version,account_id,platform,provider_id,status,native_id,published_at,error_class) values(p.id,o.version,o.account_id,child->>'platform',p_provider,v_state,child->>'nativeId',(child->>'publishedAt')::timestamptz,case when child->>'error' is null then null else 'provider_failure' end)
-   on conflict(post_id,version,account_id) do update set status=excluded.status,native_id=excluded.native_id,published_at=excluded.published_at,error_class=excluded.error_class,verified_at=now();
+   insert into public.social_deliveries(post_id,version,account_id,platform,provider_id,status,native_id,published_at,error_class,observed_at) values(p.id,o.version,o.account_id,child->>'platform',p_provider,v_state,child->>'nativeId',(child->>'publishedAt')::timestamptz,case when child->>'error' is null then null else 'provider_failure' end,o.created_at)
+   on conflict(post_id,version,account_id) do update set status=excluded.status,native_id=excluded.native_id,published_at=excluded.published_at,error_class=excluded.error_class,verified_at=now(),observed_at=excluded.observed_at where social_deliveries.observed_at<=excluded.observed_at and (social_deliveries.status<>'published' or excluded.status='published');
   end if;
   if exists(select 1 from public.social_operations where post_id=p.id and state='uncertain') then v_state:='uncertain';
   elsif exists(select 1 from public.social_operations where post_id=p.id and state='in_flight') then v_state:='publishing';

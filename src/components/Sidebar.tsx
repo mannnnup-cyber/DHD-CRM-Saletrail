@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { section: 'CRM', path: '/inbox', label: 'Unified Inbox', icon: Mail, role: 'all' },
   { section: 'CRM', path: '/email', label: 'Email Management', icon: Mail, role: 'manager' },
   { section: 'CRM', path: '/social', label: 'Social Media', icon: Share2, role: 'all' },
+  { section: 'CRM', path: '/content-studio', label: 'Content Studio', icon: Calendar, role: 'manager' },
   { section: 'Analytics', path: '/team', label: 'Team', icon: Users, role: 'manager' },
   { section: 'Analytics', path: '/reports', label: 'Reports', icon: BarChart3, role: 'all' },
   { section: 'Analytics', path: '/coaching', label: 'Call Coaching', icon: BrainCircuit, role: 'manager' },

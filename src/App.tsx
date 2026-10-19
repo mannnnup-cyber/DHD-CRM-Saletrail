@@ -27,6 +27,7 @@ import UnifiedInbox from './pages/UnifiedInbox';
 import Contacts from './pages/Contacts';
 import ContactProfile from './pages/ContactProfile';
 import SocialMedia from './pages/SocialMedia';
+import ContentStudio from './pages/ContentStudio';
 import ContactModal from './components/ContactModal';
 import ActionList from './components/ActionList';
 import {
@@ -351,6 +352,7 @@ const AppInner: React.FC = () => {
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactProfile />} />
             <Route path="/social" element={<SocialMedia />} />
+            <Route path="/content-studio" element={<ContentStudio />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>

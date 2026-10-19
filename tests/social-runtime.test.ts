@@ -11,7 +11,7 @@ describe('native emitted social handler', () => {
     try {
       fs.writeFileSync(path.join(temp, 'package.json'), '{"type":"module"}');
       fs.symlinkSync(fs.realpathSync(path.resolve('node_modules')), path.join(temp, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
-      for (const source of ['api/social.ts', 'src/lib/inbox/social-server.ts', 'src/lib/inbox/social.ts']) {
+      for (const source of ['api/social.ts', 'src/lib/inbox/social-server.ts', 'src/lib/inbox/social.ts', ...fs.readdirSync('src/lib/publishing').filter(name=>name.endsWith('.ts')).map(name=>`src/lib/publishing/${name}`)]) {
         const output = ts.transpileModule(fs.readFileSync(path.resolve(source), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
         const destination = path.join(temp, source.replace(/\.ts$/, '.js')); fs.mkdirSync(path.dirname(destination), { recursive: true }); fs.writeFileSync(destination, output);
       }
