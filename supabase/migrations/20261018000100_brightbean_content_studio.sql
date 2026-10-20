@@ -68,9 +68,9 @@ create table public.social_audit (
 );
 create table public.social_attributions (
  id uuid primary key default gen_random_uuid(), workspace_id uuid not null references public.social_workspaces(id),
- campaign_id uuid not null references public.social_campaigns(id), contact_id uuid references public.contacts(id), deal_id uuid references public.deals(id),
- evidence text not null check(length(evidence) between 1 and 1000), created_by uuid not null references public.user_profiles(id), created_at timestamptz not null default now(),
- check(contact_id is not null or deal_id is not null)
+ campaign_id uuid not null references public.social_campaigns(id), contact_id uuid references public.contacts(id) on delete set null, deal_id uuid references public.deals(id) on delete set null,
+ -- Keep historical evidence without preventing normal CRM record deletion.
+ evidence text not null check(length(evidence) between 1 and 1000), created_by uuid not null references public.user_profiles(id), created_at timestamptz not null default now()
 );
 create table public.social_ai_suggestions (
  id uuid primary key, workspace_id uuid not null references public.social_workspaces(id), actor_id uuid not null references public.user_profiles(id),
@@ -130,6 +130,8 @@ begin
   if c.id is null then raise exception 'social_campaign_unavailable'; end if; return to_jsonb(c);
  end if;
  if p_action='attribution' then
+  -- Creation needs an existing CRM target; later deletes may clear both links.
+  if p_input->>'contactId' is null and p_input->>'dealId' is null then raise exception 'social_attribution_target_required'; end if;
   if not exists(select 1 from public.social_campaigns where id=(p_input->>'campaignId')::uuid and workspace_id=p_workspace) then raise exception 'social_campaign_unavailable'; end if;
   if p_input->>'contactId' is not null and not exists(select 1 from public.contacts where id=(p_input->>'contactId')::uuid) then raise exception 'social_contact_unavailable'; end if;
   if p_input->>'dealId' is not null and not exists(select 1 from public.deals where id=(p_input->>'dealId')::uuid) then raise exception 'social_deal_unavailable'; end if;
@@ -274,7 +276,7 @@ language plpgsql security invoker set search_path='' as $$
 begin
  perform public.social_require_actor(p_workspace,p_actor);
  return jsonb_build_object('states',(select coalesce(jsonb_object_agg(state,total),'{}') from (select state,count(*) total from public.social_posts where workspace_id=p_workspace group by state) x),
- 'campaigns',(select coalesce(jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'posts',(select count(*) from public.social_posts p where p.campaign_id=c.id),'verifiedPublished',(select count(*) from public.social_posts p where p.campaign_id=c.id and p.state='published'),'manualLinks',(select count(*) from public.social_attributions a where a.campaign_id=c.id))),'[]') from public.social_campaigns c where c.workspace_id=p_workspace),
+ 'campaigns',(select coalesce(jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'posts',(select count(*) from public.social_posts p where p.campaign_id=c.id),'verifiedPublished',(select count(*) from public.social_posts p where p.campaign_id=c.id and p.state='published'),'manualLinks',(select count(*) from public.social_attributions a where a.campaign_id=c.id and (a.contact_id is not null or a.deal_id is not null)))),'[]') from public.social_campaigns c where c.workspace_id=p_workspace),
  'attributions',(select coalesce(jsonb_agg(to_jsonb(a)),'[]') from (select campaign_id,contact_id,deal_id,evidence,created_at from public.social_attributions where workspace_id=p_workspace order by created_at desc limit 100) a));
 end $$;
 

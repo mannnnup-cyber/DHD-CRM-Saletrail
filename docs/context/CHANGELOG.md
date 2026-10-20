@@ -432,3 +432,7 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 ## BrightBean Content Studio - 2026-10-19
 
 Added isolated Content Studio: image composer/media mapping, durable drafts/revisions/approvals, per-account operation ledger, Jamaica calendar, cancellation/reconciliation, editable AI/brands/campaigns, provider analytics and manually evidenced CRM links. Existing inbox server behavior preserved; no production deployment. See ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md.
+
+## BB-07 - 2026-10-19
+
+BB-07 fixes campaign attribution blocking CRM record deletion, preserves historical evidence while keeping active CRM counts accurate, and tests broad hosted default grants. Adds branch-only no-deploy guard. No hosted mutation, merge or deployment.

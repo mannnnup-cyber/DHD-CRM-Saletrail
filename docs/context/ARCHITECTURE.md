@@ -310,3 +310,7 @@ AI import safety follow-up: omitted skipAi defaults to no analysis, protecting o
 ## BrightBean Content Studio - 2026-10-19
 
 Publishing is isolated under src/lib/publishing and dispatched by api/social.ts only when module=publishing. FollOps owns durable revisions, approval fingerprints, operation leases, audit and CRM evidence; BrightBean owns media and actual scheduling/delivery. Additive 13-table/6-invoker-RPC migration is authored but not applied. Browser roles have no new table/RPC grants. Mandatory modern SUPABASE_SECRET_KEY; write and AI gates default off. No new cron or API function. See ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md.
+
+## BB-07 - 2026-10-19
+
+BB-07 compared the migration directly with hosted PostgreSQL 17.6 metadata and service-role privileges using read-only transactions. Required columns, UUID keys and built-ins match; no social object/history collisions. CRM attribution FKs now SET NULL on CRM deletion, initial target validation remains server/RPC enforced, and active counts exclude orphan history. Hosted migration is still unapplied. See ../BB-07-DATABASE-READINESS.md.

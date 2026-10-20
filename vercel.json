@@ -4,6 +4,11 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "devCommand": "npm run dev",
+  "git": {
+    "deploymentEnabled": {
+      "feat/brightbean-content-studio": false
+    }
+  },
   "functions": {
     "api/email.ts": {
       "maxDuration": 60

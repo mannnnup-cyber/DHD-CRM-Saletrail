@@ -259,3 +259,7 @@ WP-EMAIL-SYNC-REPAIR (2026-10-16): In Review pending tests and independent QA/se
 ## BrightBean Content Studio - 2026-10-19
 
 BB-01 through BB-06 implemented on feat/brightbean-content-studio, with local independent QA/security review and pending PA approval / controlled hosted UAT. No merge, push, production deployment, hosted migration or real provider writes. Next release gates: isolated hosted Auth/PostgREST/RLS verification, explicit owner-approved first image/caption/time/platform UAT, native publication verification. WooCommerce remains paused; unrelated inbox/channel work unchanged. See ../BRIGHTBEAN-CONTENT-STUDIO-DELIVERY.md.
+
+## BB-07 - 2026-10-19
+
+BB-07: hosted read-only compatibility checked; one CRM-delete/attribution defect corrected locally with expanded SQL tests. Ready to apply corrected migration only after owner approval; not applied by BB-07. See ../BB-07-DATABASE-READINESS.md.
