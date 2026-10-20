@@ -2,6 +2,24 @@
 
 Date: 2026-10-20. **Verdict: BLOCKED before migration application.**
 
+## Resume: Free-tier logical backup attempt
+
+Resume baseline: `afc1242d51efda538de2361792206be90446856a`. Managed paid-plan backups are not required. A verified logical backup is acceptable, but **Phase A remains BLOCKED** because no existing native PostgreSQL connection for the authorized project was found in the inspected configuration.
+
+- Current Supabase connector metadata again confirms `vatsonbvjkyzxqrnderr`, ACTIVE_HEALTHY, PostgreSQL 17.6. An explicit read-only SQL transaction confirms database access and zero applied history entries for `20261018000100`; it was rolled back.
+- Secure inspection of connection metadata, without printing secret values, found that the available ignored `.env.local` contains API URLs for the authorized FollOps project, but its session-pooler PostgreSQL URL has a project-qualified username targeting a **different project**. These credentials were not used to connect, dump or test any database. The other project reference and all credentials are omitted here.
+- No native database connection variables exist in the current process environment; inspected standard PostgreSQL password-file locations were absent. The feature worktree contains only `.env.example`. A Supabase service-role API key is not a PostgreSQL password and was not repurposed as one. Connector credentials were not extracted.
+- `pg_dump`, `pg_restore` and `psql` are not available on PATH; the standard PostgreSQL installation directory is absent. Docker Desktop is installed, but its daemon was unavailable. An attempt to start the existing Docker Desktop installation did not establish a usable daemon during these checks. Installing tools alone would not resolve the project credential mismatch.
+- The SQL connector provides query results, not a native PostgreSQL connection or a streaming database export to a restricted local file. No customer rows or authentication records were fetched into connector/tool output as a substitute dump. A partial ad-hoc table export would not establish a transactionally consistent, recoverable backup of the relevant CRM database.
+
+**Backup evidence:** no backup created; location, size and checksum: not applicable; coverage: none; integrity/restore test: not run. No claim of recoverability is made. No hosted data, permissions, credentials, migration history or provider configuration was changed.
+
+**Required access:** provide the existing direct or session-pooler connection for `vatsonbvjkyzxqrnderr` through a secure local configuration/password file. Do not paste its password or URI into chat. Do not reset credentials or create a backup role under the current restriction. Once available, use PostgreSQL-compatible tools, restrict the backup directory outside the repository, verify identity before export, and validate a disposable restore before Phase B.
+
+**Planned coverage, not achieved:** application schemas/data, sequence state, functions/triggers, RLS, grants/default privileges and relevant roles; authentication data where readable. Record all actual export exclusions. Supabase Storage object bytes and platform configuration (JWT/API secrets, OAuth/SMTP settings, Edge Function deployments and DNS) require separate recovery handling. Managed/internal schema and role-password coverage must be explicitly measured rather than assumed. Supabase's official [restore guidance](https://supabase.com/docs/guides/self-hosting/restore-from-platform) documents separate roles/schema/data dumps, the direct/session connection requirement and these platform exclusions.
+
+Phase B checksum/dependency refresh, deployed publishing gate verification and full schema/ACL/count baseline were not performed because Phase A did not pass. Phase C hosted tests remain unexecuted. Existing code and approved SQL are unchanged. The 54-test and TypeScript results below are from the preceding BB-08 run; they were not rerun for this documentation-only resume. No deployment, merge or BrightBean write occurred.
+
 Project: `vatsonbvjkyzxqrnderr`. Branch: `feat/brightbean-content-studio`.
 Approved baseline: `7315ec27ac0f30bc70b74aeb1399e031625862c4`.
 Migration: `supabase/migrations/20261018000100_brightbean_content_studio.sql`.
