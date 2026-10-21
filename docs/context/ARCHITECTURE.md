@@ -306,3 +306,28 @@ separate; this social feature does not repair the collector or reconnect OAuth.
 Email import repair (2026-10-16): sync resolves uncached saved settings through the authenticated modern-secret admin, ignores browser settings, requires supported public provider DNS/TLS993 with certificate validation and SNI. Manual imports cap at latest50 and can disable AI per request; the UI skips AI and never auto-imports on mount. Import counts reflect successful email inserts only. Existing contacts match exact email; sync no longer creates contacts automatically. Saved-login validation uses authenticated owner/manager read-only INBOX access without importing messages. Other legacy Settings actions are unchanged.
 
 AI import safety follow-up: omitted skipAi defaults to no analysis, protecting older open browser tabs. AI requires explicit skipAi:false and the saved enabled setting together.
+## WhatsApp phone labels and CRM unread — feature branch, 2026-10-21
+
+`feat/whatsapp-labels-unread` adds a compact read-only phone-label catalog and
+personal CRM unread state. New actions `phoneLabels` (GET), `inboxUnread` and
+`inboxSeen` (POST JSON) dispatch before the legacy WhatsApp handler into
+`src/lib/whatsapp/inbox-server.ts`. They require a verified JWT, fresh active
+owner/manager profile and modern `SUPABASE_SECRET_KEY` only. Existing legacy
+WhatsApp permissions remain a known separate security concern.
+
+Evolution 2.3.7 exposes label definitions but omits chat-label associations from
+its chat projection. Accordingly no shared filter/chips, assignment, rename,
+merge or deletion is enabled. No provider writes are made by these controls.
+Phone color values are displayed as provider codes rather than guessed colors.
+
+The additive, unapplied `20261021172932_whatsapp_inbox_read_state.sql` creates
+one service-only RLS table and two security-invoker RPCs. Exact per-actor inbound
+message IDs are recorded when a visible open conversation has loaded them.
+Arrivals during reading and delayed messages remain unread. This is not phone
+read state and sends no WhatsApp read receipts. Stored history begins unread;
+badges cap at 99+ while counts remain exact for the first 500 chats loaded by
+the existing UI. Missing migration/access shows unavailable, never false zero.
+Loaded messages without verified provider receipt status display unknown.
+
+No hosted migration, production deployment or legacy webhook modification has
+been performed. Synthetic local SQL validation is not hosted Supabase evidence.
