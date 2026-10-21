@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { handleWhatsAppInbox } from '../src/lib/whatsapp/inbox-server.js';
 
 function normalizePhone(raw: string): string {
   const digits = (raw || '').replace(/[^\d]/g, '');
@@ -145,6 +146,7 @@ async function setSetting(key: string, value: string): Promise<boolean> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (['phoneLabels', 'inboxUnread', 'inboxSeen'].includes(String(req.query.action))) return handleWhatsAppInbox(req, res);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -711,7 +713,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             text: m.body || '',
             timestamp: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : 0,
             fromMe: m.direction === 'outbound',
-            status: 'read',
+            storageId: m.id,
+            status: 'unknown',
             type: m.message_type || m.type || 'text', // message_type is new col; fall back to legacy 'type'
             mediaUrl: m.media_url || null
           }));

@@ -205,3 +205,11 @@ Also update CHANGELOG.md with a summary of what changed and why.
 
 
 Email repair: src/lib/inbox/mailbox-server.ts owns uncached saved configuration, trusted provider/TLS validation and bounded read-only login check. api/settings.ts testEmail now authenticates owner/manager and uses saved settings only. tests/email-sync.test.ts exercises sync/validation with synthetic mocked IMAP and database.
+
+## WhatsApp label/read-state feature branch — 2026-10-21
+
+- `src/lib/whatsapp/inbox.ts`: bounded phone-label projection and unread badge helper.
+- `src/lib/whatsapp/inbox-server.ts`: authenticated owner/manager phone label catalog and per-user unread/seen dispatch from `api/whatsapp.ts`; modern secret only.
+- `src/lib/whatsapp/inbox.test.ts`: API boundary/provider projection tests.
+- `supabase/migrations/20261021172932_whatsapp_inbox_read_state.sql`: additive, unapplied receipt table + two service-only RPCs.
+- `scripts/verify-whatsapp-inbox-sql.mjs`: disposable PGlite SQL verification, no hosted connections. Resolve installed PGlite normally or set `FOLLOPS_PGLITE_MODULE` to an external test runtime's module URL.

@@ -1,0 +1,58 @@
+// @vitest-environment jsdom
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../context/AppContext', () => ({ useApp: () => ({ state: { user: { id: 'owner-1', name: 'Owner', role: 'owner' } }, addCall: vi.fn() }) }));
+vi.mock('../lib/supabase', () => ({ supabase: {} }));
+vi.mock('../lib/auth', () => ({ authHeaders: () => ({ Authorization: 'Bearer synthetic' }) }));
+import WhatsApp from './WhatsApp';
+let root: Root; let container: HTMLDivElement; let unavailable = false;
+const chat = { id: '18760000000@s.whatsapp.net', name: 'Synthetic customer', lastMessage: 'Synthetic incoming', timestamp: '2026-10-21T12:00:00Z', unread: 0 };
+const incomingId = '10000000-0000-4000-8000-000000000001';
+const outgoingId = '10000000-0000-4000-8000-000000000002';
+const flush = () => act(async () => { for (let i=0; i<12; i++) await Promise.resolve(); });
+beforeEach(async () => {
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; unavailable=false;
+  Object.defineProperty(document,'visibilityState',{ configurable:true,value:'visible' });
+  HTMLElement.prototype.scrollIntoView=vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+    const action = new URL(url,'https://local.test').searchParams.get('action');
+    const values: Record<string, any> = {
+      status: {success:true, connected:true}, webhookInfo: {success:true,configured:true},
+      chatsFromDb: {success:true,chats:[chat]}, getEvolutionConfig: {success:true,apiUrl:'https://provider.example'},
+      inboxUnread: unavailable ? {success:false,error:'CRM unread tracking unavailable'} : {success:true,counts:[{chat_id:chat.id,unread_count:1300}]},
+      messages: {success:true,messages:[{id:'provider1',storageId:incomingId,text:'Synthetic incoming',timestamp:1792584000,fromMe:false,status:'unknown',type:'text'},{id:'provider2',storageId:outgoingId,text:'Synthetic outgoing',timestamp:1792584001,fromMe:true,status:'unknown',type:'text'}]},
+      inboxSeen: {success:true}, phoneLabels: {success:true,labels:[{id:'1',name:'Shared name',color:'2'},{id:'2',name:'Shared name',color:'3'}]},
+    };
+    return {ok: !(unavailable && action==='inboxUnread'),json:async()=>values[action || ''] || {success:true,calls:[],users:[]}};
+  }));
+  container=document.createElement('div');document.body.append(container);root=createRoot(container);
+  await act(async()=>root.render(<WhatsApp/>)); await flush();
+});
+afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.unstubAllGlobals();});
+describe('WhatsApp label and unread UI',()=>{
+  it('keeps one phone label menu, preserves duplicate names and shows read-only limitation',async()=>{
+    const button=Array.from(container.querySelectorAll('button')).find(b=>b.textContent===' Phone labels') || Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'));
+    expect(button).toBeTruthy();await act(async()=>button!.click());await flush();
+    const region=container.querySelector('[aria-label="Phone labels"]')!;
+    expect(region.textContent).toContain('Shared assignments and filtering need provider support');
+    expect(region.querySelectorAll('li')).toHaveLength(2);expect(region.textContent).toContain('ID 1');expect(region.textContent).toContain('ID 2');
+  });
+  it('caps positive unread badge and marks only loaded inbound UUIDs, without phone read receipts',async()=>{
+    expect(container.textContent).toContain('99+');
+    const button=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Synthetic customer'))!;
+    await act(async()=>button.click());await flush();
+    const calls=vi.mocked(fetch).mock.calls;
+    const seen=calls.filter(([url])=>String(url).includes('action=inboxSeen'));
+    expect(seen.length).toBeGreaterThan(0);expect(JSON.parse(String(seen[0][1]?.body))).toEqual({chatId:chat.id,messageIds:[incomingId]});
+    expect(calls.some(([url])=>String(url).includes('action=readChat'))).toBe(false);
+    expect(container.querySelector('[title="Delivery status unavailable"]')).toBeTruthy();
+  });
+  it('reports unavailable instead of false zero counts when migration is absent',async()=>{
+    unavailable=true;
+    const button=Array.from(container.querySelectorAll('button')).find(b=>b.title==='Refresh from database + pull latest from Evolution API')!;
+    await act(async()=>button.click());await flush();
+    expect(container.textContent).toContain('CRM unread tracking unavailable');
+    expect(container.textContent).not.toContain('99+');
+  });
+});

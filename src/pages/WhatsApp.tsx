@@ -3,6 +3,7 @@ import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { authHeaders } from '../lib/auth';
+import { unreadBadge, type PhoneLabel } from '../lib/whatsapp/inbox';
 
 // WhatsApp API is handled by backend /api/whatsapp (Evolution API / Baileys)
 // This avoids CORS issues and keeps credentials secure
@@ -144,6 +145,7 @@ interface Chat {
   timestamp: string;
   rawTimestamp: number;
   unread: number;
+  unreadKnown?: boolean;
   assignedTo: string;
   assignedToUserId?: string;
   phone: string;
@@ -156,7 +158,8 @@ interface Message {
   text: string;
   timestamp: string;
   fromMe: boolean;
-  status: 'sent' | 'delivered' | 'read';
+  status: 'sent' | 'delivered' | 'read' | 'unknown';
+  storageId?: string;
   type: string;
   mediaUrl?: string;
 }
@@ -187,8 +190,51 @@ export default function WhatsApp() {
   const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string; lastMessageAt?: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
+  const [phoneLabels, setPhoneLabels] = useState<PhoneLabel[]>([]);
+  const [labelsOpen, setLabelsOpen] = useState(false);
+  const [labelsError, setLabelsError] = useState('');
+  const [labelsLoading, setLabelsLoading] = useState(false);
+  const [unreadError, setUnreadError] = useState('CRM unread tracking has not loaded.');
+  const seenRequests = useRef(new Set<string>());
+  const messageLoadSequence = useRef(0);
+  const [pageVisible, setPageVisible] = useState(document.visibilityState === 'visible');
+  useEffect(() => {
+    const updateVisibility = () => setPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => document.removeEventListener('visibilitychange', updateVisibility);
+  }, []);
+  const unreadLoadSequence = useRef(0);
+
+  const refreshPhoneLabels = async () => {
+    setLabelsLoading(true); setLabelsError('');
+    try {
+      const response = await fetch('/api/whatsapp?action=phoneLabels', { headers: authHeaders() });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'Phone labels could not be loaded.');
+      setPhoneLabels(result.labels);
+    } catch (error) { setLabelsError(error instanceof Error ? error.message : 'Phone labels could not be loaded.'); }
+    finally { setLabelsLoading(false); }
+  };
+  const refreshUnread = useCallback(async (chatIds: string[]) => {
+    const sequence = ++unreadLoadSequence.current;
+    try {
+      const response = await fetch('/api/whatsapp?action=inboxUnread', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatIds: chatIds.slice(0, 500) }) });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'CRM unread tracking is unavailable.');
+      if (sequence !== unreadLoadSequence.current) return;
+      if (!Array.isArray(result.counts) || result.counts.some((row: any) => typeof row.chat_id !== 'string' || !Number.isSafeInteger(Number(row.unread_count)) || Number(row.unread_count) < 0)) throw new Error('CRM unread response could not be verified.');
+      const counts = new Map<string, number>(result.counts.map((row: any) => [row.chat_id, Number(row.unread_count)]));
+      setChats(prev => prev.map(chat => ({ ...chat, unread: counts.get(chat.id) ?? 0, unreadKnown: counts.has(chat.id) })));
+      setUnreadError('');
+    } catch (error) {
+      if (sequence !== unreadLoadSequence.current) return;
+      setChats(prev => prev.map(chat => ({ ...chat, unreadKnown: false })));
+      setUnreadError(error instanceof Error ? error.message : 'CRM unread tracking is unavailable.');
+    }
+  }, []);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesChatId, setMessagesChatId] = useState<string | null>(null);
   const [calls, setCalls] = useState<any[]>([]);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
@@ -287,11 +333,7 @@ export default function WhatsApp() {
     if (match) {
       setSelectedChat(match);
       selectedChatRef.current = match;
-      setChats(prev => prev.map(c => c.id === match.id ? { ...c, unread: 0 } : c));
-      fetch('/api/whatsapp?action=readChat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId: match.id })
-      }).catch(() => {});
+
     } else {
       // No existing chat — open new message dialog pre-filled
       setNewMessagePhone(target.phone);
@@ -449,7 +491,8 @@ export default function WhatsApp() {
             phone: chat.id?.includes('@lid') ? '' : (chat.phone || chat.id?.split('@')[0] || ''),
             status: (chat.status || 'active') as 'active' | 'resolved' | 'pending'
           });});
-          setChats(formatted);
+          setChats(formatted.map(chat => ({ ...chat, unreadKnown: false })));
+          void refreshUnread(formatted.map(chat => chat.id));
           setHasRealData(true);
 
           if (data.synced) {
@@ -470,14 +513,17 @@ export default function WhatsApp() {
       setHasRealData(false);
     }
     setSyncing(false);
-  }, [messageHistoryEnabled]);
+  }, [messageHistoryEnabled, refreshUnread]);
 
   // Load messages for a chat via backend API
   const loadMessages = useCallback(async (chatId: string) => {
+    const sequence = ++messageLoadSequence.current;
     setLoading(true);
+    setMessagesChatId(null);
     try {
       if (chatMessagesCache.current[chatId]) {
         setMessages(chatMessagesCache.current[chatId]);
+        setMessagesChatId(chatId);
         lastMessageCountRef.current = chatMessagesCache.current[chatId].length;
         setLoading(false);
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -487,6 +533,7 @@ export default function WhatsApp() {
       const r = await fetch(`/api/whatsapp?action=messages&chatId=${encodeURIComponent(chatId)}`);
       const data = await r.json();
 
+      if (sequence !== messageLoadSequence.current || selectedChatRef.current?.id !== chatId) return;
       if (data.success && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
         // API returns normalized DB records: { id, text, timestamp (unix secs), fromMe, type, mediaUrl }
         const formatted: Message[] = data.messages.map((msg: any) => ({
@@ -494,21 +541,25 @@ export default function WhatsApp() {
           text: msg.text || '',
           timestamp: msg.timestamp || 0,
           fromMe: msg.fromMe === true,
-          status: 'read' as const,
+          status: msg.status === 'read' || msg.status === 'delivered' || msg.status === 'sent' ? msg.status : 'unknown',
+          storageId: msg.storageId,
           type: msg.type || 'text',
           mediaUrl: msg.mediaUrl || undefined
         }));
 
         setMessages(formatted);
+        setMessagesChatId(chatId);
         lastMessageCountRef.current = formatted.length;
         chatMessagesCache.current[chatId] = formatted;
       } else {
         setMessages([]);
       }
     } catch (error) {
+      if (sequence !== messageLoadSequence.current) return;
       console.error('Error loading messages:', error);
       setMessages([]);
     }
+    if (sequence !== messageLoadSequence.current) return;
     setLoading(false);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
@@ -526,6 +577,30 @@ export default function WhatsApp() {
     };
     loadCallsForChat();
   }, []);
+
+  useEffect(() => {
+    if (!selectedChat || messagesChatId !== selectedChat.id || loading || !pageVisible || unreadError) return;
+    const ids = messages.filter(message => !message.fromMe && message.storageId).map(message => message.storageId!).slice(-1000);
+    if (!ids.length) return;
+    const chatId = selectedChat.id;
+    const requestKey = chatId + ':' + ids.join(',');
+    if (seenRequests.current.has(requestKey)) return;
+    if (seenRequests.current.size >= 500) seenRequests.current.clear();
+    seenRequests.current.add(requestKey);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch('/api/whatsapp?action=inboxSeen', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId, messageIds: ids }) });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.error || 'Could not save CRM read state.');
+        if (!cancelled) void refreshUnread(chats.map(chat => chat.id));
+      } catch (error) {
+        seenRequests.current.delete(requestKey);
+        setUnreadError(error instanceof Error ? error.message : 'Could not save CRM read state.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedChat?.id, messagesChatId, messages, loading, pageVisible, unreadError, refreshUnread]);
 
   // Sync missed messages from Evolution API (catches webhooks that were missed)
   // Defined AFTER loadChats and loadMessages to avoid temporal dead zone (TDZ) error
@@ -866,7 +941,8 @@ export default function WhatsApp() {
           text: msg.body || '',
           timestamp: String(rawTs),
           fromMe: msg.direction === 'outbound',
-          status: 'read',
+          status: 'unknown',
+          storageId: msg.provider === 'evolution' ? msg.id : undefined,
           type: msg.message_type || msg.type || 'text',
           mediaUrl: msg.media_url || undefined
         };
@@ -914,7 +990,7 @@ export default function WhatsApp() {
                 lastMessage: snippet,
                 timestamp: formatChatTimestamp(rawTs),
                 rawTimestamp: rawTs,
-                unread: isOpenChat ? 0 : existing.unread + (msg.direction === 'inbound' ? 1 : 0)
+                unreadKnown: false
               }
             : {
                 id: msg.chat_id,
@@ -922,7 +998,7 @@ export default function WhatsApp() {
                 lastMessage: snippet,
                 timestamp: formatChatTimestamp(rawTs),
                 rawTimestamp: rawTs,
-                unread: msg.direction === 'inbound' && !isOpenChat ? 1 : 0,
+                unread: 0, unreadKnown: false,
                 assignedTo: 'Unassigned',
                 phone: (msg.chat_id || '').replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', ''),
                 status: 'active'
@@ -1287,7 +1363,8 @@ export default function WhatsApp() {
     }
   }, [selectedChatIds, filteredChats]);
 
-  const totalUnread = chats.reduce((sum, c) => sum + c.unread, 0);
+  const selectedUnread = chats.find(chat => chat.id === selectedChat?.id);
+  const totalUnread = chats.reduce((sum, c) => sum + (c.unreadKnown ? c.unread : 0), 0);
   const totalChats = chats.length;
   const activeChats = chats.filter(c => c.status === 'active').length;
   const resolvedChats = chats.filter(c => c.status === 'resolved').length;
@@ -1434,7 +1511,7 @@ export default function WhatsApp() {
               activeTab === tab ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
             }`}
           >
-            {tab === 'inbox' && `Inbox${totalUnread > 0 ? ` (${totalUnread})` : ''}`}
+            {tab === 'inbox' && `Inbox${totalUnread > 0 ? ` (${unreadBadge(totalUnread)})` : ''}`}
             {tab === 'calls' && 'Calls'}
             {tab === 'stats' && 'Stats'}
             {tab === 'setup' && 'Setup'}
@@ -1756,6 +1833,15 @@ export default function WhatsApp() {
               </div>
             )}
 
+            <div className="px-3 py-2 border-b border-gray-700/50 text-xs text-gray-400">
+              <button type="button" className="inline-flex items-center gap-1 text-amber-400" onClick={() => { setLabelsOpen(!labelsOpen); if (!labelsOpen) void refreshPhoneLabels(); }} aria-expanded={labelsOpen}><Tag className="w-3 h-3" /> Phone labels</button>
+              {labelsOpen && <div className="mt-2 space-y-2" role="region" aria-label="Phone labels">
+                <p>Existing WhatsApp labels. Manage names and colors on your phone. Shared assignments and filtering need provider support.</p>
+                <button type="button" onClick={() => void refreshPhoneLabels()} disabled={labelsLoading} className="text-blue-400">{labelsLoading ? 'Refreshing…' : 'Refresh labels'}</button>
+                {labelsError ? <p role="alert" className="text-amber-400">{labelsError}</p> : <ul className="max-h-36 overflow-auto">{phoneLabels.length === 0 && !labelsLoading && <li>No phone labels found.</li>}{phoneLabels.map(label => <li key={label.id} className="py-1">{label.name} <span className="text-gray-500">· ID {label.id} · color {label.color}</span></li>)}</ul>}
+              </div>}
+              <p className="mt-1" role={unreadError ? 'status' : undefined}>{unreadError || 'Unread in CRM is personal. Stored history starts unread. Opening a chat marks its loaded messages read for you; no phone read receipts are sent. Counts cover the first 500 loaded chats.'}</p>
+            </div>
             <div className="flex-1 overflow-y-auto">
 
               {filteredChats.length === 0 ? (
@@ -1779,12 +1865,7 @@ export default function WhatsApp() {
                         return;
                       }
                       setSelectedChat(chat);
-                      setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unread: 0 } : c));
-                      fetch('/api/whatsapp?action=readChat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ chatId: chat.id })
-                      }).catch(() => {});
+
                     }}
                     className={`w-full p-3 text-left hover:bg-gray-700/40 transition-colors border-b border-gray-700/30 ${
                       selectedChat?.id === chat.id && !selectionMode ? 'bg-green-600/20 border-l-2 border-l-green-500' : ''
@@ -1808,7 +1889,7 @@ export default function WhatsApp() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-white text-sm font-medium truncate">{chat.name}</span>
+                          <span className={`text-white text-sm truncate ${chat.unreadKnown && chat.unread > 0 ? 'font-bold' : 'font-medium'}`}>{chat.name}</span>
                           {chat.id.includes('@g.us') && (
                             <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded px-1 flex-shrink-0">GROUP</span>
                           )}
@@ -1816,9 +1897,9 @@ export default function WhatsApp() {
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-gray-400 text-xs truncate">{friendlyLastMessage(chat.lastMessage)}</p>
-                          {chat.unread > 0 && (
+                          {chat.unreadKnown && chat.unread > 0 && (
                             <span className="ml-2 flex-shrink-0 bg-green-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                              {chat.unread}
+                              {unreadBadge(chat.unread)}
                             </span>
                           )}
                         </div>
@@ -2170,6 +2251,7 @@ export default function WhatsApp() {
                             {msg.fromMe && (
                               msg.status === 'read' ? <CheckCheck className="w-3 h-3 text-blue-300" /> :
                               msg.status === 'delivered' ? <CheckCheck className="w-3 h-3 opacity-70" /> :
+                              msg.status === 'unknown' ? <span title="Delivery status unavailable"><Clock className="w-3 h-3 opacity-50" /></span> :
                               <Check className="w-3 h-3 opacity-70" />
                             )}
                           </div>
@@ -2294,7 +2376,7 @@ export default function WhatsApp() {
                       className="p-2 text-gray-400 hover:text-amber-400 transition-colors"
                       title="Message templates"
                     >
-                      <Tag className="w-5 h-5" />
+                      <FileText className="w-5 h-5" />
                     </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
@@ -2603,7 +2685,7 @@ export default function WhatsApp() {
             <div>
               <p className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Inbox Health</p>
               <div className="grid grid-cols-4 gap-3">
-                <StatCard label="Unread Messages" value={totalUnread} color={totalUnread > 10 ? 'red' : 'green'} />
+                <StatCard label="Unread in CRM" value={unreadError ? 'Unavailable' : totalUnread} color={totalUnread > 10 ? 'red' : 'green'} />
                 <StatCard label="Unassigned" value={unassignedChats} color={unassignedChats > 5 ? 'red' : 'gray'} sub="need attention" />
                 <StatCard label="Individual Chats" value={individualChats} color="blue" />
                 <StatCard label="Group Chats" value={groupChats} color="purple" />
@@ -2985,10 +3067,10 @@ export default function WhatsApp() {
                 <p className="text-xs uppercase tracking-widest text-gray-500 font-bold">WhatsApp ID</p>
                 <p className="text-sm text-gray-400 font-mono break-all">{selectedChat.id}</p>
               </div>
-              {selectedChat.unread > 0 && (
+              {selectedUnread?.unreadKnown && selectedUnread.unread > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs uppercase tracking-widest text-gray-500 font-bold">Unread Messages</p>
-                  <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-green-500/20 text-green-400 text-sm font-bold">{selectedChat.unread}</span>
+                  <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-green-500/20 text-green-400 text-sm font-bold">{unreadBadge(selectedUnread?.unread || 0)}</span>
                 </div>
               )}
             </div>

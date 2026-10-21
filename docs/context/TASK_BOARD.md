@@ -255,3 +255,19 @@ an owner blocker; WhatsApp remains on hold. No provider/customer mutation tests.
 
 
 WP-EMAIL-SYNC-REPAIR (2026-10-16): In Review pending tests and independent QA/security. Server saved credentials replace browser overrides; explicit AI-free manual sync, real saved-login check, truthful persistence count/error notices. Live email import remains a release verification requirement.
+
+## WhatsApp labels and unread — 2026-10-21
+
+Feature branch `feat/whatsapp-labels-unread`: in review. Phone definitions verified
+live (nine), compact read-only catalog implemented. Full shared assignments and
+filter/chips BLOCKED: Evolution 2.3.7 API omits chat-label associations. Next
+provider packet: expose bounded configured-instance chat/label ID projection,
+verify initial history plus phone changes, then test assignment readback before
+enabling provider writes. Do not create a parallel CRM label catalog.
+
+Personal owner/manager CRM unread receipts implemented; scoped migration remains
+UNAPPLIED pending reviewed hosted safeguard/rollout. Historical stored inbound
+messages initially count unread until loaded in an open conversation. Reps show
+unavailable pending a verified assignment access model. Existing chat statuses,
+assignment, calls, provider send/webhooks, email and Social Inbox are preserved.
+See active WP-WHATSAPP-LABELS-UNREAD for local test evidence and limitations.
