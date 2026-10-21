@@ -271,3 +271,8 @@ messages initially count unread until loaded in an open conversation. Reps show
 unavailable pending a verified assignment access model. Existing chat statuses,
 assignment, calls, provider send/webhooks, email and Social Inbox are preserved.
 See active WP-WHATSAPP-LABELS-UNREAD for local test evidence and limitations.
+
+WhatsApp identifier follow-up:23 regression tests pass for mixed/all-unsupported
+conversation batches. Existing unsupported conversations no longer poison valid
+unread counts; their own count remains explicitly unknown. Production follow-up
+verification remains pending. No database/provider changes.

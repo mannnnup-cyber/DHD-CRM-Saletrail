@@ -8,18 +8,19 @@ vi.mock('../lib/auth', () => ({ authHeaders: () => ({ Authorization: 'Bearer syn
 import WhatsApp from './WhatsApp';
 let root: Root; let container: HTMLDivElement; let unavailable = false;
 const chat = { id: '18760000000@s.whatsapp.net', name: 'Synthetic customer', lastMessage: 'Synthetic incoming', timestamp: '2026-10-21T12:00:00Z', unread: 0 };
+let sourceChats = [chat];
 const incomingId = '10000000-0000-4000-8000-000000000001';
 const outgoingId = '10000000-0000-4000-8000-000000000002';
 const flush = () => act(async () => { for (let i=0; i<12; i++) await Promise.resolve(); });
 beforeEach(async () => {
-  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; unavailable=false;
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; unavailable=false; sourceChats=[chat];
   Object.defineProperty(document,'visibilityState',{ configurable:true,value:'visible' });
   HTMLElement.prototype.scrollIntoView=vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
     const action = new URL(url,'https://local.test').searchParams.get('action');
     const values: Record<string, any> = {
       status: {success:true, connected:true}, webhookInfo: {success:true,configured:true},
-      chatsFromDb: {success:true,chats:[chat]}, getEvolutionConfig: {success:true,apiUrl:'https://provider.example'},
+      chatsFromDb: {success:true,chats:sourceChats}, getEvolutionConfig: {success:true,apiUrl:'https://provider.example'},
       inboxUnread: unavailable ? {success:false,error:'CRM unread tracking unavailable'} : {success:true,counts:[{chat_id:chat.id,unread_count:1300}]},
       messages: {success:true,messages:[{id:'provider1',storageId:incomingId,text:'Synthetic incoming',timestamp:1792584000,fromMe:false,status:'unknown',type:'text'},{id:'provider2',storageId:outgoingId,text:'Synthetic outgoing',timestamp:1792584001,fromMe:true,status:'unknown',type:'text'}]},
       inboxSeen: {success:true}, phoneLabels: {success:true,labels:[{id:'1',name:'Shared name',color:'2'},{id:'2',name:'Shared name',color:'3'}]},
@@ -55,4 +56,26 @@ describe('WhatsApp label and unread UI',()=>{
     expect(container.textContent).toContain('CRM unread tracking unavailable');
     expect(container.textContent).not.toContain('99+');
   });
+  it('keeps supported unread counts when unsupported conversations are mixed in',async()=>{
+    sourceChats=[chat,{...chat,id:'status@broadcast',name:'Unsupported customer'}];
+    const refresh=Array.from(container.querySelectorAll('button')).find(b=>b.title==='Refresh from database + pull latest from Evolution API')!;
+    vi.mocked(fetch).mockClear(); await act(async()=>refresh.click());await flush();
+    const unreadCalls=vi.mocked(fetch).mock.calls.filter(([url])=>String(url).includes('action=inboxUnread'));
+    expect(unreadCalls.length).toBeGreaterThan(0);
+    for(const call of unreadCalls)expect(JSON.parse(String(call[1]?.body))).toEqual({chatIds:[chat.id]});
+    expect(container.textContent).toContain('99+');expect(container.textContent).toContain('Unread tracking is unavailable for 1 conversation');
+    expect(container.querySelector('[aria-label="Unread state unavailable"]')).toBeTruthy();
+    const unsupported=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Unsupported customer'))!;
+    await act(async()=>unsupported.click());await flush();
+    expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('action=inboxSeen'))).toBe(false);
+  });
+  it('makes no unread request when all displayed identifiers are unsupported',async()=>{
+    sourceChats=[{...chat,id:'status@broadcast',name:'Unsupported customer'}];
+    const refresh=Array.from(container.querySelectorAll('button')).find(b=>b.title==='Refresh from database + pull latest from Evolution API')!;
+    vi.mocked(fetch).mockClear(); await act(async()=>refresh.click());await flush();
+    expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('action=inboxUnread'))).toBe(false);
+    expect(container.textContent).toContain('their unread state is unknown');expect(container.textContent).not.toContain('99+');
+    expect(container.querySelector('[aria-label="Unread state unavailable"]')).toBeTruthy();
+  });
+
 });

@@ -90,3 +90,25 @@ remain separate pre-existing risks.
 
 Production deployment and live application checks will be recorded by the lead
 following release. No claim of production UI activation is made by this report.
+
+## First production validation and identifier regression follow-up
+
+PR16 merged as `b963b613f812ae742f5969aebb31218730589145`; production deployment
+`dpl_6jNuNT9HtkZcKPaoX7HxsKW9RoT1` reached Ready. The lead verified nine phone
+label definitions in the CRM, connected WhatsApp, and401 responses for anonymous
+new routes. Initial unread UI validation found a request failure: one unsupported
+stored chat identifier caused strict validation to reject the whole batch.
+Therefore that deployment is not evidence that unread UI worked end to end.
+
+Read-only aggregate inspection found414 stored conversations,413 supported by
+the strict validator and one other format; no identifiers were disclosed.
+Follow-up `fix/whatsapp-unread-identifiers` filters and deduplicates supported IDs
+before the500 request cap without relaxing server validation. Unsupported
+conversations remain visible with unknown unread state and a coverage notice;
+an entirely unsupported list skips unread requests. Unsupported conversations
+also cannot send seen operations. No database/provider change is required.
+
+Follow-up regression tests:23/23 PASS (18 API/helpers,5 synthetic UI), including
+mixed and entirely unsupported lists, quota preservation, unknown states and
+no unsupported seen request. Independent security review: PASS. Final follow-up
+QA/deployment evidence will be recorded after release.

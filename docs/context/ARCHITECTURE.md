@@ -331,3 +331,9 @@ Loaded messages without verified provider receipt status display unknown.
 
 No hosted migration, production deployment or legacy webhook modification has
 been performed. Synthetic local SQL validation is not hosted Supabase evidence.
+
+Unread identifier follow-up: production validation found one unsupported stored
+identifier causing whole-batch rejection. Feature follow-up filters supported
+identifiers before its500 cap, preserves excluded conversations as unknown and
+never relaxes server validation or hides chats. New seen requests are also
+skipped for unsupported identifiers. No schema/provider changes are involved.
