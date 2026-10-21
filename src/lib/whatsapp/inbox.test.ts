@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { projectPhoneLabels, unreadBadge, validChatId } from './inbox';
+import { projectPhoneLabels, unreadBadge, validChatId, selectUnreadChats } from './inbox';
 const mock = vi.hoisted(() => ({ createClient: vi.fn(), rpc: vi.fn(), getUser: vi.fn(), profile: { id: 'owner-1', role: 'owner', is_active: true } as any, profileError: null as any }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: mock.createClient }));
 import { handleWhatsAppInbox } from './inbox-server';
@@ -29,4 +29,10 @@ describe('authenticated inbox control boundary', () => {
   it('deduplicates displayed UUIDs and fixes actor/chat server-side', async () => { const id = '00000000-0000-4000-8000-000000000001'; const res = response(); await handleWhatsAppInbox(request('inboxSeen', { actor: 'bad', chatId: '18760000000@s.whatsapp.net', messageIds: [id, id] }), res); expect(res.statusCode).toBe(200); expect(mock.rpc).toHaveBeenCalledWith('wa_inbox_seen', { p_actor: 'owner-1', p_chat: '18760000000@s.whatsapp.net', p_messages: [id] }); });
   it('uses only GET fixed-provider labels with redirect rejection; never exposes credentials', async () => { const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ id: '1', name: 'Example', color: '2' }]))); vi.stubGlobal('fetch', fetchMock); const res = response(); await handleWhatsAppInbox(request('phoneLabels'), res); expect(res.statusCode).toBe(200); expect(fetchMock.mock.calls[0][0]).toBe('https://provider.example/label/findLabels/fixed-instance'); expect(fetchMock.mock.calls[0][1].redirect).toBe('error'); expect(res.body).toMatchObject({ writesEnabled: false, associationsAvailable: false }); expect(JSON.stringify(res.body)).not.toContain('private-key'); });
   it('sanitizes upstream failures', async () => { vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('private-key provider stack', { status: 500 }))); const res = response(); await handleWhatsAppInbox(request('phoneLabels'), res); expect(res.statusCode).toBe(502); expect(JSON.stringify(res.body)).not.toContain('private-key'); });
+});
+
+describe('unread conversation selection', () => {
+  it('preserves valid IDs alongside unsupported identifiers and deduplicates them', () => { expect(selectUnreadChats(['status@broadcast', '18760000000@s.whatsapp.net', 'legacy', '18760000000@s.whatsapp.net'])).toEqual({ ids: ['18760000000@s.whatsapp.net'], excluded: 2, limited: false }); });
+  it('does not consume the supported quota with invalid IDs', () => { const supported = Array.from({length:501}, (_,i)=>String(18760000000+i)+'@s.whatsapp.net'); const selection = selectUnreadChats([...Array(500).fill('unsupported'),...supported]); expect(selection.ids).toHaveLength(500); expect(selection.ids[0]).toBe(supported[0]); expect(selection.excluded).toBe(500); expect(selection.limited).toBe(true); });
+  it('returns no request IDs for an entirely unsupported list', () => { expect(selectUnreadChats(['status@broadcast','legacy'])).toEqual({ ids: [], excluded: 2, limited: false }); });
 });

@@ -11,3 +11,8 @@ export function projectPhoneLabels(value: unknown): PhoneLabel[] {
   });
 }
 export function unreadBadge(count: number) { return count > 99 ? '99+' : String(count); }
+
+export function selectUnreadChats(chatIds: string[]) {
+  const supported = [...new Set(chatIds.filter(validChatId))];
+  return { ids: supported.slice(0, 500), excluded: chatIds.filter(id => !validChatId(id)).length, limited: supported.length > 500 };
+}

@@ -1,0 +1,8 @@
+# WP-WHATSAPP-UNREAD-IDENTIFIERS
+Status: In Progress. Isolated follow-up branch fix/whatsapp-unread-identifiers from production origin/master b963b613f812ae742f5969aebb31218730589145; same clean assigned worktree.
+
+Live regression: one unsupported legacy/chat identifier poisons the entire strict unread batch. Plan: preserve strict backend JID validation; filter/deduplicate supported identifiers before bounded500 requests, leave every excluded chat unknown, explicitly report coverage/no-supported cases. Gate seen requests for unsupported chats. Preserve all chat-list entries and avoid provider writes or database changes. Add mixed/all-unsupported UI and selection tests; rerun targeted tests/type-check, independent QA/security review. GitNexus WhatsApp impact LOW (zero indexed callers/processes); manual review remains necessary because handler graph is incomplete. No existing symbol beyond WhatsApp page is changed.
+
+Acceptance: supported chats retain counts alongside unsupported chats; excluded chats never become falsely read or zero; all-unsupported makes no unread/seen RPC request and gives explicit unavailable state; unsupported identifiers never consume the supported500 quota. No auth/SQL/provider changes.
+
+Implementation: filtered/deduplicated supported IDs before quota; unsupported list entries retain unknown count and explicit coverage; all-unsupported skips unread request; unsupported selected chat skips seen. Read-only hosted aggregate:414 total,413 supported,1 other format. No chat values retained. Tests23/23 PASS. Independent security PASS. No SQL/API-auth/provider changes. QA and production follow-up pending.

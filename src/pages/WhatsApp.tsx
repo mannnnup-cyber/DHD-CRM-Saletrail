@@ -3,7 +3,7 @@ import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { authHeaders } from '../lib/auth';
-import { unreadBadge, type PhoneLabel } from '../lib/whatsapp/inbox';
+import { unreadBadge, selectUnreadChats, validChatId, type PhoneLabel } from '../lib/whatsapp/inbox';
 
 // WhatsApp API is handled by backend /api/whatsapp (Evolution API / Baileys)
 // This avoids CORS issues and keeps credentials secure
@@ -195,6 +195,7 @@ export default function WhatsApp() {
   const [labelsError, setLabelsError] = useState('');
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [unreadError, setUnreadError] = useState('CRM unread tracking has not loaded.');
+  const [unreadExcluded, setUnreadExcluded] = useState(0);
   const seenRequests = useRef(new Set<string>());
   const messageLoadSequence = useRef(0);
   const [pageVisible, setPageVisible] = useState(document.visibilityState === 'visible');
@@ -217,8 +218,15 @@ export default function WhatsApp() {
   };
   const refreshUnread = useCallback(async (chatIds: string[]) => {
     const sequence = ++unreadLoadSequence.current;
+    const selection = selectUnreadChats(chatIds);
+    setUnreadExcluded(selection.excluded);
+    if (!selection.ids.length) {
+      setChats(prev => prev.map(chat => ({ ...chat, unreadKnown: false })));
+      setUnreadError('CRM unread tracking is unavailable for these conversations; their unread state is unknown.');
+      return;
+    }
     try {
-      const response = await fetch('/api/whatsapp?action=inboxUnread', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatIds: chatIds.slice(0, 500) }) });
+      const response = await fetch('/api/whatsapp?action=inboxUnread', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatIds: selection.ids }) });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error || 'CRM unread tracking is unavailable.');
       if (sequence !== unreadLoadSequence.current) return;
@@ -579,7 +587,7 @@ export default function WhatsApp() {
   }, []);
 
   useEffect(() => {
-    if (!selectedChat || messagesChatId !== selectedChat.id || loading || !pageVisible || unreadError) return;
+    if (!selectedChat || !validChatId(selectedChat.id) || messagesChatId !== selectedChat.id || loading || !pageVisible || unreadError) return;
     const ids = messages.filter(message => !message.fromMe && message.storageId).map(message => message.storageId!).slice(-1000);
     if (!ids.length) return;
     const chatId = selectedChat.id;
@@ -1840,7 +1848,8 @@ export default function WhatsApp() {
                 <button type="button" onClick={() => void refreshPhoneLabels()} disabled={labelsLoading} className="text-blue-400">{labelsLoading ? 'Refreshing…' : 'Refresh labels'}</button>
                 {labelsError ? <p role="alert" className="text-amber-400">{labelsError}</p> : <ul className="max-h-36 overflow-auto">{phoneLabels.length === 0 && !labelsLoading && <li>No phone labels found.</li>}{phoneLabels.map(label => <li key={label.id} className="py-1">{label.name} <span className="text-gray-500">· ID {label.id} · color {label.color}</span></li>)}</ul>}
               </div>}
-              <p className="mt-1" role={unreadError ? 'status' : undefined}>{unreadError || 'Unread in CRM is personal. Stored history starts unread. Opening a chat marks its loaded messages read for you; no phone read receipts are sent. Counts cover the first 500 loaded chats.'}</p>
+              <p className="mt-1" role={unreadError ? 'status' : undefined}>{unreadError || 'Unread in CRM is personal. Stored history starts unread. Opening a chat marks its loaded messages read for you; no phone read receipts are sent. Counts cover up to 500 supported loaded conversations.'}</p>
+              {!unreadError && unreadExcluded > 0 && <p className="mt-1" role="status">Unread tracking is unavailable for {unreadExcluded} conversation{unreadExcluded === 1 ? '' : 's'}; their unread state is unknown.</p>}
             </div>
             <div className="flex-1 overflow-y-auto">
 
@@ -1897,6 +1906,7 @@ export default function WhatsApp() {
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-gray-400 text-xs truncate">{friendlyLastMessage(chat.lastMessage)}</p>
+                          {!validChatId(chat.id) && <span className="text-gray-500 text-xs" title="Unread state unavailable" aria-label="Unread state unavailable">?</span>}
                           {chat.unreadKnown && chat.unread > 0 && (
                             <span className="ml-2 flex-shrink-0 bg-green-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center font-bold">
                               {unreadBadge(chat.unread)}

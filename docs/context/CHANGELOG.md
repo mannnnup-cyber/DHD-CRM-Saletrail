@@ -436,3 +436,9 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 - Removed fabricated read receipts from stored-message display; unknown delivery is explicit.
 - Full label assignment/filter remains blocked on provider association readback.
 - No hosted schema changes, provider writes, migration application or deployment.
+
+## 2026-10-21 — WhatsApp unread identifier follow-up
+
+- Preserve strict validation while filtering unsupported stored identifiers from new unread batches.
+- Keep affected conversations visible with unknown unread state; do not send unsupported seen requests.
+- Mixed/all-unsupported and quota-preservation regression tests added; no schema/provider change.
