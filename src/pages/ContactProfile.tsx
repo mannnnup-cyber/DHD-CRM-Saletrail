@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { authHeaders } from '../lib/auth';
+import { useApp } from '../context/AppContext';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Phone, Building2, ShoppingCart, MessageCircle,
@@ -108,7 +110,18 @@ function timeAgo(iso: string): string {
 
 const ContactProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { state } = useApp();
+  return <ContactProfileContent key={`${id}:${state.user?.id}:${state.user?.role}`} />;
+};
+const ContactProfileContent: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { state } = useApp();
+  const canEdit = ['owner', 'manager'].includes(state.user?.role || '');
+  const saveController = useRef<AbortController | null>(null);
+  useEffect(() => () => saveController.current?.abort(), []);
+  const [fieldError, setFieldError] = useState('');
+  const [fieldNotice, setFieldNotice] = useState('');
   const [contact, setContact] = useState<Contact | null>(null);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [gsmCalls, setGsmCalls] = useState<GsmCall[]>([]);
@@ -125,7 +138,7 @@ const ContactProfile: React.FC = () => {
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [editingFields, setEditingFields] = useState(false);
-  const [fieldDraft, setFieldDraft] = useState<{ contact_preference: string; timezone: string; linkedin_url: string }>({ contact_preference: '', timezone: '', linkedin_url: '' });
+  const [fieldDraft, setFieldDraft] = useState({ name: '', email: '', phone: '', company: '', contact_preference: '', timezone: '', linkedin_url: '' });
   const [fieldSaving, setFieldSaving] = useState(false);
   const [showEnrichModal, setShowEnrichModal] = useState(false);
   const [enrichUrl, setEnrichUrl] = useState('');
@@ -288,20 +301,20 @@ const ContactProfile: React.FC = () => {
 
   const saveContactFields = async () => {
     if (!id) return;
+    const controller = new AbortController(); saveController.current = controller;
     setFieldSaving(true);
     try {
-      const body: Record<string, string> = {};
-      if (fieldDraft.contact_preference) body.contact_preference = fieldDraft.contact_preference;
-      if (fieldDraft.timezone) body.timezone = fieldDraft.timezone;
-      if (fieldDraft.linkedin_url) body.linkedin_url = fieldDraft.linkedin_url;
-      const r = await fetch(`/api/contacts?action=update&id=${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+      setFieldError(''); setFieldNotice('');
+      const r = await fetch(`/api/contacts?action=editIdentity&id=${encodeURIComponent(id)}`, {
+        method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(fieldDraft),
       });
-      if (r.ok) { await load(); setEditingFields(false); }
-    } catch (_) {}
-    finally { setFieldSaving(false); }
+      const result = await r.json();
+      if (controller.signal.aborted) return;
+      if (!r.ok || result.success !== true) throw new Error(result.error || 'Could not save contact corrections.');
+      setContact(current => current ? { ...current, ...result.contact } : current);
+      setEditingFields(false); setFieldNotice('Saved to CRM. External accounts and historical messages are unchanged.');
+    } catch (error) { if (!controller.signal.aborted) setFieldError(error instanceof Error ? error.message : 'Could not save contact corrections.'); }
+    finally { if (!controller.signal.aborted) setFieldSaving(false); }
   };
 
   const handleMergeDuplicate = async () => {
@@ -731,12 +744,11 @@ const ContactProfile: React.FC = () => {
         <div className="mt-4 pt-4 border-t border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs text-gray-500">Contact Details</p>
-            {!editingFields ? (
-              <button
-                onClick={() => { setFieldDraft({ contact_preference: contact.contact_preference || '', timezone: contact.timezone || '', linkedin_url: contact.linkedin_url || '' }); setEditingFields(true); }}
+            {!editingFields ? (canEdit && <button
+                onClick={() => { setFieldError(''); setFieldNotice(''); setFieldDraft({ name: contact.name, email: contact.email || '', phone: contact.phone || '', company: contact.company || '', contact_preference: contact.contact_preference || '', timezone: contact.timezone || '', linkedin_url: contact.linkedin_url || '' }); setEditingFields(true); }}
                 className="text-xs text-gray-500 hover:text-white transition-colors"
               >
-                Edit
+                Edit contact
               </button>
             ) : (
               <div className="flex gap-2">
@@ -747,8 +759,12 @@ const ContactProfile: React.FC = () => {
               </div>
             )}
           </div>
+          {fieldError && <p role="alert" className="text-red-400 text-sm mb-3">{fieldError}</p>}
+          {fieldNotice && <p role="status" className="text-green-400 text-sm mb-3">{fieldNotice}</p>}
           {editingFields ? (
             <div className="grid grid-cols-1 gap-3">
+              <p className="text-xs text-gray-400">Corrections update this CRM contact only.</p>
+              {(['name', 'email', 'phone', 'company'] as const).map(field => <label key={field} className="text-xs text-gray-400 capitalize">{field}<input aria-label={`Contact ${field}`} type={field === 'email' ? 'email' : 'text'} maxLength={254} value={fieldDraft[field]} onChange={event => setFieldDraft(draft => ({ ...draft, [field]: event.target.value }))} className="block w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white mt-1"/></label>)}
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Preferred Contact Method</label>
                 <select

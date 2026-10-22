@@ -6,7 +6,7 @@ import {
   UserPlus, ShoppingCart, MessageSquare, Users,
   Calendar, Receipt, Settings, BookOpen, LogOut, X,
   BarChart3, MessageCircle, Mail, ContactRound, Smartphone, Mic, BrainCircuit,
-  KeyRound, Loader2, CheckCircle, AlertCircle, Share2
+  KeyRound, Loader2, CheckCircle, AlertCircle, Share2, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -43,10 +43,17 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
   const { state, logout } = useApp();
   const { mustChangePassword, clearMustChangePassword } = useApp() as any;
   const user = state.user;
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('follops_sidebar_collapsed') === 'true'; } catch { return false; }
+  });
+  const toggleCollapsed = () => setCollapsed(value => {
+    const next = !value;
+    try { localStorage.setItem('follops_sidebar_collapsed', String(next)); } catch {}
+    return next;
+  });
 
   const getPath = () => window.location.hash.replace('#', '') || '/dashboard';
   const [currentPath, setCurrentPath] = useState(getPath);
-  const [waUnread, setWaUnread] = useState(0);
 
   // Change password modal state
   const [showChangePw, setShowChangePw] = useState(false);
@@ -95,22 +102,6 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  useEffect(() => {
-    const fetchUnread = async () => {
-      try {
-        const r = await fetch('/api/whatsapp?action=chatsFromDb');
-        const data = await r.json();
-        if (data.success && Array.isArray(data.chats)) {
-          const total = data.chats.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
-          setWaUnread(total);
-        }
-      } catch {}
-    };
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
   const filteredItems = NAV_ITEMS.filter(item => {
     if (item.role === 'manager' && !['manager', 'owner'].includes(user?.role || '')) return false;
     return true;
@@ -139,35 +130,40 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
       {/* Sidebar */}
       <aside className={`
         fixed top-0 left-0 z-50 h-full w-64 bg-gray-900 border-r border-gray-800/50
-        flex flex-col transition-transform duration-300
+        flex flex-col transition-all duration-300 shrink-0
+        ${collapsed ? 'lg:w-20' : 'lg:w-64'}
         lg:static lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
 
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-5 border-b border-gray-800/50 flex-shrink-0">
+        <div className="h-16 flex items-center justify-between px-3 border-b border-gray-800/50 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg flex items-center justify-center font-black text-black text-sm shadow-lg">
               DH
             </div>
-            <div>
+            <div className={collapsed ? 'lg:hidden' : ''}>
               <p className="text-white font-bold text-sm leading-tight">SalesTrail</p>
               <p className="text-gray-500 text-[10px]">Dirty Hand Designs</p>
             </div>
           </div>
           <button
             onClick={onCloseSidebar}
+            aria-label="Close navigation"
             className="lg:hidden p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'} aria-expanded={!collapsed} className="hidden lg:flex items-center justify-center p-2 mx-3 mt-2 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800">
+          {collapsed ? <PanelLeftOpen className="w-5 h-5"/> : <><PanelLeftClose className="w-5 h-5"/><span className="ml-2 text-xs">Collapse menu</span></>}
+        </button>
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           {sections.map(section => (
             <div key={section} className="mb-6">
-              <p className="text-[9px] uppercase tracking-widest text-gray-600 font-bold px-3 pb-2">
+              <p className={`${collapsed ? 'lg:sr-only' : ''} text-[9px] uppercase tracking-widest text-gray-600 font-bold px-3 pb-2`}>
                 {section}
               </p>
               <div className="space-y-0.5">
@@ -180,6 +176,9 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
                     return (
                       <button
                         key={item.path}
+                        aria-label={item.label}
+                        title={item.label}
+                        aria-current={isActive ? 'page' : undefined}
                         onClick={() => handleNav(item.path)}
                         className={`
                           w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
@@ -190,19 +189,14 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
                         `}
                       >
                         <Icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-                        <span>{item.label}</span>
+                        <span className={collapsed ? 'lg:hidden' : ''}>{item.label}</span>
                         {item.path === '/tasks' && (
-                          <span className="ml-auto text-[9px] bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center font-bold animate-pulse">
+                          <span className={`${collapsed ? 'lg:hidden' : ''} ml-auto text-[9px] bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center font-bold animate-pulse`}>
                             {(state.tasks || []).filter((t: any) => !t.completed && new Date(t.dueDate) < new Date()).length || ''}
                           </span>
                         )}
-                        {item.path === '/whatsapp' && waUnread > 0 && (
-                          <span className="ml-auto text-[9px] bg-green-500 text-white min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center font-bold">
-                            {waUnread > 99 ? '99+' : waUnread}
-                          </span>
-                        )}
                         {item.path === '/woocommerce' && (
-                          <span className="ml-auto w-2 h-2 bg-purple-500 rounded-full" />
+                          <span className={`${collapsed ? 'lg:hidden' : ''} ml-auto w-2 h-2 bg-purple-500 rounded-full`} />
                         )}
                       </button>
                     );
@@ -214,11 +208,11 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, onCloseSidebar }) => {
 
         {/* User Profile */}
         <div className="p-3 border-t border-gray-800/50 flex-shrink-0">
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800/40">
+          <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800/40 ${collapsed ? 'lg:flex-col lg:px-0' : ''}`}>
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-black font-bold text-sm uppercase flex-shrink-0">
               {user?.name?.[0] || 'U'}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className={`flex-1 min-w-0 ${collapsed ? 'lg:hidden' : ''}`}>
               <p className="text-sm font-semibold text-white truncate">{user?.name || 'User'}</p>
               <p className="text-[10px] text-gray-500 capitalize">
                 {user?.role === 'owner' ? '👑 Owner' : user?.role === 'manager' ? '🏆 Manager' : '💼 Sales Rep'}

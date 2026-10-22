@@ -290,3 +290,5 @@ strict direct PN/LID mutation validation is now shared by API and UI. LID payloa
 retain the suffix and acknowledgements/readback must match exactly. Null/absent
 provider rows remain unknown; no inferred identity merging. Write gate remains
 disabled until reviewed live readback. No real label mutations exercised.
+
+WP-INBOX-USABILITY-EMAIL-REFRESH: implementation in review, independent QA/security pending. No hosted contact corrections or provider sync performed by implementation. Automatic mailbox scheduling remains a future packet; current collection is explicit manual import.

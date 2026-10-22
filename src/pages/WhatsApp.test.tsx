@@ -87,7 +87,7 @@ describe('WhatsApp label and unread UI',()=>{
   });
   it('shows at most two chips plus overflow and filters checked membership only',async()=>{
     const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
-    const chips=container.querySelector('[aria-label="Phone conversation labels"]')!;expect(chips).toBeTruthy();expect(chips.children).toHaveLength(3);expect(chips.textContent).toContain('+1');expect(container.textContent).toContain('Labels checked: 1 of 1');
+    const chips=container.querySelector('[aria-label="Phone conversation labels"]')!;expect(chips).toBeTruthy();expect(chips.children).toHaveLength(3);expect(chips.textContent).toContain('+1');expect(container.textContent).toContain('Verified labels: 1 / 1');
     const select=container.querySelector('select[aria-label="Filter by phone label"]') as HTMLSelectElement;
     await act(async()=>{select.value='none';select.dispatchEvent(new Event('change',{bubbles:true}));});expect(container.textContent).toContain('No chats found');expect(container.textContent).toContain('Filter matches checked conversations only.');
   });
@@ -102,14 +102,14 @@ describe('WhatsApp label and unread UI',()=>{
     const refresh=Array.from(container.querySelectorAll('button')).find(b=>b.title==='Refresh from database + pull latest from Evolution API')!;await act(async()=>refresh.click());await flush();
     const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
     const requests=()=>vi.mocked(fetch).mock.calls.filter(([url])=>String(url).includes('action=phoneAssignments'));
-    expect(requests()).toHaveLength(1);expect(JSON.parse(String(requests()[0][1]?.body)).chatIds).toHaveLength(25);expect(container.textContent).toContain('Labels checked: 25 of 60');
-    const next=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Check next 25')!;await act(async()=>next.click());await flush();expect(requests()).toHaveLength(2);expect(container.textContent).toContain('Labels checked: 50 of 60');
+    expect(requests()).toHaveLength(1);expect(JSON.parse(String(requests()[0][1]?.body)).chatIds).toHaveLength(25);expect(container.textContent).toContain('Verified labels: 25 / 60');
+    const next=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Check next 25')!;await act(async()=>next.click());await flush();expect(requests()).toHaveLength(2);expect(container.textContent).toContain('Verified labels: 50 / 60');
   });
   it('expires cached UI membership to unknown without another provider request',async()=>{
     const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
     const calls=vi.mocked(fetch).mock.calls.length;vi.spyOn(Date,'now').mockReturnValue(Date.now()+181000);
     const select=container.querySelector('select[aria-label="Filter by phone label"]') as HTMLSelectElement;await act(async()=>{select.value='unknown';select.dispatchEvent(new Event('change',{bubbles:true}));});
-    expect(container.textContent).toContain('Labels checked: 0 of 1');expect(container.querySelector('[aria-label="Phone conversation labels"]')).toBeNull();expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
+    expect(container.textContent).toContain('Verified labels: 0 / 1');expect(container.querySelector('[aria-label="Phone conversation labels"]')).toBeNull();expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
   });
 
 });

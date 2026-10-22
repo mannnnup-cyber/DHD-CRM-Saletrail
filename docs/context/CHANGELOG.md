@@ -449,3 +449,9 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 - Demand-load bounded phone memberships; explicit checked/unknown filtering and compact chips.
 - Prepare fresh-read-verified individual changes behind a default-disabled server flag.
 - Preserve existing phone definitions, workflow status, team assignment and unread controls.
+
+## 2026-10-22 — Inbox usability (in review)
+- Collapsible accessible desktop sidebar, preserving mobile navigation.
+- Clear saved-email refresh versus explicit AI-free latest50 mailbox sync; refresh resets older pagination.
+- WhatsApp inbox link replaces unavailable placeholder, compact personal unread help.
+- Owner/manager persisted CRM identity corrections with validation, visible errors and duplicate preflight.

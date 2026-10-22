@@ -221,3 +221,5 @@ authenticated dispatch. `use-phone-labels.ts` owns demand loading/freshness and
 mutation reconciliation; `src/components/WhatsAppLabels.tsx` renders the one menu,
 filter and compact chips. New server-only activation flag
 `WHATSAPP_LABEL_WRITES_ENABLED` defaults false. No schema changes.
+
+Inbox usability: src/lib/contacts/edit-server.ts isolates authenticated owner/manager CRM identity corrections; api/contacts.ts dispatches editIdentity before legacy client guard. Sidebar persists desktop collapse; UnifiedInbox offers explicit AI-free mailbox sync and newest-page refresh. ContactProfile corrections include name/email/phone/company.

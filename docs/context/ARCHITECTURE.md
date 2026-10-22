@@ -369,3 +369,6 @@ explicit refresh/reconciliation. In-flight guards/cache/rate limits are per
 process, not cross-process atomicity or exactly-once guarantees. The provider
 has no cross-channel compare-and-swap, so concurrent edits to the same label
 remain a platform limitation; unrelated labels are preserved by individual ops.
+
+## Inbox usability follow-up (2026-10-22)
+Desktop sidebar collapse is persisted as a layout preference, mobile drawer unchanged. Removed legacy provider unread sidebar polling to avoid confusing personal CRM receipts. Unified Inbox refresh resets to newest page; owner/manager explicit Sync latest emails calls existing authenticated AI-free latest50 import. No background mailbox collector is configured. New contacts editIdentity action independently verifies fresh Auth/profile and modern secret, restricts identity corrections to active owners/managers, validates and rejects existing identifier collisions. Collision preflight is best effort without unique identifier constraints; concurrent duplicates remain possible. No external customer account or historical message rewrite. Existing legacy contact endpoints retain their prior limitations.
