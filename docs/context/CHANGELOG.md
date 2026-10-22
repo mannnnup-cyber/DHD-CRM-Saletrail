@@ -442,3 +442,10 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 - Preserve strict validation while filtering unsupported stored identifiers from new unread batches.
 - Keep affected conversations visible with unknown unread state; do not send unsupported seen requests.
 - Mixed/all-unsupported and quota-preservation regression tests added; no schema/provider change.
+
+## 2026-10-21 — Shared WhatsApp phone-label implementation
+
+- Use existing provider single-chat readback, avoiding Docker/service changes.
+- Demand-load bounded phone memberships; explicit checked/unknown filtering and compact chips.
+- Prepare fresh-read-verified individual changes behind a default-disabled server flag.
+- Preserve existing phone definitions, workflow status, team assignment and unread controls.

@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, Tag, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive, CornerUpLeft, Info, ChevronRight } from 'lucide-react';
+import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive, CornerUpLeft, Info, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { authHeaders } from '../lib/auth';
-import { unreadBadge, selectUnreadChats, validChatId, type PhoneLabel } from '../lib/whatsapp/inbox';
+import { unreadBadge, selectUnreadChats, validChatId } from '../lib/whatsapp/inbox';
+import {usePhoneLabels} from '../lib/whatsapp/use-phone-labels';
+import {WhatsAppLabelControls,PhoneLabelChips} from '../components/WhatsAppLabels';
 
 // WhatsApp API is handled by backend /api/whatsapp (Evolution API / Baileys)
 // This avoids CORS issues and keeps credentials secure
@@ -190,10 +192,7 @@ export default function WhatsApp() {
   const [webhookStatus, setWebhookStatus] = useState<{ configured: boolean; url: string; lastMessageAt?: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
-  const [phoneLabels, setPhoneLabels] = useState<PhoneLabel[]>([]);
-  const [labelsOpen, setLabelsOpen] = useState(false);
-  const [labelsError, setLabelsError] = useState('');
-  const [labelsLoading, setLabelsLoading] = useState(false);
+  const phoneLabelControls=usePhoneLabels(chats);
   const [unreadError, setUnreadError] = useState('CRM unread tracking has not loaded.');
   const [unreadExcluded, setUnreadExcluded] = useState(0);
   const seenRequests = useRef(new Set<string>());
@@ -206,16 +205,6 @@ export default function WhatsApp() {
   }, []);
   const unreadLoadSequence = useRef(0);
 
-  const refreshPhoneLabels = async () => {
-    setLabelsLoading(true); setLabelsError('');
-    try {
-      const response = await fetch('/api/whatsapp?action=phoneLabels', { headers: authHeaders() });
-      const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.error || 'Phone labels could not be loaded.');
-      setPhoneLabels(result.labels);
-    } catch (error) { setLabelsError(error instanceof Error ? error.message : 'Phone labels could not be loaded.'); }
-    finally { setLabelsLoading(false); }
-  };
   const refreshUnread = useCallback(async (chatIds: string[]) => {
     const sequence = ++unreadLoadSequence.current;
     const selection = selectUnreadChats(chatIds);
@@ -1345,6 +1334,7 @@ export default function WhatsApp() {
   // (messageCount/loadingCount removed — Green API quota tracking no longer needed)
 
   const filteredChats = chats.filter(c => {
+    if(!phoneLabelControls.matches(c.id))return false;
     const isGroup = c.id.includes('@g.us');
     if (chatFilter === 'groups' && !isGroup) return false;
     if (chatFilter === 'individual' && isGroup) return false;
@@ -1841,13 +1831,8 @@ export default function WhatsApp() {
               </div>
             )}
 
+            <WhatsAppLabelControls controls={phoneLabelControls} selected={selectedChat}/>
             <div className="px-3 py-2 border-b border-gray-700/50 text-xs text-gray-400">
-              <button type="button" className="inline-flex items-center gap-1 text-amber-400" onClick={() => { setLabelsOpen(!labelsOpen); if (!labelsOpen) void refreshPhoneLabels(); }} aria-expanded={labelsOpen}><Tag className="w-3 h-3" /> Phone labels</button>
-              {labelsOpen && <div className="mt-2 space-y-2" role="region" aria-label="Phone labels">
-                <p>Existing WhatsApp labels. Manage names and colors on your phone. Shared assignments and filtering need provider support.</p>
-                <button type="button" onClick={() => void refreshPhoneLabels()} disabled={labelsLoading} className="text-blue-400">{labelsLoading ? 'Refreshing…' : 'Refresh labels'}</button>
-                {labelsError ? <p role="alert" className="text-amber-400">{labelsError}</p> : <ul className="max-h-36 overflow-auto">{phoneLabels.length === 0 && !labelsLoading && <li>No phone labels found.</li>}{phoneLabels.map(label => <li key={label.id} className="py-1">{label.name} <span className="text-gray-500">· ID {label.id} · color {label.color}</span></li>)}</ul>}
-              </div>}
               <p className="mt-1" role={unreadError ? 'status' : undefined}>{unreadError || 'Unread in CRM is personal. Stored history starts unread. Opening a chat marks its loaded messages read for you; no phone read receipts are sent. Counts cover up to 500 supported loaded conversations.'}</p>
               {!unreadError && unreadExcluded > 0 && <p className="mt-1" role="status">Unread tracking is unavailable for {unreadExcluded} conversation{unreadExcluded === 1 ? '' : 's'}; their unread state is unknown.</p>}
             </div>
@@ -1913,6 +1898,7 @@ export default function WhatsApp() {
                             </span>
                           )}
                         </div>
+                        <PhoneLabelChips labels={phoneLabelControls.display(chat.id)}/>
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full font-semibold ${
                             chat.status === 'active' ? 'bg-green-500/20 text-green-400' :

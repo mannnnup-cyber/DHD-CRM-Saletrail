@@ -213,3 +213,11 @@ Email repair: src/lib/inbox/mailbox-server.ts owns uncached saved configuration,
 - `src/lib/whatsapp/inbox.test.ts`: API boundary/provider projection tests.
 - `supabase/migrations/20261021172932_whatsapp_inbox_read_state.sql`: additive, unapplied receipt table + two service-only RPCs.
 - `scripts/verify-whatsapp-inbox-sql.mjs`: disposable PGlite SQL verification, no hosted connections. Resolve installed PGlite normally or set `FOLLOPS_PGLITE_MODULE` to an external test runtime's module URL.
+
+Shared WhatsApp labels: existing GET single-chat provider readback verified;
+no provider patch/redeploy is needed. New `src/lib/whatsapp/phone-labels-server.ts`
+projects bounded association reads and gated single-label changes behind existing
+authenticated dispatch. `use-phone-labels.ts` owns demand loading/freshness and
+mutation reconciliation; `src/components/WhatsAppLabels.tsx` renders the one menu,
+filter and compact chips. New server-only activation flag
+`WHATSAPP_LABEL_WRITES_ENABLED` defaults false. No schema changes.

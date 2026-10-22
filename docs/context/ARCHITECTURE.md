@@ -337,3 +337,35 @@ identifier causing whole-batch rejection. Feature follow-up filters supported
 identifiers before its500 cap, preserves excluded conversations as unknown and
 never relaxes server validation or hides chats. New seen requests are also
 skipped for unsupported identifiers. No schema/provider changes are involved.
+
+## Shared phone labels — implementation branch, 2026-10-21
+
+The earlier bulk-projection blocker is resolved by a verified existing provider
+route: Evolution2.3.7 GET `/chat/findChatByRemoteJid/:instance?remoteJid=...`
+returns Chat.labels scoped by instanceId+remoteJid. No provider image, database,
+Redis, account connection, registry or Render configuration change is required.
+Unshipped Docker research artifacts are excluded from the implementation.
+
+New authenticated `phoneAssignments` reads at most25 conversations with4 workers,
+8-second per-call and35-second overall budgets. The server returns only exact
+requested JIDs, label IDs and check timestamps; null/missing/malformed/failed
+lookups remain unknown. A3-minute bounded cache includes provider origin,
+instance, credential fingerprint and JID. Provider work is bounded to120 calls
+per minute per warm process; this is not a distributed quota.
+
+UI checks are demand-driven: first25 on opening labels, explicit next25 and
+refresh-first25 controls. Inbox30-second polling does not fetch associations.
+Expired memberships become unknown; filtering states checked coverage and has a
+Not checked option. Names and provider IDs are preserved, duplicate names are
+disambiguated, color codes stay in tooltips with neutral dots rather than guessed
+colors. Main conversation rows show at most two label chips plus overflow.
+
+`phoneLabelChange` is owner/manager-only and server-gated by exact
+`WHATSAPP_LABEL_WRITES_ENABLED=true` (default false). Once separately activated,
+explicit selected-chat add/remove uses existing labels, direct phone JIDs,
+fresh pre-read and target-state checks, one provider mutation and fresh readback.
+No replace-all or automatic mutation retry. Uncertainty blocks UI changes until
+explicit refresh/reconciliation. In-flight guards/cache/rate limits are per
+process, not cross-process atomicity or exactly-once guarantees. The provider
+has no cross-channel compare-and-swap, so concurrent edits to the same label
+remain a platform limitation; unrelated labels are preserved by individual ops.

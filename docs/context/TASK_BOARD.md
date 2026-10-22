@@ -276,3 +276,11 @@ WhatsApp identifier follow-up:23 regression tests pass for mixed/all-unsupported
 conversation batches. Existing unsupported conversations no longer poison valid
 unread counts; their own count remains explicitly unknown. Production follow-up
 verification remains pending. No database/provider changes.
+
+Shared WhatsApp phone labels: In Review. Existing authenticated per-chat provider
+GET was verified to expose assignments; the earlier missing bulk projection did
+not mean all readback was unavailable. No provider modification is needed.
+Demand-loaded associations, one filter, two chips+overflow and gated explicit
+single-label operations are implemented on feat/whatsapp-shared-labels. Initial
+production gate remains false until live historical readback and independent
+review are confirmed. No automated/customer label writes were exercised.

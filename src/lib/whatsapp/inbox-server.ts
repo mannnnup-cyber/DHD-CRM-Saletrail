@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { projectPhoneLabels, validChatId, validMessageId } from './inbox.js';
+import { validChatId, validMessageId } from './inbox.js';
+import { handlePhoneLabels } from './phone-labels-server.js';
 
 class InboxError extends Error { constructor(public status: number, message: string) { super(message); } }
 const requests = new Map<string, { since: number; count: number }>();
@@ -31,24 +32,7 @@ export async function handleWhatsAppInbox(req: VercelRequest, res: VercelRespons
     const bucket = requests.get(profile.id) || { since: now, count: 0 };
     bucket.count++; requests.set(profile.id, bucket);
     if (bucket.count > 120) { res.setHeader('Retry-After', '60'); fail(429, 'Inbox request limit reached. Try again later.'); }
-    if (action === 'phoneLabels') {
-      const { data: settings, error: settingError } = await admin.from('app_settings').select('setting_key,setting_value').in('setting_key', ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE_NAME']);
-      if (settingError) fail(503, 'Phone labels are unavailable.');
-      const config = Object.fromEntries((settings || []).map(row => [row.setting_key, row.setting_value]));
-      const origin = new URL(config.EVOLUTION_API_URL || process.env.EVOLUTION_API_URL || '');
-      if (origin.protocol !== 'https:' || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/') fail(503, 'Phone label configuration is unavailable.');
-      const key = process.env.EVOLUTION_API_KEY || config.EVOLUTION_API_KEY;
-      const instance = config.EVOLUTION_INSTANCE_NAME || process.env.EVOLUTION_INSTANCE_NAME;
-      if (!key || typeof instance !== 'string' || !/^[\w-]{1,100}$/.test(instance)) fail(503, 'Phone label configuration is unavailable.');
-      const response = await fetch(origin.origin + '/label/findLabels/' + encodeURIComponent(instance), { headers: { apikey: key, Accept: 'application/json' }, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(12000) });
-      if (!response.ok) fail(502, 'Phone labels could not be refreshed.');
-      const reader = response.body?.getReader(); let raw = ''; let bytes = 0;
-      if (!reader) fail(502, 'Phone labels could not be refreshed.');
-      const decoder = new TextDecoder();
-      while (true) { const chunk = await reader!.read(); if (chunk.done) break; bytes += chunk.value.byteLength; if (bytes > 131072) { await reader!.cancel(); fail(502, 'Phone label response is too large.'); } raw += decoder.decode(chunk.value, { stream: true }); }
-      const labels = projectPhoneLabels(JSON.parse(raw));
-      return res.json({ success: true, labels, associationsAvailable: false, writesEnabled: false });
-    }
+    if (['phoneLabels','phoneAssignments','phoneLabelChange'].includes(String(action))) return handlePhoneLabels(req,res,admin);
     if (action === 'inboxUnread') {
       const ids = req.body?.chatIds;
       if (!Array.isArray(ids) || ids.length > 500 || !ids.every(validChatId)) fail(400, 'Provide at most 500 valid chat IDs.');
