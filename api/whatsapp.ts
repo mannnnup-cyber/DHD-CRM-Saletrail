@@ -146,7 +146,7 @@ async function setSetting(key: string, value: string): Promise<boolean> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (['phoneLabels', 'inboxUnread', 'inboxSeen'].includes(String(req.query.action))) return handleWhatsAppInbox(req, res);
+  if (['phoneLabels', 'phoneAssignments', 'phoneLabelChange', 'inboxUnread', 'inboxSeen'].includes(String(req.query.action))) return handleWhatsAppInbox(req, res);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');

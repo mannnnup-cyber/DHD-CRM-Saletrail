@@ -23,21 +23,22 @@ beforeEach(async () => {
       chatsFromDb: {success:true,chats:sourceChats}, getEvolutionConfig: {success:true,apiUrl:'https://provider.example'},
       inboxUnread: unavailable ? {success:false,error:'CRM unread tracking unavailable'} : {success:true,counts:[{chat_id:chat.id,unread_count:1300}]},
       messages: {success:true,messages:[{id:'provider1',storageId:incomingId,text:'Synthetic incoming',timestamp:1792584000,fromMe:false,status:'unknown',type:'text'},{id:'provider2',storageId:outgoingId,text:'Synthetic outgoing',timestamp:1792584001,fromMe:true,status:'unknown',type:'text'}]},
-      inboxSeen: {success:true}, phoneLabels: {success:true,labels:[{id:'1',name:'Shared name',color:'2'},{id:'2',name:'Shared name',color:'3'}]},
+      inboxSeen: {success:true}, phoneAssignments: {success:true,items:(JSON.parse(String(options?.body||'{}')).chatIds||[]).map((chatId:string)=>({chatId,labelIds:['1','2','99'],checkedAt:Date.now(),expiresAt:Date.now()+180000}))},
+      phoneLabels: {success:true,writesEnabled:false,labels:[{id:'1',name:'Shared name',color:'2'},{id:'2',name:'Shared name',color:'3'}]},
     };
     return {ok: !(unavailable && action==='inboxUnread'),json:async()=>values[action || ''] || {success:true,calls:[],users:[]}};
   }));
   container=document.createElement('div');document.body.append(container);root=createRoot(container);
   await act(async()=>root.render(<WhatsApp/>)); await flush();
 });
-afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.unstubAllGlobals();});
+afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('WhatsApp label and unread UI',()=>{
   it('keeps one phone label menu, preserves duplicate names and shows read-only limitation',async()=>{
     const button=Array.from(container.querySelectorAll('button')).find(b=>b.textContent===' Phone labels') || Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'));
     expect(button).toBeTruthy();await act(async()=>button!.click());await flush();
     const region=container.querySelector('[aria-label="Phone labels"]')!;
-    expect(region.textContent).toContain('Shared assignments and filtering need provider support');
-    expect(region.querySelectorAll('li')).toHaveLength(2);expect(region.textContent).toContain('ID 1');expect(region.textContent).toContain('ID 2');
+    expect(region.textContent).toContain('Assignment changes are awaiting activation');
+    expect(region.querySelectorAll('li')).toHaveLength(2);expect(region.textContent).toContain('(#1)');expect(region.textContent).toContain('(#2)');
   });
   it('caps positive unread badge and marks only loaded inbound UUIDs, without phone read receipts',async()=>{
     expect(container.textContent).toContain('99+');
@@ -76,6 +77,39 @@ describe('WhatsApp label and unread UI',()=>{
     expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('action=inboxUnread'))).toBe(false);
     expect(container.textContent).toContain('their unread state is unknown');expect(container.textContent).not.toContain('99+');
     expect(container.querySelector('[aria-label="Unread state unavailable"]')).toBeTruthy();
+  });
+
+  it('does not fan out label requests on mount or ordinary inbox refresh',async()=>{
+    expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('action=phoneAssignments'))).toBe(false);
+    const refresh=Array.from(container.querySelectorAll('button')).find(b=>b.title==='Refresh from database + pull latest from Evolution API')!;
+    await act(async()=>refresh.click());await flush();
+    expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('action=phoneAssignments'))).toBe(false);
+  });
+  it('shows at most two chips plus overflow and filters checked membership only',async()=>{
+    const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
+    const chips=container.querySelector('[aria-label="Phone conversation labels"]')!;expect(chips).toBeTruthy();expect(chips.children).toHaveLength(3);expect(chips.textContent).toContain('+1');expect(container.textContent).toContain('Labels checked: 1 of 1');
+    const select=container.querySelector('select[aria-label="Filter by phone label"]') as HTMLSelectElement;
+    await act(async()=>{select.value='none';select.dispatchEvent(new Event('change',{bubbles:true}));});expect(container.textContent).toContain('No chats found');expect(container.textContent).toContain('Filter matches checked conversations only.');
+  });
+  it('gates assignment controls until explicitly enabled and an exact chat has readback',async()=>{
+    const customer=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Synthetic customer'))!;await act(async()=>customer.click());await flush();
+    const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
+    const region=container.querySelector('[aria-label="Phone labels"]')!;expect(Array.from(region.querySelectorAll('input[type="checkbox"]')).every(input=>(input as HTMLInputElement).disabled)).toBe(true);expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('action=phoneLabelChange'))).toBe(false);
+  });
+
+  it('checks only a demand-loaded batch and lets the owner explicitly check the next batch',async()=>{
+    sourceChats=Array.from({length:60},(_,i)=>({...chat,id:String(18760001000+i)+'@s.whatsapp.net',name:'Synthetic '+i}));
+    const refresh=Array.from(container.querySelectorAll('button')).find(b=>b.title==='Refresh from database + pull latest from Evolution API')!;await act(async()=>refresh.click());await flush();
+    const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
+    const requests=()=>vi.mocked(fetch).mock.calls.filter(([url])=>String(url).includes('action=phoneAssignments'));
+    expect(requests()).toHaveLength(1);expect(JSON.parse(String(requests()[0][1]?.body)).chatIds).toHaveLength(25);expect(container.textContent).toContain('Labels checked: 25 of 60');
+    const next=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Check next 25')!;await act(async()=>next.click());await flush();expect(requests()).toHaveLength(2);expect(container.textContent).toContain('Labels checked: 50 of 60');
+  });
+  it('expires cached UI membership to unknown without another provider request',async()=>{
+    const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
+    const calls=vi.mocked(fetch).mock.calls.length;vi.spyOn(Date,'now').mockReturnValue(Date.now()+181000);
+    const select=container.querySelector('select[aria-label="Filter by phone label"]') as HTMLSelectElement;await act(async()=>{select.value='unknown';select.dispatchEvent(new Event('change',{bubbles:true}));});
+    expect(container.textContent).toContain('Labels checked: 0 of 1');expect(container.querySelector('[aria-label="Phone conversation labels"]')).toBeNull();expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
   });
 
 });
