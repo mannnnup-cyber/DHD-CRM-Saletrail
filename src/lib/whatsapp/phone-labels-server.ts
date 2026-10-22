@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
-import { projectPhoneLabels, validChatId } from './inbox.js';
+import { projectPhoneLabels, validChatId, validLabelTarget } from './inbox.js';
 class LabelError extends Error {
     constructor(public status: number, message: string, public uncertain = false) { super(message); }
 }
@@ -106,7 +106,7 @@ export async function handlePhoneLabels(req: VercelRequest, res: VercelResponse,
         }
         if (req.query.action === 'phoneLabelChange') {
             const { chatId, labelId, action, expectedPresent } = req.body || {};
-            if (!validChatId(chatId) || !/^\d{5,25}@s\.whatsapp\.net$/.test(chatId) || !validLabel(labelId) || !['add', 'remove'].includes(action) || typeof expectedPresent !== 'boolean')
+            if (!validLabelTarget(chatId) || !validLabel(labelId) || !['add', 'remove'].includes(action) || typeof expectedPresent !== 'boolean')
                 fail(400, 'Select a supported direct conversation and existing label.');
             const lock = prefix + '|' + chatId;
             if (writes.has(lock))
@@ -124,10 +124,16 @@ export async function handlePhoneLabels(req: VercelRequest, res: VercelResponse,
                     return res.json({ success: true, confirmed: true, chatId, ...before });
                 if (present !== expectedPresent)
                     fail(409, 'This label changed on the phone. Refresh before continuing.');
+                {
+                    // Provider cache resolution can remap identities; reject remapping before writing.
+                    const resolved = await call('/chat/whatsappNumbers/' + encodeURIComponent(instance), 'POST', { numbers: [chatId] });
+                    if (!Array.isArray(resolved) || resolved.length !== 1 || resolved[0]?.exists !== true || resolved[0]?.jid !== chatId)
+                        fail(409, 'The provider could not verify this exact conversation identity. No label change was sent.');
+                }
                 cache.delete(lock);
                 let acknowledged = false;
                 try {
-                    const ack = await call('/label/handleLabel/' + encodeURIComponent(instance), 'POST', { number: chatId.split('@')[0], labelId, action });
+                    const ack = await call('/label/handleLabel/' + encodeURIComponent(instance), 'POST', { number: chatId.endsWith('@lid') ? chatId : chatId.split('@')[0], labelId, action });
                     acknowledged = ack?.numberJid === chatId && ack?.labelId === labelId && ack?.[desired ? 'add' : 'remove'] === true;
                 }
                 catch { /* Readback, never an automatic mutation retry. */ }

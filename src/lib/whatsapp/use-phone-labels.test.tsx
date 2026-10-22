@@ -50,3 +50,15 @@ it('blocks repeat changes after uncertainty until explicit fresh readback', asyn
     expect(controls.blocked.has(id)).toBe(false);
     expect(controls.fresh(id)?.labelIds).toEqual(['1']);
 });
+
+it('allows a fresh exact LID conversation through the client mutation guard', async () => {
+    const lid = '19000000003@lid';
+    const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes('action=phoneLabels') ? ({ success: true, writesEnabled: true, labels: [{ id: '1', name: 'One', color: '2' }] }) : url.includes('action=phoneAssignments') ? ({ success: true, items: [row(lid, [])] }) : ({ success: true, confirmed: true, ...row(lid, ['1']) }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    await act(async () => controls.toggle());
+    await act(async () => controls.load([lid], true));
+    await act(async () => controls.change(lid, '1'));
+    const post = fetchMock.mock.calls.find(([url]) => url.includes('action=phoneLabelChange'));
+    expect(post).toBeDefined();
+    expect(controls.fresh(lid)?.labelIds).toEqual(['1']);
+});

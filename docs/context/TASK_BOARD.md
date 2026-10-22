@@ -284,3 +284,9 @@ Demand-loaded associations, one filter, two chips+overflow and gated explicit
 single-label operations are implemented on feat/whatsapp-shared-labels. Initial
 production gate remains false until live historical readback and independent
 review are confirmed. No automated/customer label writes were exercised.
+
+LID label follow-up (2026-10-22): provider assignments live on exact LID identities;
+strict direct PN/LID mutation validation is now shared by API and UI. LID payloads
+retain the suffix and acknowledgements/readback must match exactly. Null/absent
+provider rows remain unknown; no inferred identity merging. Write gate remains
+disabled until reviewed live readback. No real label mutations exercised.
