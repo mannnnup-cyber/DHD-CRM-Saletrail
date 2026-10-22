@@ -1,3 +1,4 @@
+import { validLabelTarget } from './inbox';
 import { useEffect, useRef, useState } from 'react';
 import { authHeaders } from '../auth';
 import { validChatId, projectPhoneLabels, type PhoneLabel } from './inbox';
@@ -82,7 +83,7 @@ export function usePhoneLabels(chats: {
     catch (e) {
         setError(e instanceof Error ? e.message : 'Phone labels could not be refreshed.');
     } }
-    async function change(chatId: string, labelId: string) { const row = fresh(chatId); if (!row || mutationActive.current || readActive.current || changing || blocked.has(chatId) || !writesEnabled || !/^\d{5,25}@s\.whatsapp\.net$/.test(chatId))
+    async function change(chatId: string, labelId: string) { const row = fresh(chatId); if (!row || mutationActive.current || readActive.current || changing || blocked.has(chatId) || !writesEnabled || !validLabelTarget(chatId))
         return; const expectedPresent = row.labelIds!.includes(labelId); mutationActive.current = true; const mutationSequence = ++sequence.current; setChanging(true); setError(''); try {
         const r = await fetch('/api/whatsapp?action=phoneLabelChange', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId, labelId, action: expectedPresent ? 'remove' : 'add', expectedPresent }) });
         const value = await r.json();

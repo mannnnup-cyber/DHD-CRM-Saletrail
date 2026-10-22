@@ -1,3 +1,4 @@
+import { validLabelTarget } from '../lib/whatsapp/inbox';
 import { Tag } from 'lucide-react';
 import type { PhoneLabel } from '../lib/whatsapp/inbox';
 import { usePhoneLabels } from '../lib/whatsapp/use-phone-labels';
@@ -13,7 +14,7 @@ export function WhatsAppLabelControls({ controls: c, selected }: {
         name: string;
     } | null;
 }) {
-    const row = selected ? c.fresh(selected.id) : null, eligible = !!selected && /^\d{5,25}@s\.whatsapp\.net$/.test(selected.id), canChange = !!row && eligible && c.writesEnabled && !c.blocked.has(selected!.id) && !c.changing && !c.loading;
+    const row = selected ? c.fresh(selected.id) : null, eligible = !!selected && validLabelTarget(selected.id), canChange = !!row && eligible && c.writesEnabled && !c.blocked.has(selected!.id) && !c.changing && !c.loading;
     return <div className="px-3 py-2 border-b border-gray-700/50 text-xs text-gray-400">
  <div className="flex items-center justify-between gap-2"><button type="button" onClick={() => void c.toggle()} disabled={c.changing} aria-expanded={c.open} className="inline-flex items-center gap-1 text-amber-400"><Tag className="w-3 h-3"/> Phone labels</button>
  <select aria-label="Filter by phone label" value={c.filter} onChange={e => c.setFilter(e.target.value)} className="bg-gray-800 rounded px-2 py-1 max-w-40"><option value="all">All labels</option><option value="unknown">Not checked</option><option value="none">No labels (checked)</option>{c.labels.map(label => <option key={label.id} value={label.id}>{name(label, c.labels)}</option>)}</select></div>

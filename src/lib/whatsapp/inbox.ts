@@ -1,5 +1,6 @@
 export interface PhoneLabel { id: string; name: string; color: string; }
 export const validChatId = (id: unknown): id is string => typeof id === 'string' && /^\d{5,25}(?:-\d{1,25})?@(?:s\.whatsapp\.net|c\.us|g\.us|lid)$/.test(id);
+export const validLabelTarget = (id: unknown): id is string => typeof id === 'string' && /^\d{5,25}@(s\.whatsapp\.net|lid)$/.test(id);
 export const validMessageId = (id: unknown): id is string => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 export function projectPhoneLabels(value: unknown): PhoneLabel[] {
   if (!Array.isArray(value) || value.length > 500) throw new Error('Invalid label response');
