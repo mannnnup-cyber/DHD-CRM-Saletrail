@@ -23,20 +23,35 @@ function UnifiedInboxContent() {
   useEffect(() => () => syncController.current?.abort(), []);
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState('');
+  const [syncFailed, setSyncFailed] = useState(false);
   const canSync = ['owner', 'manager'].includes(state.user?.role || '');
   const refreshFirstPage = () => { setHistory([]); setCursor(null); setRefresh(value => value + 1); };
   const syncMailbox = async () => {
     if (syncing) return;
     const controller = new AbortController(); syncController.current = controller;
-    setSyncing(true); setSyncNotice('');
+    setSyncing(true); setSyncNotice(''); setSyncFailed(false);
     try {
       const response = await fetch('/api/email?action=sync', { method: 'POST', signal: controller.signal, headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ skipAi: true }) });
       const result = await response.json();
       if (controller.signal.aborted) return;
-      if (!response.ok || result.success !== true) throw new Error(result.error || 'Mailbox sync failed. Retry or check Email Management.');
-      setSyncNotice(`Saved ${result.synced} new emails. Checked the latest 50 mailbox messages; AI analysis skipped.`);
+      const saved = Number.isInteger(result.synced) && result.synced >= 0 && result.synced <= 50 ? result.synced as number : null;
+      if (!response.ok || result.success !== true) {
+        const uncertain = response.status === 504 || result.timeout === true;
+        const detail = typeof result.error === 'string' ? result.error : 'Mailbox sync failed.';
+        setSyncFailed(true);
+        setSyncNotice(`Sync incomplete: ${detail}${saved !== null ? ` Saved ${saved} new emails before the failure.` : ''}${uncertain ? ' Some emails may have been saved; refreshing saved messages. Check them before retrying.' : ''}`);
+        if ((saved !== null && saved > 0) || uncertain) refreshFirstPage();
+        return;
+      }
+      setSyncNotice(`${saved !== null ? `Saved ${saved} new emails.` : 'Sync completed.'} Checked the latest 50 mailbox messages; AI analysis skipped.`);
       refreshFirstPage();
-    } catch (error) { if (!controller.signal.aborted) setSyncNotice(error instanceof Error ? error.message : 'Mailbox sync failed.'); }
+    } catch {
+      if (!controller.signal.aborted) {
+        setSyncFailed(true);
+        setSyncNotice('Mailbox sync could not be confirmed. Some emails may have been saved; refreshing saved messages. Check them before retrying.');
+        refreshFirstPage();
+      }
+    }
     finally { if (!controller.signal.aborted) setSyncing(false); }
   };
   useEffect(() => {
@@ -62,7 +77,7 @@ function UnifiedInboxContent() {
     </header>
     <div className="flex gap-2 mb-5" aria-label="Channels"><button disabled={loading && channel === 'email'} aria-pressed={channel === 'email'} onClick={() => setChannel('email')} className={`rounded-lg px-3 py-2 ${channel === 'email' ? 'bg-amber-500 text-black' : 'bg-gray-800'}`}>Email</button><a href="#/whatsapp" className="rounded-lg bg-gray-800 text-gray-300 px-3 py-2">WhatsApp inbox</a><button disabled={loading && channel === 'email'} aria-pressed={channel === 'social'} onClick={() => setChannel('social')} className={`rounded-lg px-3 py-2 ${channel === 'social' ? 'bg-amber-500 text-black' : 'bg-gray-800'}`}>Social</button></div>
     {channel === 'email' && <p className="text-sm text-gray-400 mb-4">Refresh reloads saved messages. {canSync ? 'Sync latest emails imports up to 50 recent messages from your mailbox. Mailbox collection runs when you request it.' : 'Ask an owner or manager to sync new mailbox messages.'} Reading here does not change the stored email read flag.</p>}
-    {syncNotice && <p role="status" className="text-sm text-amber-300 mb-4">{syncNotice}</p>}
+    {syncNotice && <p role={syncFailed ? 'alert' : 'status'} className="text-sm text-amber-300 mb-4">{syncNotice}</p>}
     {channel === 'social' ? (['owner', 'manager'].includes(state.user?.role || '') ? <SocialInbox key={state.user?.id} actorId={state.user?.id || ''} /> : <p role="alert">Social access requires an owner or manager. Provider assignments to CRM reps are not verified.</p>) : <>
     {loading ? <p role="status">Loading stored emails...</p> : error ? <p role="alert" className="text-red-400">{error}</p> : items.length === 0 ? <p role="status">No accessible stored emails on this page.</p> :
       <div className="grid md:grid-cols-[minmax(250px,1fr)_2fr] gap-4">

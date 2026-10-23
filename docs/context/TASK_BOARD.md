@@ -292,3 +292,5 @@ provider rows remain unknown; no inferred identity merging. Write gate remains
 disabled until reviewed live readback. No real label mutations exercised.
 
 WP-INBOX-USABILITY-EMAIL-REFRESH: implementation in review, independent QA/security pending. No hosted contact corrections or provider sync performed by implementation. Automatic mailbox scheduling remains a future packet; current collection is explicit manual import.
+
+WP-INBOX-PARTIAL-SYNC: in review; narrow UI correction for partial manual import failure counts and newest saved-message refresh. No backend/provider changes.
