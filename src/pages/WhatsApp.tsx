@@ -1833,7 +1833,7 @@ export default function WhatsApp() {
 
             <WhatsAppLabelControls controls={phoneLabelControls} selected={selectedChat}/>
             <div className="px-3 py-2 border-b border-gray-700/50 text-xs text-gray-400">
-              <p className="mt-1" role={unreadError ? 'status' : undefined}>{unreadError || 'Unread in CRM is personal. Stored history starts unread. Opening a chat marks its loaded messages read for you; no phone read receipts are sent. Counts cover up to 500 supported loaded conversations.'}</p>
+              {unreadError ? <p role="status">{unreadError}</p> : <details><summary className="cursor-pointer">Unread is personal to you in CRM</summary><p className="mt-1">Stored history starts unread. Opening a chat marks its loaded messages read for you; no phone read receipts are sent. Counts cover up to 500 supported loaded conversations.</p></details>}
               {!unreadError && unreadExcluded > 0 && <p className="mt-1" role="status">Unread tracking is unavailable for {unreadExcluded} conversation{unreadExcluded === 1 ? '' : 's'}; their unread state is unknown.</p>}
             </div>
             <div className="flex-1 overflow-y-auto">
