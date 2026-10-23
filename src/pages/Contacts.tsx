@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useApp } from '../context/AppContext';
+import { authHeaders } from '../lib/auth';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Search, RefreshCw, ShoppingCart, MessageCircle,
@@ -76,48 +78,25 @@ const Contacts: React.FC = () => {
   const [search, setSearch] = useState('');
   const [filterSource, setFilterSource] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [cursor,setCursor]=useState<string|null>(null),[nextCursor,setNextCursor]=useState<string|null>(null),[history,setHistory]=useState<Array<string|null>>([]),[total,setTotal]=useState<number|null>(null),[refresh,setRefresh]=useState(0);
+  const activeRequest=useRef<AbortController|null>(null);
 
-  const load = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const r = await fetch('/api/contacts');
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const json = await r.json();
-      setContacts(json.contacts || []);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    const stored = localStorage.getItem('contacts_search');
-    if (stored) { setSearch(stored); localStorage.removeItem('contacts_search'); }
-  }, []);
-
-  const filtered = contacts.filter(c => {
-    if (filterSource !== 'all' && !getContactSources(c).includes(filterSource)) return false;
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (
-        c.name?.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        c.phone?.includes(q) ||
-        c.company?.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+  const load=()=>setRefresh(value=>value+1);
+  useEffect(()=>{const stored=localStorage.getItem('contacts_search');if(stored){setSearch(stored);localStorage.removeItem('contacts_search');}},[]);
+  useEffect(()=>{
+    activeRequest.current?.abort();const controller=new AbortController();activeRequest.current=controller;setLoading(true);setError('');setContacts([]);setTotal(null);
+    const timer=setTimeout(()=>{const params=new URLSearchParams({limit:'50',search,source:filterSource,status:filterStatus});if(cursor)params.set('cursor',cursor);
+      contactFetch(`/api/contacts?${params}`,{signal:controller.signal,cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok||!Array.isArray(body.contacts)||!Number.isInteger(body.total))throw new Error(body.error||'Contact list is unavailable.');if(!controller.signal.aborted){setContacts(body.contacts);setTotal(body.total);setNextCursor(body.nextCursor||null);}}).catch(error=>{if(!controller.signal.aborted)setError(error.message||'Contact list is unavailable.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    },200);return()=>{clearTimeout(timer);controller.abort();};
+  },[cursor,search,filterSource,filterStatus,refresh]);
+  const filtered=contacts;
+  const resetFilters=()=>{setCursor(null);setHistory([]);setNextCursor(null);};
 
   const totalRevenue = contacts.reduce((s, c) => s + (c.total_revenue || 0), 0);
   const withOrders   = contacts.filter(c => (c.total_orders || 0) > 0).length;
 
   // Unique sources across all contacts (using the sources array)
-  const allSources = [...new Set(contacts.flatMap(c => getContactSources(c)))];
+  const allSources = Object.keys(SOURCE_LABELS);
 
   // Stat counts include contacts that have that source anywhere in their sources array
   const wooCount      = contacts.filter(c => getContactSources(c).includes('WOOCOMMERCE')).length;
@@ -130,7 +109,7 @@ const Contacts: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Contacts</h1>
-          <p className="text-gray-400 text-sm mt-0.5">{contacts.length} total · {withOrders} customers · JMD {totalRevenue.toLocaleString()} revenue</p>
+          <p className="text-gray-400 text-sm mt-0.5">{total===null?'Unknown':total} permitted matches · {contacts.length} shown · Page revenue JMD {totalRevenue.toLocaleString()}</p>
         </div>
         <button
           onClick={load}
@@ -141,13 +120,14 @@ const Contacts: React.FC = () => {
         </button>
       </div>
 
+      <nav aria-label="Contact pages" className="flex gap-3 text-sm"><button disabled={loading||!history.length} onClick={()=>{const prior=history[history.length-1];setHistory(values=>values.slice(0,-1));setCursor(prior);}} className="px-3 py-2 bg-gray-800 rounded disabled:opacity-40">Previous contacts</button><button disabled={loading||!nextCursor} onClick={()=>{setHistory(values=>[...values,cursor]);setCursor(nextCursor);}} className="px-3 py-2 bg-gray-800 rounded disabled:opacity-40">Next contacts</button></nav>
       {/* Stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Total Contacts', value: contacts.length,  icon: Users,          color: 'text-blue-400'   },
-          { label: 'WooCommerce',    value: wooCount,          icon: ShoppingCart,   color: 'text-purple-400' },
-          { label: 'WhatsApp',       value: whatsappCount,     icon: MessageCircle,  color: 'text-green-400'  },
-          { label: 'Total Revenue',  value: `JMD ${(totalRevenue / 1000).toFixed(0)}k`, icon: TrendingUp, color: 'text-amber-400' },
+          { label: 'Permitted matches', value: total===null?'Unknown':total,  icon: Users,          color: 'text-blue-400'   },
+          { label: 'WooCommerce on page',    value: wooCount,          icon: ShoppingCart,   color: 'text-purple-400' },
+          { label: 'WhatsApp on page',       value: whatsappCount,     icon: MessageCircle,  color: 'text-green-400'  },
+          { label: 'Revenue on page',  value: `JMD ${(totalRevenue / 1000).toFixed(0)}k`, icon: TrendingUp, color: 'text-amber-400' },
         ].map(stat => (
           <div key={stat.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
@@ -167,14 +147,14 @@ const Contacts: React.FC = () => {
             type="text"
             placeholder="Search name, email, phone, company..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => {setSearch(e.target.value);resetFilters();}}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50"
           />
         </div>
         <div className="flex gap-2">
           <select
             value={filterSource}
-            onChange={e => setFilterSource(e.target.value)}
+            onChange={e => {setFilterSource(e.target.value);resetFilters();}}
             className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50"
           >
             <option value="all">All Sources</option>
@@ -182,7 +162,7 @@ const Contacts: React.FC = () => {
           </select>
           <select
             value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
+            onChange={e => {setFilterStatus(e.target.value);resetFilters();}}
             className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50"
           >
             <option value="all">All Status</option>
@@ -322,4 +302,6 @@ const Contacts: React.FC = () => {
   );
 };
 
-export default Contacts;
+export default function ContactsAccess(){const {state}=useApp();return <Contacts key={`${state.user?.id}:${state.user?.role}`}/>;}
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }

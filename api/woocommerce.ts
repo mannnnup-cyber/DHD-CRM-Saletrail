@@ -1,3 +1,4 @@
+import { contactCaller, contactFailure, reject } from '../src/lib/contacts/auth-server.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
@@ -34,7 +35,7 @@ const _url = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL |
 const _key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = _url && _key ? createClient(_url, _key) : null;
 
-// Credentials come from env vars only — never from query params
+// Credentials come from env vars only - never from query params
 const WC_API_BASE = process.env.WC_STORE_URL || '';
 const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || '';
 const WC_CONSUMER_SECRET = process.env.WC_CONSUMER_SECRET || '';
@@ -52,6 +53,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try { const caller=await contactCaller(req,res);if(!caller.manager)reject(403,'Store-wide customer and order access requires an owner or manager.');if(req.query.action==='syncOrders'?req.method!=='POST':req.method!=='GET')reject(405,req.query.action==='syncOrders'?'POST required.':'GET required.'); }
+  catch(error){return contactFailure(res,error);}
 
   // Return config status so frontend knows if env vars are set
   if (req.query.action === 'configured') {

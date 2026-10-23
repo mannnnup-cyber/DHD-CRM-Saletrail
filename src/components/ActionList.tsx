@@ -1,3 +1,4 @@
+import { authHeaders } from '../lib/auth';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   AlertTriangle, Zap, ArrowRight, X, RefreshCw,
@@ -51,9 +52,10 @@ const ActionList: React.FC<ActionListProps> = ({ onCountChange, compact = false 
     setLoading(true);
     setError('');
     try {
-      const r = await fetch('/api/crm?target=opportunities');
+      const r = await contactFetch('/api/crm?target=opportunities');
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
+      if(json.available===false)setError(json.notice||'Business-wide opportunities are unavailable for this role.');
       const opps: Opportunity[] = json.opportunities || [];
       setOpportunities(opps);
       onCountChange?.(opps.length);
@@ -69,7 +71,7 @@ const ActionList: React.FC<ActionListProps> = ({ onCountChange, compact = false 
   const dismiss = async (opp: Opportunity) => {
     setDismissing(prev => new Set(prev).add(opp.id));
     try {
-      await fetch('/api/crm?target=opportunities&action=dismiss', {
+      await contactFetch('/api/crm?target=opportunities&action=dismiss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ruleKey: opp.rule, sourceId: opp.sourceId }),
@@ -186,3 +188,5 @@ const ActionList: React.FC<ActionListProps> = ({ onCountChange, compact = false 
 };
 
 export default ActionList;
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }

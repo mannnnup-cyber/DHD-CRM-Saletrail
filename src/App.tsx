@@ -1,3 +1,4 @@
+import { authHeaders } from './lib/auth';
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
@@ -142,7 +143,7 @@ const AppInner: React.FC = () => {
   }, [searchQuery, state.leads, state.deals]);
 
   useEffect(() => {
-    fetch('/api/crm?target=opportunities')
+    contactFetch('/api/crm?target=opportunities')
       .then(r => r.json())
       .then(json => setUnreadCount(json.count || 0))
       .catch(() => {});
@@ -382,3 +383,5 @@ const App: React.FC = () => {
 };
 
 export default App;
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }

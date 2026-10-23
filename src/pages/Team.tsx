@@ -1,3 +1,4 @@
+import { authHeaders } from '../lib/auth';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Users, Phone, TrendingUp, Target, RefreshCw, Smartphone } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -54,7 +55,7 @@ const Team: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const r = await fetch('/api/crm?target=team&action=stats');
+      const r = await fetch('/api/crm?target=team&action=stats',{headers:authHeaders()});
       const data = await r.json();
       if (data.success) {
         setStats(data.stats || []);

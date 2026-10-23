@@ -77,3 +77,5 @@ eligible replies. Reps remain denied pending a verified assignment design.
 Provider history may be old and reply windows may have expired; live inbound and
 reply delivery are separate release checks. WhatsApp remains unavailable and
 email collection still requires the owner's mailbox app-password repair.
+
+CONTACT-001A (2026-10-23, local implementation awaiting release review): permitted staff can review possible duplicate contacts and compare authorized identity/provenance/count summaries. Owners/managers retain contact correction with actionable conflict review. No merge, automatic identity overwrite, durable distinct decision or merge approval/execution is enabled. Hosted security-view repair is prepared only.

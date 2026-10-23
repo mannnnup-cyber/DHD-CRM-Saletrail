@@ -458,3 +458,10 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 
 ## 2026-10-22 — Partial mailbox sync visibility
 - Failed imports now retain reported saved counts, refresh saved messages after partial saves, and show uncertain timeout/network results without claiming success or retrying automatically.
+
+## 2026-10-23 - CONTACT-001A (local, independently reviewed)
+- Added fresh authenticated/scoped contact list/search/count/candidate/comparison APIs and matching browser headers.
+- Added actionable correction conflicts, retained drafts and read-only accessible comparison; staff editing permissions unchanged.
+- Removed unsafe legacy merge/enrichment execution and misleading probability scores.
+- Contained related CRM organization/business feeds and store-wide customer UI access; trusted ingestion/webhooks/automation unchanged.
+- Prepared, but did not apply, the narrowly scoped three-view security-invoker migration.

@@ -1,3 +1,5 @@
+import { contactCaller, contactFailure, reject } from '../src/lib/contacts/auth-server.js';
+import { guardOrganizations } from '../src/lib/contacts/organization-server.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
@@ -500,8 +502,20 @@ async function unlinkContact(req: VercelRequest, res: VercelResponse) {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if(req.query.target==='organizations' && await guardOrganizations(req,res))return;
+  if((!req.query.target && !req.query.action)||['opportunities','team'].includes(String(req.query.target))){
+    try{
+      const caller=await contactCaller(req,res);
+      if(!caller.manager){
+        if(req.query.target==='opportunities' && req.method==='GET')return res.json({opportunities:[],count:0,available:false,notice:'Business-wide opportunities require an owner or manager.'});
+        reject(403,'Business-wide CRM summaries require an owner or manager. Open Contacts to review your assigned records.');
+      }
+      if(req.query.target==='opportunities'&&req.query.action==='dismiss'){if(req.method!=='POST')reject(405,'POST required.');req.body={...req.body,dismissedBy:caller.id};}
+      else if(req.method!=='GET')reject(405,'GET required.');
+    }catch(error){return contactFailure(res,error);}
+  }
   if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
 
   const { target, action } = req.query as Record<string, string>;

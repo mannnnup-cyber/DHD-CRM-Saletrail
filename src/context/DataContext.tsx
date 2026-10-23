@@ -1,3 +1,4 @@
+import { authHeaders } from '../lib/auth';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppState, Lead, Call, Deal, Task, Quote, Activity, AppSettings, Invoice } from '../data/types';
 
@@ -155,7 +156,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const contactName = (newCall as any).contactName;
         if (contactPhone || contactName) {
           try {
-            const r = await fetch('/api/contacts?action=resolve', {
+            const r = await contactFetch('/api/contacts?action=resolve', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: contactName || contactPhone, phone: contactPhone, source: 'MANUAL' })
@@ -307,3 +308,5 @@ export const useData = () => {
   if (!ctx) throw new Error('useData must be used within DataProvider');
   return ctx;
 };
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }

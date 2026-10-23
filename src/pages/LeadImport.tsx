@@ -1,3 +1,4 @@
+import { authHeaders } from '../lib/auth';
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Upload, Plus, Download, FileText, Check, Users, Phone, Mail, MapPin, Tag, MessageSquare, Trash2, ExternalLink } from 'lucide-react';
@@ -155,7 +156,7 @@ const LeadImport: React.FC = () => {
     setEnrichError('');
 
     try {
-      const response = await fetch('/api/contacts?action=previewEnrichment', {
+      const response = await contactFetch('/api/contacts?action=previewEnrichment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contacts: csvData, sampleSize: 5 })
@@ -184,7 +185,7 @@ const LeadImport: React.FC = () => {
     setEnrichError('');
 
     try {
-      const response = await fetch('/api/contacts?action=enrichContacts', {
+      const response = await contactFetch('/api/contacts?action=enrichContacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contacts: csvData })
@@ -743,3 +744,5 @@ const LeadImport: React.FC = () => {
 };
 
 export default LeadImport;
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }

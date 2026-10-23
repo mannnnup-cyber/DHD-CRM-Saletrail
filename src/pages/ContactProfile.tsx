@@ -1,3 +1,5 @@
+import ContactCompare from '../components/ContactCompare';
+import type { ContactConflict } from '../lib/contacts/review';
 import { authHeaders } from '../lib/auth';
 import { useApp } from '../context/AppContext';
 import React, { useState, useEffect, useRef } from 'react';
@@ -120,6 +122,9 @@ const ContactProfileContent: React.FC = () => {
   const canEdit = ['owner', 'manager'].includes(state.user?.role || '');
   const saveController = useRef<AbortController | null>(null);
   useEffect(() => () => saveController.current?.abort(), []);
+  const [conflict, setConflict] = useState<ContactConflict | null>(null);
+  const [compareId,setCompareId] = useState<string|null>(null);
+  const [candidateLoading,setCandidateLoading] = useState(false);
   const [fieldError, setFieldError] = useState('');
   const [fieldNotice, setFieldNotice] = useState('');
   const [contact, setContact] = useState<Contact | null>(null);
@@ -140,6 +145,7 @@ const ContactProfileContent: React.FC = () => {
   const [editingFields, setEditingFields] = useState(false);
   const [fieldDraft, setFieldDraft] = useState({ name: '', email: '', phone: '', company: '', contact_preference: '', timezone: '', linkedin_url: '' });
   const [fieldSaving, setFieldSaving] = useState(false);
+  useEffect(()=>{saveController.current?.abort();setConflict(null);setCompareId(null);setCandidateLoading(false);setFieldError('');},[fieldDraft]);
   const [showEnrichModal, setShowEnrichModal] = useState(false);
   const [enrichUrl, setEnrichUrl] = useState('');
   const [enrichAutoDetect, setEnrichAutoDetect] = useState(false);
@@ -166,7 +172,7 @@ const ContactProfileContent: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const r = await fetch(`/api/contacts?id=${id}`);
+      const r = await contactFetch(`/api/contacts?id=${id}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
       setContact(json.contact);
@@ -180,136 +186,22 @@ const ContactProfileContent: React.FC = () => {
     }
   };
 
-  const handleEnrichLead = async () => {
-    // Validate input
-    if (!id) return;
-    if (!enrichAutoDetect && !enrichUrl.trim()) return;
-
-    setEnrichLoading(true);
-    setEnrichError('');
-    setEnrichSuccess('');
-
-    try {
-      // First, check for duplicates before enriching
-      if (contact?.email || contact?.phone) {
-        const checkResponse = await fetch(
-          `/api/duplicates?action=checkBeforeEnrich&email=${encodeURIComponent(contact.email || '')}&phone=${encodeURIComponent(contact.phone || '')}`
-        );
-
-        if (checkResponse.ok) {
-          const checkResult = await checkResponse.json();
-
-          if (checkResult.hasConflicts && checkResult.conflicts.length > 0) {
-            // Show duplicate warning and let user decide
-            setDuplicateCandidates(checkResult.conflicts);
-            setShowDuplicateWarning(true);
-            setEnrichLoading(false);
-            return;
-          }
-        }
-      }
-
-      // No conflicts, proceed with enrichment
-      await performEnrichment();
-    } catch (e: any) {
-      setEnrichError(e.message || 'Network error');
-      setEnrichLoading(false);
-    }
-  };
-
-  const performEnrichment = async () => {
-    if (!id) return;
-
-    try {
-      const requestBody: any = { contactId: id };
-
-      if (enrichAutoDetect) {
-        // Use company name to auto-detect domain
-        requestBody.useCompanyName = true;
-      } else {
-        // Use manually entered URL
-        requestBody.companyUrl = enrichUrl.trim();
-      }
-
-      const response = await fetch('/api/contacts?action=enrichLead', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        // Even on error, show what was extracted
-        if (result.extracted) {
-          const extracted = result.extracted;
-          const items = [];
-          if (extracted.name) items.push(`name`);
-          if (extracted.email) items.push(`email`);
-          if (extracted.phone) items.push(`phone`);
-          if (extracted.description) items.push(`description`);
-
-          setEnrichError(`${result.error || 'Failed to save'}\n\nBut found: ${items.join(', ')}`);
-        } else {
-          setEnrichError(result.error || `HTTP ${response.status}`);
-        }
-        return;
-      }
-
-      // Update local contact data
-      if (result.contact) {
-        setContact(result.contact);
-      }
-
-      // Show success message with enrichment details
-      const extracted = result.extracted;
-      const items = [];
-      if (extracted.name) items.push(`name`);
-      if (extracted.email) items.push(`email`);
-      if (extracted.phone) items.push(`phone`);
-      if (extracted.description) items.push(`description`);
-
-      let successMsg = `✓ Enriched: ${items.join(', ')}`;
-
-      // Add confidence score if available
-      if (result.enrichmentMetadata?.confidence) {
-        const confidencePercent = Math.round(result.enrichmentMetadata.confidence * 100);
-        successMsg += ` (${confidencePercent}% confidence)`;
-      }
-
-      // Add auto-detected domain indicator if applicable
-      if (result.enrichmentMetadata?.autoDetected) {
-        successMsg += ` from ${result.enrichmentMetadata.url}`;
-      }
-
-      setEnrichSuccess(successMsg);
-      setEnrichUrl('');
-      setEnrichAutoDetect(false);
-
-      // Close modal after 2 seconds
-      setTimeout(() => {
-        setShowEnrichModal(false);
-        setEnrichSuccess('');
-      }, 2000);
-
-    } catch (e: any) {
-      setEnrichError(e.message || 'Network error');
-    } finally {
-      setEnrichLoading(false);
-    }
-  };
+  const handleEnrichLead = async () => { setEnrichError('Automated enrichment is disabled until proposed changes can be reviewed without overwriting contact identity.'); setEnrichLoading(false); };
+  const performEnrichment = handleEnrichLead;
 
   const saveContactFields = async () => {
-    if (!id) return;
+    if (!id || fieldSaving || candidateLoading) return;
+    saveController.current?.abort();
     const controller = new AbortController(); saveController.current = controller;
     setFieldSaving(true);
     try {
-      setFieldError(''); setFieldNotice('');
-      const r = await fetch(`/api/contacts?action=editIdentity&id=${encodeURIComponent(id)}`, {
+      setFieldError(''); setFieldNotice(''); setConflict(null);
+      const r = await contactFetch(`/api/contacts?action=editIdentity&id=${encodeURIComponent(id)}`, {
         method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(fieldDraft),
       });
       const result = await r.json();
       if (controller.signal.aborted) return;
+      if(r.status===409 && result.code==='CONTACT_IDENTIFIER_CONFLICT'){setConflict(result);setFieldError(result.error);return;}
       if (!r.ok || result.success !== true) throw new Error(result.error || 'Could not save contact corrections.');
       setContact(current => current ? { ...current, ...result.contact } : current);
       setEditingFields(false); setFieldNotice('Saved to CRM. External accounts and historical messages are unchanged.');
@@ -317,50 +209,22 @@ const ContactProfileContent: React.FC = () => {
     finally { if (!controller.signal.aborted) setFieldSaving(false); }
   };
 
-  const handleMergeDuplicate = async () => {
-    if (!selectedDuplicateId || !id) return;
-
-    setMerging(true);
-    setEnrichError('');
-
-    try {
-      const mergeResponse = await fetch('/api/contacts?action=mergeContacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          primaryContactId: id,
-          duplicateContactId: selectedDuplicateId,
-          strategy: 'merge_enriched'
-        })
-      });
-
-      const mergeResult = await mergeResponse.json();
-
-      if (!mergeResponse.ok) {
-        setEnrichError(`Failed to merge: ${mergeResult.error}`);
-        setMerging(false);
-        return;
-      }
-
-      // Merge successful, now proceed with enrichment
-      setShowDuplicateWarning(false);
-      setSelectedDuplicateId(null);
-      setDuplicateCandidates([]);
-
-      // Reload contact and proceed with enrichment
-      await load();
-      setTimeout(() => performEnrichment(), 500);
-    } catch (e: any) {
-      setEnrichError(e.message || 'Merge failed');
-      setMerging(false);
-    }
+  const handleMergeDuplicate = async () => { setEnrichError('Merge execution is unavailable in this read-only comparison release.'); };
+  const reviewCandidates = async () => {
+    if(!id || candidateLoading || fieldSaving)return;saveController.current?.abort();const controller=new AbortController();saveController.current=controller;setCandidateLoading(true);setFieldError('');setConflict(null);
+    try{const response=await contactFetch(`/api/contacts?action=duplicateCandidates&contactId=${encodeURIComponent(id)}`,{signal:controller.signal,cache:'no-store'});const result=await response.json();if(controller.signal.aborted)return;if(!response.ok||result.success!==true)throw new Error(result.error||'Candidate review is unavailable.');setConflict({code:'CONTACT_REVIEW',error:'',matchedFields:[],...result});}catch(error){if(!controller.signal.aborted)setFieldError(error instanceof Error?error.message:'Candidate review is unavailable.');}finally{if(!controller.signal.aborted)setCandidateLoading(false);}
+  };
+  const loadMoreCandidates = async () => {
+    if(!id || !conflict?.nextCursor || candidateLoading || fieldSaving)return;saveController.current?.abort();
+    const controller=new AbortController();saveController.current=controller;setCandidateLoading(true);
+    try{const response=await contactFetch('/api/contacts?action=duplicateCandidates',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({contactId:id,fields:editingFields?fieldDraft:undefined,matchScope:conflict.matchScope||(conflict.code==='CONTACT_IDENTIFIER_CONFLICT'?'identifiers':'discovery'),cursor:conflict.nextCursor})});const result=await response.json();if(controller.signal.aborted)return;if(!response.ok||result.success!==true)throw new Error(result.error||'Candidate review is unavailable.');setConflict(previous=>previous?{...previous,candidates:[...previous.candidates,...result.candidates],nextCursor:result.nextCursor,visibleCount:result.visibleCount}:previous);}catch(error){if(!controller.signal.aborted)setFieldError(error instanceof Error?error.message:'Candidate review is unavailable.');}finally{if(!controller.signal.aborted)setCandidateLoading(false);}
   };
 
   const loadOrganizations = async () => {
     if (!id) return;
 
     try {
-      const r = await fetch(`/api/crm?target=organizations&action=getOrganizations&contactId=${id}`);
+      const r = await contactFetch(`/api/crm?target=organizations&action=getOrganizations&contactId=${id}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
       setOrganizations(json.organizations || []);
@@ -377,7 +241,7 @@ const ContactProfileContent: React.FC = () => {
 
     try {
       // Search for organizations by name
-      const r = await fetch(`/api/contacts?search=${encodeURIComponent(searchTerm)}&limit=10`);
+      const r = await contactFetch(`/api/contacts?action=search&search=${encodeURIComponent(searchTerm)}&limit=10`);
       if (r.ok) {
         const json = await r.json();
         // Filter for organization-type contacts only
@@ -396,7 +260,7 @@ const ContactProfileContent: React.FC = () => {
     setOrgError('');
 
     try {
-      const r = await fetch('/api/crm?target=organizations&action=linkContact', {
+      const r = await contactFetch('/api/crm?target=organizations&action=linkContact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -437,7 +301,7 @@ const ContactProfileContent: React.FC = () => {
     if (!confirm('Remove this organizational link?')) return;
 
     try {
-      const r = await fetch('/api/crm?target=organizations&action=unlinkContact', {
+      const r = await contactFetch('/api/crm?target=organizations&action=unlinkContact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ linkId })
@@ -492,7 +356,7 @@ const ContactProfileContent: React.FC = () => {
     if (!id || !noteText.trim()) return;
     setNoteSaving(true);
     try {
-      const r = await fetch(`/api/contacts?action=addNote&id=${id}`, {
+      const r = await contactFetch(`/api/contacts?action=addNote&id=${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: noteText.trim() }),
@@ -626,7 +490,7 @@ const ContactProfileContent: React.FC = () => {
               )}
               {contact.website_url && (
                 <a
-                  href={contact.website_url.startsWith('http') ? contact.website_url : `https://${contact.website_url}`}
+                  href={safeContactUrl(contact.website_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-emerald-400 cursor-pointer transition-colors"
@@ -639,7 +503,7 @@ const ContactProfileContent: React.FC = () => {
               )}
               {contact.linkedin_url && (
                 <a
-                  href={contact.linkedin_url.startsWith('http') ? contact.linkedin_url : `https://${contact.linkedin_url}`}
+                  href={safeContactUrl(contact.linkedin_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-blue-400 transition-colors"
@@ -744,6 +608,7 @@ const ContactProfileContent: React.FC = () => {
         <div className="mt-4 pt-4 border-t border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs text-gray-500">Contact Details</p>
+            <button type="button" disabled={candidateLoading||fieldSaving} onClick={()=>void reviewCandidates()} className="text-xs text-amber-400 disabled:opacity-50">{candidateLoading?'Checking permitted matches...':'Review possible duplicates'}</button>
             {!editingFields ? (canEdit && <button
                 onClick={() => { setFieldError(''); setFieldNotice(''); setFieldDraft({ name: contact.name, email: contact.email || '', phone: contact.phone || '', company: contact.company || '', contact_preference: contact.contact_preference || '', timezone: contact.timezone || '', linkedin_url: contact.linkedin_url || '' }); setEditingFields(true); }}
                 className="text-xs text-gray-500 hover:text-white transition-colors"
@@ -752,23 +617,25 @@ const ContactProfileContent: React.FC = () => {
               </button>
             ) : (
               <div className="flex gap-2">
-                <button onClick={() => setEditingFields(false)} className="text-xs text-gray-500 hover:text-white transition-colors">Cancel</button>
-                <button onClick={saveContactFields} disabled={fieldSaving} className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50">
+                <button disabled={fieldSaving} onClick={() => {saveController.current?.abort();setConflict(null);setCompareId(null);setCandidateLoading(false);setEditingFields(false);}} className="text-xs text-gray-500 hover:text-white transition-colors">Cancel</button>
+                <button onClick={saveContactFields} disabled={fieldSaving||candidateLoading} className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50">
                   {fieldSaving ? 'Saving…' : 'Save'}
                 </button>
               </div>
             )}
           </div>
           {fieldError && <p role="alert" className="text-red-400 text-sm mb-3">{fieldError}</p>}
+          {conflict && <section aria-label="Contact conflicts" className="border border-amber-500/40 rounded-lg p-3 mb-3 text-sm"><p>{conflict.visibleCount} matching contacts you can review · {conflict.matchedFields.join(', ')}</p><ul className="space-y-3 my-3">{conflict.candidates.map(candidate=><li key={candidate.id}><strong>{candidate.name}</strong>{candidate.company && <span> · {candidate.company}</span>}<p className="text-xs text-gray-400">{candidate.matchedFields.join(', ')} · {candidate.category==='conflicting'?'Conflicting evidence':candidate.category==='exact'?'Exact identifier match':'Possible match'}</p><div className="flex gap-3 mt-1"><a href={`#/contacts/${candidate.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">View contact</a><button type="button" className="text-amber-400" onClick={()=>setCompareId(candidate.id)}>Compare contacts</button></div></li>)}</ul>{conflict.nextCursor && <button type="button" disabled={candidateLoading||fieldSaving} onClick={()=>void loadMoreCandidates()} className="text-blue-400">{candidateLoading?'Loading candidates…':'More permitted matches'}</button>}<p className="text-xs text-gray-400 mt-2">{conflict.guidance} {editingFields?'Your unsaved changes remain below.':'Comparison is read only; no merge is available.'}</p></section>}
+          {compareId && id && <ContactCompare left={id} right={compareId} draft={editingFields?fieldDraft:undefined} onClose={()=>setCompareId(null)}/>}
           {fieldNotice && <p role="status" className="text-green-400 text-sm mb-3">{fieldNotice}</p>}
           {editingFields ? (
             <div className="grid grid-cols-1 gap-3">
               <p className="text-xs text-gray-400">Corrections update this CRM contact only.</p>
-              {(['name', 'email', 'phone', 'company'] as const).map(field => <label key={field} className="text-xs text-gray-400 capitalize">{field}<input aria-label={`Contact ${field}`} type={field === 'email' ? 'email' : 'text'} maxLength={254} value={fieldDraft[field]} onChange={event => setFieldDraft(draft => ({ ...draft, [field]: event.target.value }))} className="block w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white mt-1"/></label>)}
+              {(['name', 'email', 'phone', 'company'] as const).map(field => <label key={field} className="text-xs text-gray-400 capitalize">{field}<input aria-label={`Contact ${field}`} type={field === 'email' ? 'email' : 'text'} maxLength={254} disabled={fieldSaving} value={fieldDraft[field]} onChange={event => setFieldDraft(draft => ({ ...draft, [field]: event.target.value }))} className="block w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white mt-1"/></label>)}
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Preferred Contact Method</label>
                 <select
-                  value={fieldDraft.contact_preference}
+                  disabled={fieldSaving} value={fieldDraft.contact_preference}
                   onChange={e => setFieldDraft(d => ({ ...d, contact_preference: e.target.value }))}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500"
                 >
@@ -783,7 +650,7 @@ const ContactProfileContent: React.FC = () => {
                 <label className="text-xs text-gray-500 block mb-1">Timezone</label>
                 <input
                   type="text"
-                  value={fieldDraft.timezone}
+                  disabled={fieldSaving} value={fieldDraft.timezone}
                   onChange={e => setFieldDraft(d => ({ ...d, timezone: e.target.value }))}
                   placeholder="e.g. America/New_York, EST, UTC-5"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500 placeholder-gray-600"
@@ -793,7 +660,7 @@ const ContactProfileContent: React.FC = () => {
                 <label className="text-xs text-gray-500 block mb-1">LinkedIn URL</label>
                 <input
                   type="url"
-                  value={fieldDraft.linkedin_url}
+                  disabled={fieldSaving} value={fieldDraft.linkedin_url}
                   onChange={e => setFieldDraft(d => ({ ...d, linkedin_url: e.target.value }))}
                   placeholder="https://linkedin.com/in/..."
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500 placeholder-gray-600"
@@ -812,7 +679,7 @@ const ContactProfileContent: React.FC = () => {
               </div>
               <div>
                 <p className="text-gray-500 mb-0.5">LinkedIn</p>
-                {contact.linkedin_url ? <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate block">View Profile</a> : <p className="text-gray-300">—</p>}
+                {contact.linkedin_url ? <a href={safeContactUrl(contact.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate block">View Profile</a> : <p className="text-gray-300">—</p>}
               </div>
             </div>
           )}
@@ -1094,7 +961,7 @@ const ContactProfileContent: React.FC = () => {
       </div>
 
       {/* WooCommerce Order Search/Link */}
-      {(contact.email || contact.phone) && (
+      {canEdit && (contact.email || contact.phone) && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -1113,7 +980,7 @@ const ContactProfileContent: React.FC = () => {
                     const params = new URLSearchParams();
                     if (contact.email) params.set('email', contact.email);
                     if (contact.phone) params.set('phone', contact.phone);
-                    const r = await fetch(`/api/contacts?action=searchOrders&${params}`);
+                    const r = await contactFetch(`/api/contacts?action=searchOrders&${params}`);
                     const data = await r.json();
                     setOrderSearchResults(data.orders || []);
                   } catch (_) {}
@@ -1172,7 +1039,7 @@ const ContactProfileContent: React.FC = () => {
                               onClick={async () => {
                                 setOrderLinkingId(o.id);
                                 try {
-                                  await fetch(`/api/contacts?action=linkOrder&id=${id}`, {
+                                  await contactFetch(`/api/contacts?action=linkOrder&id=${id}`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ orderId: o.id }),
@@ -1577,3 +1444,7 @@ const ContactProfileContent: React.FC = () => {
 };
 
 export default ContactProfile;
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }
+
+function safeContactUrl(value: string | null): string | undefined { if(!value)return;try{const url=new URL(/^[a-z][a-z0-9+.-]*:/i.test(value)?value:`https://${value}`);return ['http:','https:'].includes(url.protocol)?url.href:undefined;}catch{return;} }

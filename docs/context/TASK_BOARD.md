@@ -294,3 +294,5 @@ disabled until reviewed live readback. No real label mutations exercised.
 WP-INBOX-USABILITY-EMAIL-REFRESH: implementation in review, independent QA/security pending. No hosted contact corrections or provider sync performed by implementation. Automatic mailbox scheduling remains a future packet; current collection is explicit manual import.
 
 WP-INBOX-PARTIAL-SYNC: in review; narrow UI correction for partial manual import failure counts and newest saved-message refresh. No backend/provider changes.
+
+CONTACT-001A: local implementation complete; independent QA/security PASS. Final type/build passed. Hosted view repair and release remain separately gated. Secure contact read/candidate/compare surfaces, actionable correction conflicts, old merge/enrichment containment and contact-facing CRM/store alternate gates prepared locally. No real merge/delete/relationship transfer, provider request, hosted DDL/data change or deployment. Three-view security_invoker migration remains UNAPPLIED pending separate approval/safeguards; hosted view exposure is not claimed fixed. Durable decisions/proposals/approval/execution remain CONTACT-001B/C/D.

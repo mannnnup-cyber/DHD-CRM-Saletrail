@@ -1,3 +1,4 @@
+import { authHeaders } from '../lib/auth';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Phone, Clock, DollarSign, TrendingUp, AlertTriangle, CheckCircle2, MessageCircle, ArrowUpRight, Target, Activity, Zap, Mail, Users, RefreshCw, Receipt } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
@@ -70,8 +71,8 @@ const Dashboard: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const r = await fetch('/api/crm');
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const r = await contactFetch('/api/crm');
+      if (!r.ok) { const failure=await r.json();throw new Error(failure.error||`HTTP ${r.status}`); }
       setData(await r.json());
     } catch (e: any) {
       setError(e.message);
@@ -367,3 +368,5 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }

@@ -1,3 +1,4 @@
+import { authHeaders } from '../lib/auth';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ShoppingCart, CheckCircle, XCircle, RefreshCw, ExternalLink,
@@ -59,7 +60,8 @@ const openInWhatsApp = (phone: string, name: string) => {
   window.location.hash = '#/whatsapp';
 };
 
-export default function WooCommerce() {
+export default function WooCommerceAccess(){const {state}=useApp();return ['owner','manager'].includes(state.user?.role||'')?<WooCommerce key={`${state.user?.id}:${state.user?.role}`}/>:<p role="alert" className="p-6 text-gray-300">Store-wide customer and order access requires an owner or manager. Assigned contact summaries remain available in Contacts.</p>;}
+function WooCommerce() {
   const { addDeal, addLead } = useApp();
 
   const [configured, setConfigured]     = useState<boolean | null>(null);
@@ -120,7 +122,7 @@ export default function WooCommerce() {
 
   // Init
   useEffect(() => {
-    fetch('/api/woocommerce?action=configured').then(r => r.json())
+    contactFetch('/api/woocommerce?action=configured').then(r => r.json())
       .then(d => { setConfigured(d.configured); if (d.storeUrl) setStoreUrl(d.storeUrl); })
       .catch(() => setConfigured(false));
     const sv = localStorage.getItem('wc_last_sync'); if (sv) setLastSync(sv);
@@ -162,7 +164,7 @@ export default function WooCommerce() {
   const syncOrders = useCallback(async () => {
     setSyncing(true); setError('');
     try {
-      const d = await fetch(buildUrl(1)).then(r => r.json());
+      const d = await contactFetch(buildUrl(1)).then(r => r.json());
       if (d.success) {
         setOrders(d.orders); setTotalOrders(d.total || d.orders.length);
         setTotalPages(d.pages || 1); setCurrentPage(1);
@@ -178,7 +180,7 @@ export default function WooCommerce() {
     if (!dateFrom && !dateTo) return syncOrders();
     setSyncing(true); setError('');
     try {
-      const d = await fetch(buildUrl(1, dateFrom, dateTo)).then(r => r.json());
+      const d = await contactFetch(buildUrl(1, dateFrom, dateTo)).then(r => r.json());
       if (d.success) { setOrders(d.orders); setTotalOrders(d.total || d.orders.length); setTotalPages(d.pages || 1); setCurrentPage(1); }
       else setError(d.error || 'Failed');
     } catch (e: any) { setError(e.message); }
@@ -190,7 +192,7 @@ export default function WooCommerce() {
     setLoadingMore(true);
     try {
       const np = currentPage + 1;
-      const d = await fetch(buildUrl(np, dateFrom, dateTo)).then(r => r.json());
+      const d = await contactFetch(buildUrl(np, dateFrom, dateTo)).then(r => r.json());
       if (d.success) {
         setOrders(prev => { const ids = new Set(prev.map(o => o.id)); return [...prev, ...d.orders.filter((o: WCOrder) => !ids.has(o.id))]; });
         setCurrentPage(np);
@@ -202,7 +204,7 @@ export default function WooCommerce() {
   const syncCustomers = useCallback(async () => {
     setSyncingC(true); setError('');
     try {
-      const d = await fetch('/api/woocommerce?action=customers&per_page=100&page=1').then(r => r.json());
+      const d = await contactFetch('/api/woocommerce?action=customers&per_page=100&page=1').then(r => r.json());
       if (d.success) { setCustomers(d.customers); setTotalCustomers(d.total || d.customers.length); setCustomerPages(d.pages || 1); setCustomerPage(1); }
       else setError(d.error || 'Failed');
     } catch (e: any) { setError(e.message); }
@@ -214,7 +216,7 @@ export default function WooCommerce() {
     setLoadingMoreC(true);
     try {
       const np = customerPage + 1;
-      const d = await fetch(`/api/woocommerce?action=customers&per_page=100&page=${np}`).then(r => r.json());
+      const d = await contactFetch(`/api/woocommerce?action=customers&per_page=100&page=${np}`).then(r => r.json());
       if (d.success) {
         setCustomers(prev => { const ids = new Set(prev.map(c => c.id)); return [...prev, ...d.customers.filter((c: WCCustomer) => !ids.has(c.id))]; });
         setCustomerPage(np);
@@ -233,7 +235,7 @@ export default function WooCommerce() {
   const testConnection = async () => {
     setConnStatus('testing'); setError('');
     try {
-      const d = await fetch('/api/woocommerce?action=test').then(r => r.json());
+      const d = await contactFetch('/api/woocommerce?action=test').then(r => r.json());
       if (d.success) { setConnStatus('connected'); setConnInfo(d.store); }
       else { setConnStatus('failed'); setError(d.error || 'Connection failed'); }
     } catch (e: any) { setConnStatus('failed'); setError(e.message); }
@@ -998,3 +1000,5 @@ export default function WooCommerce() {
     </div>
   );
 }
+
+function contactFetch(input: string, init: RequestInit = {}) { return fetch(input, { ...init, headers: { ...init.headers, ...authHeaders() } }); }
