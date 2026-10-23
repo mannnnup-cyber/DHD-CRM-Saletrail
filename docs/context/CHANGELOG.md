@@ -455,3 +455,6 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 - Clear saved-email refresh versus explicit AI-free latest50 mailbox sync; refresh resets older pagination.
 - WhatsApp inbox link replaces unavailable placeholder, compact personal unread help.
 - Owner/manager persisted CRM identity corrections with validation, visible errors and duplicate preflight.
+
+## 2026-10-22 — Partial mailbox sync visibility
+- Failed imports now retain reported saved counts, refresh saved messages after partial saves, and show uncertain timeout/network results without claiming success or retrying automatically.
