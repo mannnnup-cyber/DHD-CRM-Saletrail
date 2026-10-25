@@ -465,3 +465,11 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 - Removed unsafe legacy merge/enrichment execution and misleading probability scores.
 - Contained related CRM organization/business feeds and store-wide customer UI access; trusted ingestion/webhooks/automation unchanged.
 - Prepared, but did not apply, the narrowly scoped three-view security-invoker migration.
+
+## 2026-10-24 - CONTACT-001A architect follow-up (local only)
+- Added original-value conditional identity edits, stricter matching evidence and deliberate review instead of automatic existing-contact reuse.
+- Corrected cellular history to hosted columns; optional history failures now have explicit unavailable status.
+- Restricted rep notes to own server-attributed records, guarded comparison responses and corrected false-positive order-link UI.
+- Added role-matrix, concurrency, privacy and reliability regressions. Cross-worker duplicate creation remains a demonstrated residual risk.
+- Captured read-only hosted schema evidence and prepared a separate Free-tier backup/recovery/migration validation plan; no hosted changes.
+- Production Deploy Hook still prevents a verified safe push; no release or deployment authorized. Final evidence is in docs/CONTACT-001A-ARCHITECT-REVIEW-RESPONSE.md.

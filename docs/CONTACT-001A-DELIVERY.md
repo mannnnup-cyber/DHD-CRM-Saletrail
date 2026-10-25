@@ -1,5 +1,7 @@
 # CONTACT-001A - Secure contact review delivery
 
+Follow-up: this is a historical delivery checkpoint. The corrected source, stricter note contract, current test evidence and release blockers are documented in docs/CONTACT-001A-ARCHITECT-REVIEW-RESPONSE.md. No release approval is implied by the original local PASS.
+
 Date: 2026-10-23 (America/Bogota)
 Status: LOCAL IMPLEMENTATION COMPLETE - independent QA/security PASS; no hosted migration, release or deployment performed.
 Branch: feat/contact-001a-secure-review

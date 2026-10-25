@@ -61,3 +61,6 @@ Independent QA final PASS: full344 before narrow final delta;45 final affected; 
 
 ## Security Review
 Independent source security PASS, including source provenance allowlist, stable candidate matchScope and role/channel boundaries. Prepared view SQL remains unapplied; local synthetic role tests do not prove hosted remediation.
+
+## Principal Architect follow-up — 2026-10-24
+Continued the same branch/worktree from7f543df without overwriting prior work. Bounded corrections, fresh role/concurrency tests, hosted metadata compatibility, local synthetic restore/rollback and outstanding release decisions are recorded in docs/CONTACT-001A-ARCHITECT-REVIEW-RESPONSE.md. No hosted permissions/data/configuration, migration or provider operation changed. This work-packet completion is local implementation/evidence only; cross-worker creation, hosted validation, policy acceptance and safe publication remain separately gated. Final QA/security evidence is in the response document.

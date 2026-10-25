@@ -1,5 +1,7 @@
 # CONTACT-001A - Pre-release verification
 
+Superseding evidence packet: docs/CONTACT-001A-ARCHITECT-REVIEW-RESPONSE.md records subsequent local corrections and their final verification. The 347-test checkpoint below remains historical. Publication and production release remain blocked.
+
 Date: 2026-10-23 (America/Bogota)
 Application source reviewed: 4a95862de83bcddedc850df37997153c539545a2
 Patch applicability base (production origin/master): b3b55c82b31decba8a7bd66bdaa20b086a14d383

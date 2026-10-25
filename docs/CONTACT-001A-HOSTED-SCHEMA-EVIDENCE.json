@@ -1,0 +1,27 @@
+{
+  "project": "vatsonbvjkyzxqrnderr",
+  "captured_date": "2026-10-23",
+  "supplemented_date": "2026-10-24",
+  "read_only": true,
+  "contains_customer_rows": false,
+  "columns": {
+    "calls": "id,type,phone_number,contact_name,duration,notes,rep_id,timestamp,recording_url,created_at,contact_id",
+    "deals": "id,name,value,stage,lead_id,assigned_to,expected_close_date,notes,created_at,updated_at,contact_id",
+    "leads": "id,name,company,email,phone,source,status,assigned_to,notes,created_at,updated_at,contact_id",
+    "tasks": "id,title,description,due_date,completed,priority,assigned_to,created_by,created_at,updated_at,contact_id",
+    "users": "id,email,name,role,avatar_url,phone,is_active,created_at,updated_at",
+    "emails": "id,message_id,thread_id,from_email,from_name,to_email,subject,body,body_html,date,read,starred,category,lead_score,ai_analysis,thread_count,is_part_of_thread,converted_to_lead,assigned_to,source,created_at,updated_at,contact_id",
+    "quotes": "id,quote_number,deal_id,lead_id,total_amount,status,valid_until,notes,created_by,created_at,updated_at,contact_id",
+    "contacts": "id,name,email,phone,phone_normalized,company,source,status,assigned_to,notes,tags,total_orders,total_revenue,first_order_date,last_order_date,average_order_value,created_at,updated_at,contact_type,organization_id,role,started_at,ended_at,is_active,enrichment_source,enrichment_confidence,enrichment_timestamp,enrichment_notes,website_url,contact_preference,timezone,linkedin_url,sources",
+    "invoices": "id,invoice_number,quote_id,deal_id,amount,status,due_date,paid_date,notes,created_by,created_at,updated_at,contact_id",
+    "woo_orders": "id,woo_order_id,contact_id,customer_name,customer_email,customer_phone,billing_address,shipping_address,subtotal,tax_amount,shipping_amount,total_amount,currency,status,payment_method,order_notes,line_items,created_at,updated_at,synced_at",
+    "interactions": "id,contact_id,type,direction,subject,content,metadata,user_id,timestamp,created_at",
+    "user_profiles": "id,name,email,role,team_id,companion_installed,whatsapp_connected,is_active,created_at,updated_at,must_change_password",
+    "cellular_calls": "id,phone_number,phone_normalized,call_type,duration_seconds,called_at,contact_id,contact_name,device_model,synced_at,created_at,has_recording,recording_id,rep_phone,rep_name,rep_id",
+    "whatsapp_calls": "id,provider,provider_call_id,chat_id,call_type,status,duration_seconds,started_at,ended_at,created_at,caller_name,caller_phone,called_at,contact_id,contact_name,rep_phone,rep_id,rep_name,source,direction",
+    "whatsapp_messages": "id,provider,provider_message_id,chat_id,sender_name,direction,body,type,raw,created_at,contact_id,message_type,media_url",
+    "contact_organizations": "id,contact_id,organization_id,role,started_at,ended_at,is_primary,created_at,updated_at",
+    "dismissed_opportunities": "id,contact_id,rule_key,source_id,dismissed_by,dismissed_at",
+    "devices": "device_id,user_id,org_id,phone_number,device_name,device_model,app_version,is_active,last_heartbeat,created_at,updated_at,device_label,sim_count,android_version,device_brand"
+  }
+}
