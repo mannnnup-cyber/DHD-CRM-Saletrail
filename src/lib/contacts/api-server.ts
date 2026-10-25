@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { contactCaller, contactFailure, jsonRequest, permittedContact, scopeContacts, reject, uuid, type ContactCaller } from './auth-server.js';
-import { contactCandidates, compareContacts, contactProjection, candidateFilter, literalPattern } from './review-server.js';
+import { contactCandidates, compareContacts, optionalContactHistory, contactProjection, candidateFilter, literalPattern } from './review-server.js';
 import { matchingEvidence } from './review.js';
 import { editContact, contactChanges } from './edit-server.js';
 const managerOnly=(caller:ContactCaller)=>{if(!caller.manager)reject(403,'This contact operation requires an active owner or manager.');};
@@ -39,15 +39,14 @@ export async function handleContactApi(req:VercelRequest,res:VercelResponse){
       const filter=candidateFilter(changes,false);
       const {data,error}=await caller.admin.from('contacts').select('id,name,email,phone').or(filter).limit(2);
       if(error)reject(503,'Contact resolution is unavailable.');
-      if(data?.length>1)reject(409,'More than one contact matches. Review candidates before linking.');
-      if(data?.length===1){if(matchingEvidence(changes,data[0]).conflictingFields.some(field=>['email','phone'].includes(field)))reject(409,'The matching contact has conflicting identifiers. Review before linking.');return res.json({id:data[0].id,created:false});}
+      if(data?.length){const review=await contactCandidates(caller,'00000000-0000-0000-0000-000000000000',changes,undefined,false);return res.status(409).json({code:'CONTACT_REVIEW_REQUIRED',error:'Existing identifiers require deliberate review. No contact was reused or created.',...review});}
       const {data:created,error:failure}=await caller.admin.from('contacts').insert({...changes,source,sources:[source],status:'NEW'}).select('id').single();
       if(failure)reject(503,'Contact creation failed.');return res.json({id:created.id,created:true});
     }
     if(action==='addNote'){
       const contact=await permittedContact(caller,id);const content=req.body.content;
       if(typeof content!=='string'||!content.trim()||content.length>8000)reject(400,'Provide a note of at most 8000 characters.');
-      const {error}=await caller.admin.from('interactions').insert({contact_id:contact.id,type:'NOTE',direction:'OUTBOUND',subject:'Note',content:content.trim(),timestamp:new Date().toISOString()});
+      const {error}=await caller.admin.from('interactions').insert({contact_id:contact.id,type:'NOTE',direction:'OUTBOUND',subject:'Note',content:content.trim(),metadata:{version:1,source:'contact-note',actor_id:caller.id,actor_role:caller.role},...(!caller.manager?{user_id:caller.id}:{}),timestamp:new Date().toISOString()});
       if(error)reject(503,'Could not save note.');return res.json({success:true});
     }
     if(action==='update'){
@@ -81,13 +80,14 @@ export async function handleContactApi(req:VercelRequest,res:VercelResponse){
     if(req.method!=='GET')reject(405,'GET required.');
     if(id){
       const contact=await permittedContact(caller,id,'id,name,email,phone,company,website_url,source,sources,status,notes,tags,total_orders,total_revenue,average_order_value,first_order_date,last_order_date,created_at,contact_preference,timezone,linkedin_url,contact_type,organization_id');
-      if(!caller.manager)delete contact.organization_id;
+      if(!caller.manager){delete contact.organization_id;delete contact.notes;}
       const interactionsQuery=caller.admin.from('interactions').select('id,type,direction,subject,content,timestamp').eq('contact_id',id).order('timestamp',{ascending:false}).limit(100);
-      const {data:interactions,error}=await(caller.manager?interactionsQuery:interactionsQuery.eq('type','NOTE'));if(error)reject(503,'Contact history is unavailable.');
-      const gsm=caller.manager?await caller.admin.from('cellular_calls').select('id,phone_number,direction,duration,started_at,rep_name,rep_phone,status').eq('contact_id',id).order('started_at',{ascending:false}).limit(50):{data:[]};
-      const orders=caller.manager?await caller.admin.from('woo_orders').select('id,woo_order_id,status,total_amount,currency,customer_name,customer_email,customer_phone,line_items,created_at').eq('contact_id',id).order('created_at',{ascending:false}).limit(20):{data:[]};
-      if(gsm.error||orders.error)reject(503,'Contact history is unavailable.');
-      return res.json({contact,interactions:interactions||[],gsmCalls:gsm.data||[],wooOrders:orders.data||[],historyScope:caller.manager?'business':'notes-only'});
+      const {data:interactions,error}=await optionalContactHistory(caller.manager?interactionsQuery:interactionsQuery.eq('type','NOTE').eq('metadata->>actor_id',caller.id).eq('metadata->>source','contact-note').eq('metadata->>version','1'));
+      const gsm=caller.manager?await optionalContactHistory(caller.admin.from('cellular_calls').select('id,phone_number,call_type,duration_seconds,called_at,rep_name,rep_phone').eq('contact_id',id).order('called_at',{ascending:false}).limit(50)):{data:[]};
+      const orders=caller.manager?await optionalContactHistory(caller.admin.from('woo_orders').select('id,woo_order_id,status,total_amount,currency,customer_name,customer_email,customer_phone,line_items,created_at').eq('contact_id',id).order('created_at',{ascending:false}).limit(20)):{data:[]};
+      const historyStatus={notes:error?'unavailable':caller.manager?'available':'own-attributed-only',gsm:!caller.manager?'restricted':gsm.error?'unavailable':'available',orders:!caller.manager?'restricted':orders.error?'unavailable':'available'};
+      if(!caller.manager)await permittedContact(caller,id,'id');
+      return res.json({contact,interactions:error?[]:interactions||[],gsmCalls:gsm.error?[]:(gsm.data||[]).map((row:any)=>({...row,duration:row.duration_seconds,started_at:row.called_at,direction:String(row.call_type||'').toUpperCase()==='INCOMING'?'inbound':String(row.call_type||'').toUpperCase()==='OUTGOING'?'outbound':null})),wooOrders:orders.error?[]:orders.data||[],historyStatus,historyScope:caller.manager?'business':'notes-only'});
     }
     const limit=req.query.limit===undefined?50:Number(req.query.limit);if(!Number.isInteger(limit)||limit<1||limit>100)reject(400,'Page size must be 1-100.');
     if(req.query.cursor!==undefined&&!uuid(req.query.cursor))reject(400,'Invalid contact cursor.');

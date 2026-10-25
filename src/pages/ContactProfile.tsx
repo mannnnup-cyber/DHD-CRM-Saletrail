@@ -135,6 +135,7 @@ const ContactProfileContent: React.FC = () => {
   const [error, setError] = useState('');
   const [showAllInteractions, setShowAllInteractions] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<'ALL' | 'WHATSAPP' | 'CALL' | 'EMAIL' | 'NOTE' | 'GSM_CALL' | 'ORDER'>('ALL');
+  const [orderLinkError,setOrderLinkError]=useState('');
   const [showOrderSearch, setShowOrderSearch] = useState(false);
   const [orderSearchLoading, setOrderSearchLoading] = useState(false);
   const [orderSearchResults, setOrderSearchResults] = useState<any[]>([]);
@@ -143,6 +144,8 @@ const ContactProfileContent: React.FC = () => {
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [editingFields, setEditingFields] = useState(false);
+  const originalFields=useRef<Record<string,string|null>>({});
+  const [historyNotice,setHistoryNotice]=useState('');
   const [fieldDraft, setFieldDraft] = useState({ name: '', email: '', phone: '', company: '', contact_preference: '', timezone: '', linkedin_url: '' });
   const [fieldSaving, setFieldSaving] = useState(false);
   useEffect(()=>{saveController.current?.abort();setConflict(null);setCompareId(null);setCandidateLoading(false);setFieldError('');},[fieldDraft]);
@@ -176,6 +179,7 @@ const ContactProfileContent: React.FC = () => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
       setContact(json.contact);
+      setHistoryNotice(Object.values(json.historyStatus||{}).some(value=>value==='unavailable')?'Some contact history is unavailable; this is not evidence of no history.':json.historyScope==='notes-only'?'Notes show only your new attributable notes. Legacy business notes and channel history are restricted.':'');
       setInteractions(json.interactions || []);
       setGsmCalls(json.gsmCalls || []);
       setWooOrders(json.wooOrders || []);
@@ -197,14 +201,14 @@ const ContactProfileContent: React.FC = () => {
     try {
       setFieldError(''); setFieldNotice(''); setConflict(null);
       const r = await contactFetch(`/api/contacts?action=editIdentity&id=${encodeURIComponent(id)}`, {
-        method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(fieldDraft),
+        method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({fields:fieldDraft,expected:originalFields.current}),
       });
       const result = await r.json();
       if (controller.signal.aborted) return;
       if(r.status===409 && result.code==='CONTACT_IDENTIFIER_CONFLICT'){setConflict(result);setFieldError(result.error);return;}
       if (!r.ok || result.success !== true) throw new Error(result.error || 'Could not save contact corrections.');
       setContact(current => current ? { ...current, ...result.contact } : current);
-      setEditingFields(false); setFieldNotice('Saved to CRM. External accounts and historical messages are unchanged.');
+      setEditingFields(false); setFieldNotice('Saved to CRM. External accounts and historical messages are unchanged. '+(result.warnings||[]).join(' '));
     } catch (error) { if (!controller.signal.aborted) setFieldError(error instanceof Error ? error.message : 'Could not save contact corrections.'); }
     finally { if (!controller.signal.aborted) setFieldSaving(false); }
   };
@@ -229,7 +233,7 @@ const ContactProfileContent: React.FC = () => {
       const json = await r.json();
       setOrganizations(json.organizations || []);
     } catch (e: any) {
-      console.error('Failed to load organizations:', e);
+      setOrgError('Organization history is unavailable. Existing displayed information may be stale.');
     }
   };
 
@@ -385,7 +389,7 @@ const ContactProfileContent: React.FC = () => {
       sourceType: 'gsm_call' as const,
       type: 'GSM_CALL',
       direction: c.direction?.toUpperCase(),
-      subject: `${c.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call${c.duration ? ` (${Math.floor(c.duration / 60)}m ${c.duration % 60}s)` : ''}`,
+      subject: `${c.direction === 'inbound' ? 'Incoming' : c.direction === 'outbound' ? 'Outgoing' : 'Unknown direction'} call${c.duration ? ` (${Math.floor(c.duration / 60)}m ${c.duration % 60}s)` : ''}`,
       content: c.rep_name ? `Rep: ${c.rep_name}` : undefined,
       timestamp: c.started_at,
       raw: c,
@@ -610,7 +614,7 @@ const ContactProfileContent: React.FC = () => {
             <p className="text-xs text-gray-500">Contact Details</p>
             <button type="button" disabled={candidateLoading||fieldSaving} onClick={()=>void reviewCandidates()} className="text-xs text-amber-400 disabled:opacity-50">{candidateLoading?'Checking permitted matches...':'Review possible duplicates'}</button>
             {!editingFields ? (canEdit && <button
-                onClick={() => { setFieldError(''); setFieldNotice(''); setFieldDraft({ name: contact.name, email: contact.email || '', phone: contact.phone || '', company: contact.company || '', contact_preference: contact.contact_preference || '', timezone: contact.timezone || '', linkedin_url: contact.linkedin_url || '' }); setEditingFields(true); }}
+                onClick={() => { setFieldError(''); setFieldNotice(''); originalFields.current=Object.fromEntries(['name','email','phone','company','contact_preference','timezone','linkedin_url'].map(key=>[key,(contact as any)[key]??null])); setFieldDraft({ name: contact.name, email: contact.email || '', phone: contact.phone || '', company: contact.company || '', contact_preference: contact.contact_preference || '', timezone: contact.timezone || '', linkedin_url: contact.linkedin_url || '' }); setEditingFields(true); }}
                 className="text-xs text-gray-500 hover:text-white transition-colors"
               >
                 Edit contact
@@ -626,6 +630,7 @@ const ContactProfileContent: React.FC = () => {
           </div>
           {fieldError && <p role="alert" className="text-red-400 text-sm mb-3">{fieldError}</p>}
           {conflict && <section aria-label="Contact conflicts" className="border border-amber-500/40 rounded-lg p-3 mb-3 text-sm"><p>{conflict.visibleCount} matching contacts you can review · {conflict.matchedFields.join(', ')}</p><ul className="space-y-3 my-3">{conflict.candidates.map(candidate=><li key={candidate.id}><strong>{candidate.name}</strong>{candidate.company && <span> · {candidate.company}</span>}<p className="text-xs text-gray-400">{candidate.matchedFields.join(', ')} · {candidate.category==='conflicting'?'Conflicting evidence':candidate.category==='exact'?'Exact identifier match':'Possible match'}</p><div className="flex gap-3 mt-1"><a href={`#/contacts/${candidate.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">View contact</a><button type="button" className="text-amber-400" onClick={()=>setCompareId(candidate.id)}>Compare contacts</button></div></li>)}</ul>{conflict.nextCursor && <button type="button" disabled={candidateLoading||fieldSaving} onClick={()=>void loadMoreCandidates()} className="text-blue-400">{candidateLoading?'Loading candidates…':'More permitted matches'}</button>}<p className="text-xs text-gray-400 mt-2">{conflict.guidance} {editingFields?'Your unsaved changes remain below.':'Comparison is read only; no merge is available.'}</p></section>}
+          {historyNotice && <p role="status" className="text-sm text-amber-300">{historyNotice}</p>}
           {compareId && id && <ContactCompare left={id} right={compareId} draft={editingFields?fieldDraft:undefined} onClose={()=>setCompareId(null)}/>}
           {fieldNotice && <p role="status" className="text-green-400 text-sm mb-3">{fieldNotice}</p>}
           {editingFields ? (
@@ -1014,6 +1019,7 @@ const ContactProfileContent: React.FC = () => {
             </div>
           )}
 
+          {orderLinkError && <p role="alert" className="text-red-400 text-sm">{orderLinkError}</p>}
           {showOrderSearch && (
             <div className="border-t border-gray-800 pt-3">
               <p className="text-xs text-gray-500 mb-2">
@@ -1037,16 +1043,17 @@ const ContactProfileContent: React.FC = () => {
                             <button
                               disabled={orderLinkingId === o.id}
                               onClick={async () => {
-                                setOrderLinkingId(o.id);
+                                setOrderLinkError('');setOrderLinkingId(o.id);
                                 try {
-                                  await contactFetch(`/api/contacts?action=linkOrder&id=${id}`, {
+                                  const response=await contactFetch(`/api/contacts?action=linkOrder&id=${id}`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ orderId: o.id }),
                                   });
+                                  const result=await response.json();if(!response.ok||result.success!==true)throw new Error(result.error||'Order was not linked.');
                                   await load();
                                   setOrderSearchResults(prev => prev.map(r => r.id === o.id ? { ...r, contact_id: id } : r));
-                                } catch (_) {}
+                                } catch (error) {setOrderLinkError(error instanceof Error?error.message:'Order was not linked.');}
                                 finally { setOrderLinkingId(null); }
                               }}
                               className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"

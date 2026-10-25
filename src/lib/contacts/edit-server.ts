@@ -1,5 +1,6 @@
 import { contactCaller, contactFailure, type ContactCaller } from './auth-server.js';
-import { contactCandidates } from './review-server.js';
+import { fullPhone } from './review.js';
+import { contactCandidates, candidateFilter } from './review-server.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const allowed = ['name', 'email', 'phone', 'company', 'contact_preference', 'timezone', 'linkedin_url'];
@@ -33,26 +34,31 @@ export async function editContact(req: VercelRequest, res: VercelResponse, verif
     if (!/^application\/json(?:;|$)/i.test(String(req.headers['content-type'] || ''))) return res.status(415).json({ error: 'JSON required.' });
     if (typeof req.query.id !== 'string' || !uuid.test(req.query.id)) return res.status(400).json({ error: 'Invalid contact ID.' });
     let changes: ReturnType<typeof contactChanges>;
-    try { changes = contactChanges(req.body); } catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid contact fields.' }); }
-    const { data: current, error: currentError } = await admin.from('contacts').select('id,name,email,phone,phone_normalized,company').eq('id', req.query.id).maybeSingle();
+    try { changes = contactChanges(req.body?.fields); } catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid contact fields.' }); }
+    const expected=req.body?.expected;
+    if(!expected||typeof expected!=='object'||Array.isArray(expected)||Object.keys(expected).length!==allowed.length||allowed.some(key=>!(key in expected)||(expected[key]!==null&&typeof expected[key]!=='string')||(typeof expected[key]==='string'&&expected[key].length>500)))return res.status(428).json({error:'Reload the contact before saving; an original field snapshot is required.'});
+    const { data: current, error: currentError } = await admin.from('contacts').select('id,name,email,phone,phone_normalized,company,contact_preference,timezone,linkedin_url').eq('id', req.query.id).maybeSingle();
     if (currentError) return res.status(503).json({ error: 'Could not verify the current contact.' });
     if (!current) return res.status(404).json({ error: 'Contact not found.' });
-    // Reject obvious collisions; this is not a replacement for a database uniqueness constraint.
-    for (const field of ['email', 'phone_normalized']) {
-      if (!changes[field] || changes[field] === (field === 'email' ? current.email?.trim().toLowerCase() : current.phone_normalized)) continue;
-      let query = admin.from('contacts').select('id');
-      query = field === 'email' ? query.ilike(field, changes[field]!.replace(/[\\%_]/g, '\\$&')) : query.eq(field, changes[field]);
-      const { data, error } = await query.neq('id', req.query.id).limit(1);
-      if (error) return res.status(503).json({ error: 'Could not verify contact uniqueness.' });
-      if (data?.length) {
-        const identity={...current,...changes};
-        const result=await contactCandidates(caller,req.query.id,identity,undefined,false);
-        return res.status(409).json({code:'CONTACT_IDENTIFIER_CONFLICT',matchScope:'identifiers',error:'Another contact already uses this email or phone. Review permitted matches before saving.',matchedFields:[field==='email'?'email':'phone'],...result,guidance:'Matching identifiers may be shared. Ask a manager to review any unresolved conflict; no automatic merge or overwrite is available.'});
-      }
+    const stale=()=>res.status(409).json({code:'CONTACT_STALE',error:'This contact changed since editing began. Your draft is preserved; reload and review before saving.'});
+    if(allowed.some(key=>(current[key]??null)!==expected[key]))return stale();
+    // Best-effort review preflight, not an atomic cross-worker identity constraint.
+    const warnings:string[]=[];
+    for (const field of ['email','phone']) {
+      if (!changes[field] || changes[field] === (field==='email'?current.email?.trim().toLowerCase():current.phone)) continue;
+      let query=admin.from('contacts').select('id,phone,phone_normalized');
+      query=field==='email'?query.ilike('email',changes.email!.replace(/[\\%_]/g,'\\$&')):query.or(candidateFilter({phone:changes.phone},false));
+      const {data,error}=await query.neq('id',req.query.id).limit(21);
+      if(error)return res.status(503).json({error:'Could not verify contact uniqueness.'});
+      const conflict=field==='email'?Boolean(data?.length):(data?.length||0)>20||data?.some((row:any)=>!fullPhone(changes.phone)||!fullPhone(row.phone)||fullPhone(changes.phone)===fullPhone(row.phone));
+      if(conflict){const result=await contactCandidates(caller,req.query.id,{...current,...changes},undefined,false);return res.status(409).json({code:'CONTACT_IDENTIFIER_CONFLICT',matchScope:'identifiers',error:'Another contact has matching identifiers. Review before saving.',matchedFields:[field],...result,guidance:'Identifiers can be shared; no automatic merge or overwrite is available.'});}
+      if(data?.length)warnings.push('Legacy phone suffix matches other records, but full international numbers differ. Ownership remains unverified.');
     }
-    const { data, error } = await admin.from('contacts').update(changes).eq('id', req.query.id).select('id,name,email,phone,company,contact_preference,timezone,linkedin_url').maybeSingle();
+    let update=admin.from('contacts').update(changes).eq('id',req.query.id);
+    for(const key of allowed)update=expected[key]===null?update.is(key,null):update.eq(key,expected[key]);
+    const { data, error } = await update.select('id,name,email,phone,company,contact_preference,timezone,linkedin_url').maybeSingle();
     if (error) return res.status(503).json({ error: 'Could not save contact corrections.' });
-    if (!data) return res.status(404).json({ error: 'Contact not found.' });
-    return res.json({ success: true, contact: data });
+    if (!data) return stale();
+    return res.json({ success: true, contact: data, warnings });
   } catch(error) { return contactFailure(res,error); }
 }
