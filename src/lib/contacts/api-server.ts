@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { contactCaller, contactFailure, jsonRequest, permittedContact, scopeContacts, reject, uuid, type ContactCaller } from './auth-server.js';
+import { contactCaller, contactFailure, jsonRequest, permittedContact, scopeContacts, basicContactProjection, basicContact, reject, uuid, type ContactCaller } from './auth-server.js';
 import { contactCandidates, compareContacts, optionalContactHistory, contactProjection, candidateFilter, literalPattern } from './review-server.js';
+import {sharedChallenge,claimSharedReview,newReviewTarget,sharedMutation} from './shared-review-server.js';
 import { matchingEvidence } from './review.js';
 import { editContact, contactChanges } from './edit-server.js';
 const managerOnly=(caller:ContactCaller)=>{if(!caller.manager)reject(403,'This contact operation requires an active owner or manager.');};
@@ -39,9 +40,14 @@ export async function handleContactApi(req:VercelRequest,res:VercelResponse){
       const filter=candidateFilter(changes,false);
       const {data,error}=await caller.admin.from('contacts').select('id,name,email,phone').or(filter).limit(2);
       if(error)reject(503,'Contact resolution is unavailable.');
-      if(data?.length){const review=await contactCandidates(caller,'00000000-0000-0000-0000-000000000000',changes,undefined,false);return res.status(409).json({code:'CONTACT_REVIEW_REQUIRED',error:'Existing identifiers require deliberate review. No contact was reused or created.',...review});}
-      const {data:created,error:failure}=await caller.admin.from('contacts').insert({...changes,source,sources:[source],status:'NEW'}).select('id').single();
-      if(failure)reject(503,'Contact creation failed.');return res.json({id:created.id,created:true});
+      let shared:Awaited<ReturnType<typeof claimSharedReview>>|undefined,target:string|undefined;
+      if(data?.length){const review=await contactCandidates(caller,'00000000-0000-0000-0000-000000000000',changes,undefined,false);target=req.body.sharedReview?.target||newReviewTarget();const input={purpose:'create' as const,target,fields:{...changes,source},expected:null,identity:changes};if(req.body.sharedReview)shared=await claimSharedReview(req,res,caller,input,review);else return res.status(409).json({code:'CONTACT_REVIEW_REQUIRED',error:'Existing identifiers require deliberate keep-separate review. No contact was reused or created.',...review,...sharedChallenge(caller,input,review)});}
+      if(req.body.sharedReview&&!shared)reject(409,'Matching evidence changed. Review again.');
+      const {data:created,error:failure}=await sharedMutation((shared?.admin||caller.admin).from('contacts').insert({...changes,...target?{id:target}:{},source,sources:[source],status:'NEW'}).select('id').single());
+      if(failure||!created){if(shared)await shared.finish('uncertain-save');return res.status(503).json({code:shared?'SHARED_SAVE_UNCERTAIN':undefined,operationId:shared?.id,error:'Contact creation could not be confirmed. Reconcile before retrying.'});}
+      if(shared&&created.id!==target){await shared.finish('uncertain-created-id');return res.status(503).json({code:'SHARED_SAVE_UNCERTAIN',operationId:shared.id,error:'The created identity could not be reconciled with the reviewed target. Do not retry automatically.'});}
+      if(shared&&!await shared.finish('confirmed'))return res.status(503).json({code:'SHARED_SAVE_UNCERTAIN',operationId:shared.id,error:'Contact creation may be saved but audit finalization is uncertain. Reconcile before retrying.'});
+      return res.json({id:created.id,created:true,keptSeparate:Boolean(shared)});
     }
     if(action==='addNote'){
       const contact=await permittedContact(caller,id);const content=req.body.content;
@@ -79,7 +85,7 @@ export async function handleContactApi(req:VercelRequest,res:VercelResponse){
     if(action&&action!=='search')reject(400,'Unknown contact action.');
     if(req.method!=='GET')reject(405,'GET required.');
     if(id){
-      const contact=await permittedContact(caller,id,'id,name,email,phone,company,website_url,source,sources,status,notes,tags,total_orders,total_revenue,average_order_value,first_order_date,last_order_date,created_at,contact_preference,timezone,linkedin_url,contact_type,organization_id');
+      const contact=await permittedContact(caller,id,caller.manager?'id,name,email,phone,company,website_url,source,sources,status,notes,tags,total_orders,total_revenue,average_order_value,first_order_date,last_order_date,created_at,contact_preference,timezone,linkedin_url,contact_type,organization_id':basicContactProjection);
       if(!caller.manager){delete contact.organization_id;delete contact.notes;}
       const interactionsQuery=caller.admin.from('interactions').select('id,type,direction,subject,content,timestamp').eq('contact_id',id).order('timestamp',{ascending:false}).limit(100);
       const {data:interactions,error}=await optionalContactHistory(caller.manager?interactionsQuery:interactionsQuery.eq('type','NOTE').eq('metadata->>actor_id',caller.id).eq('metadata->>source','contact-note').eq('metadata->>version','1'));
@@ -92,9 +98,10 @@ export async function handleContactApi(req:VercelRequest,res:VercelResponse){
     const limit=req.query.limit===undefined?50:Number(req.query.limit);if(!Number.isInteger(limit)||limit<1||limit>100)reject(400,'Page size must be 1-100.');
     if(req.query.cursor!==undefined&&!uuid(req.query.cursor))reject(400,'Invalid contact cursor.');
     const text=req.query.search===undefined?'':typeof req.query.search==='string'?req.query.search.trim():null;if(text===null||text.length>200)reject(400,'Invalid contact search.');
+    if(!caller.manager&&req.query.source&&req.query.source!=='all')reject(403,'Contact source history is restricted for this role.');
     const filter=(query:any)=>{query=scopeContacts(query,caller);if(text){const v='"%'+literalPattern(text).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'%"';query=query.or(`name.ilike.${v},email.ilike.${v},company.ilike.${v},phone.ilike.${v}`);}if(typeof req.query.status==='string'&&req.query.status!=='all')query=query.eq('status',req.query.status);if(typeof req.query.source==='string'&&req.query.source!=='all'){if(!['MANUAL','WOOCOMMERCE','CSV_IMPORT','WHATSAPP','WEBSITE','GSM'].includes(req.query.source))reject(400,'Invalid contact source.');query=query.or(`source.eq.${req.query.source},sources.cs.{${req.query.source}}`);}return query;};
     const {count,error:countError}=await filter(caller.admin.from('contacts').select('id',{count:'exact',head:true}));
-    let query=filter(caller.admin.from('contacts').select(contactProjection+',status,total_orders,total_revenue,average_order_value,last_order_date,tags')).order('id',{ascending:true});if(req.query.cursor)query=query.gt('id',req.query.cursor);
+    let query=filter(caller.admin.from('contacts').select(caller.manager?contactProjection+',status,total_orders,total_revenue,average_order_value,last_order_date,tags':basicContactProjection)).order('id',{ascending:true});if(req.query.cursor)query=query.gt('id',req.query.cursor);
     const {data,error}=await query.limit(limit+1);if(error||countError||!Number.isInteger(count)||count<0)reject(503,'Contact list is unavailable.');const page=(data||[]).slice(0,limit);
     return res.json({contacts:page,total:count,nextCursor:(data||[]).length>limit?page[page.length-1].id:null,scope:caller.manager?'business':'assigned'});
   }catch(error){return contactFailure(res,error);}

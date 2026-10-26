@@ -17,4 +17,4 @@ export function matchingEvidence(left: Partial<ContactIdentity>, right: Partial<
   if(left.contact_type && right.contact_type && left.contact_type!==right.contact_type) conflictingFields.push('contact_type');
   return { matchedFields, conflictingFields, category: conflictingFields.some(field=>field!=='company') ? 'conflicting' : matchedFields.some(field=>field==='phone'||field==='email'&&!weakEmail) ? 'exact' : 'possible', reasons };
 }
-export interface ContactConflict { code: string; matchScope?: 'identifiers' | 'discovery'; error: string; matchedFields: string[]; candidates: Array<ContactIdentity & ReturnType<typeof matchingEvidence>>; visibleCount: number; nextCursor: string | null; guidance: string; }
+export interface ContactConflict { code: string; sharedSaveAvailable?:boolean; reviewToken?:string; reviewExpiresAt?:number; reviewTarget?:string; sharedSaveGuidance?:string; matchScope?: 'identifiers' | 'discovery'; error: string; matchedFields: string[]; candidates: Array<ContactIdentity & ReturnType<typeof matchingEvidence>>; visibleCount: number; nextCursor: string | null; guidance: string; }

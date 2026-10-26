@@ -1,4 +1,5 @@
 import { contactCaller, contactFailure, type ContactCaller } from './auth-server.js';
+import { sharedChallenge,claimSharedReview,sharedMutation } from './shared-review-server.js';
 import { fullPhone } from './review.js';
 import { contactCandidates, candidateFilter } from './review-server.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -42,6 +43,8 @@ export async function editContact(req: VercelRequest, res: VercelResponse, verif
     if (!current) return res.status(404).json({ error: 'Contact not found.' });
     const stale=()=>res.status(409).json({code:'CONTACT_STALE',error:'This contact changed since editing began. Your draft is preserved; reload and review before saving.'});
     if(allowed.some(key=>(current[key]??null)!==expected[key]))return stale();
+    if(req.body.sharedReview&&allowed.every(key=>!(key in changes)||(changes[key]??null)===(current[key]??null)))return res.status(400).json({error:'No contact correction was proposed.'});
+    let shared:Awaited<ReturnType<typeof claimSharedReview>>|undefined;
     // Best-effort review preflight, not an atomic cross-worker identity constraint.
     const warnings:string[]=[];
     for (const field of ['email','phone']) {
@@ -51,14 +54,16 @@ export async function editContact(req: VercelRequest, res: VercelResponse, verif
       const {data,error}=await query.neq('id',req.query.id).limit(21);
       if(error)return res.status(503).json({error:'Could not verify contact uniqueness.'});
       const conflict=field==='email'?Boolean(data?.length):(data?.length||0)>20||data?.some((row:any)=>!fullPhone(changes.phone)||!fullPhone(row.phone)||fullPhone(changes.phone)===fullPhone(row.phone));
-      if(conflict){const result=await contactCandidates(caller,req.query.id,{...current,...changes},undefined,false);return res.status(409).json({code:'CONTACT_IDENTIFIER_CONFLICT',matchScope:'identifiers',error:'Another contact has matching identifiers. Review before saving.',matchedFields:[field],...result,guidance:'Identifiers can be shared; no automatic merge or overwrite is available.'});}
+      if(conflict){const identity={...current,...changes},result=await contactCandidates(caller,req.query.id,identity,undefined,false),input={purpose:'edit' as const,target:req.query.id,fields:changes,expected,identity};if(req.body.sharedReview){shared=await claimSharedReview(req,res,caller,input,result);break;}return res.status(409).json({code:'CONTACT_IDENTIFIER_CONFLICT',matchScope:'identifiers',error:'Another contact has matching identifiers. Review before saving.',matchedFields:[field],...result,...sharedChallenge(caller,input,result),guidance:'Review all matches; keep these contacts separate only after explicit confirmation. No merge or relationship transfer occurs.'});}
       if(data?.length)warnings.push('Legacy phone suffix matches other records, but full international numbers differ. Ownership remains unverified.');
     }
-    let update=admin.from('contacts').update(changes).eq('id',req.query.id);
+    if(req.body.sharedReview&&!shared)return res.status(409).json({error:'Matching evidence changed. Review again before confirming.'});
+    let update=(shared?.admin||admin).from('contacts').update(changes).eq('id',req.query.id);
     for(const key of allowed)update=expected[key]===null?update.is(key,null):update.eq(key,expected[key]);
-    const { data, error } = await update.select('id,name,email,phone,company,contact_preference,timezone,linkedin_url').maybeSingle();
-    if (error) return res.status(503).json({ error: 'Could not save contact corrections.' });
-    if (!data) return stale();
+    const { data, error } = await sharedMutation(update.select('id,name,email,phone,company,contact_preference,timezone,linkedin_url').maybeSingle());
+    if(error){if(shared)await shared.finish('uncertain-save');return res.status(503).json({code:shared?'SHARED_SAVE_UNCERTAIN':undefined,operationId:shared?.id,error:'Could not confirm contact corrections. Do not retry automatically; reconcile the operation.'});}
+    if(!data){if(shared&&!await shared.finish('rejected-stale'))return res.status(503).json({code:'SHARED_SAVE_UNCERTAIN',operationId:shared.id,error:'No correction was returned and audit finalization is uncertain. Reconcile before retrying.'});return stale();}
+    if(shared&&!await shared.finish('confirmed'))return res.status(503).json({code:'SHARED_SAVE_UNCERTAIN',operationId:shared.id,error:'The contact correction may be saved, but audit outcome could not be confirmed. Reconcile before retrying.'});
     return res.json({ success: true, contact: data, warnings });
   } catch(error) { return contactFailure(res,error); }
 }

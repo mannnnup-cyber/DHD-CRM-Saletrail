@@ -32,6 +32,8 @@ export async function contactCaller(req: VercelRequest, res: VercelResponse): Pr
   if (bucket.count > 120) reject(429, 'Contact request limit reached. Try again later.');
   return { id: profile!.id, role: profile!.role, manager, admin };
 }
+export const basicContactProjection='id,name,email,phone,company,status,contact_type';
+export const basicContact=(row:any)=>Object.fromEntries(basicContactProjection.split(',').filter(key=>key in row).map(key=>[key,row[key]]));
 export const scopeContacts = (query: any, caller: ContactCaller, field = 'assigned_to') => caller.manager ? query : query.eq(field, caller.id);
 export async function permittedContact(caller: ContactCaller, id: unknown, projection = 'id,name,email,phone,phone_normalized,company,assigned_to,source,sources,created_at,contact_type') {
   if (!uuid(id)) reject(400, 'Invalid contact ID.');

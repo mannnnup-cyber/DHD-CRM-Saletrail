@@ -122,6 +122,8 @@ const ContactProfileContent: React.FC = () => {
   const canEdit = ['owner', 'manager'].includes(state.user?.role || '');
   const saveController = useRef<AbortController | null>(null);
   useEffect(() => () => saveController.current?.abort(), []);
+  const [sharedAcknowledged,setSharedAcknowledged]=useState(false),[sharedReason,setSharedReason]=useState('');
+  const [sharedUncertain,setSharedUncertain]=useState(false);
   const [conflict, setConflict] = useState<ContactConflict | null>(null);
   const [compareId,setCompareId] = useState<string|null>(null);
   const [candidateLoading,setCandidateLoading] = useState(false);
@@ -148,7 +150,7 @@ const ContactProfileContent: React.FC = () => {
   const [historyNotice,setHistoryNotice]=useState('');
   const [fieldDraft, setFieldDraft] = useState({ name: '', email: '', phone: '', company: '', contact_preference: '', timezone: '', linkedin_url: '' });
   const [fieldSaving, setFieldSaving] = useState(false);
-  useEffect(()=>{saveController.current?.abort();setConflict(null);setCompareId(null);setCandidateLoading(false);setFieldError('');},[fieldDraft]);
+  useEffect(()=>{saveController.current?.abort();setConflict(null);setSharedAcknowledged(false);setSharedReason('');setCompareId(null);setCandidateLoading(false);setFieldError('');},[fieldDraft]);
   const [showEnrichModal, setShowEnrichModal] = useState(false);
   const [enrichUrl, setEnrichUrl] = useState('');
   const [enrichAutoDetect, setEnrichAutoDetect] = useState(false);
@@ -193,23 +195,27 @@ const ContactProfileContent: React.FC = () => {
   const handleEnrichLead = async () => { setEnrichError('Automated enrichment is disabled until proposed changes can be reviewed without overwriting contact identity.'); setEnrichLoading(false); };
   const performEnrichment = handleEnrichLead;
 
-  const saveContactFields = async () => {
-    if (!id || fieldSaving || candidateLoading) return;
+  const saveContactFields = async (confirmed=false) => {
+    if (!id || fieldSaving || candidateLoading || sharedUncertain) return;
+    const sharedReview=confirmed&&sharedAcknowledged&&sharedReason.trim()&&conflict?.reviewToken?{decision:'keep-separate',token:conflict.reviewToken,reason:sharedReason.trim()}:undefined;
+    if(confirmed&&!sharedReview)return;
     saveController.current?.abort();
     const controller = new AbortController(); saveController.current = controller;
     setFieldSaving(true);
+    let responseReceived=false;
     try {
       setFieldError(''); setFieldNotice(''); setConflict(null);
       const r = await contactFetch(`/api/contacts?action=editIdentity&id=${encodeURIComponent(id)}`, {
-        method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({fields:fieldDraft,expected:originalFields.current}),
+        method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({fields:fieldDraft,expected:originalFields.current,...sharedReview?{sharedReview}:{}}),
       });
-      const result = await r.json();
+      const result = await r.json();responseReceived=true;
       if (controller.signal.aborted) return;
+      if(result.code==='SHARED_SAVE_UNCERTAIN'){setSharedUncertain(true);throw new Error(result.error+' Operation: '+(result.operationId||'unknown')+' Do not submit another save until reconciled.');}
       if(r.status===409 && result.code==='CONTACT_IDENTIFIER_CONFLICT'){setConflict(result);setFieldError(result.error);return;}
       if (!r.ok || result.success !== true) throw new Error(result.error || 'Could not save contact corrections.');
       setContact(current => current ? { ...current, ...result.contact } : current);
       setEditingFields(false); setFieldNotice('Saved to CRM. External accounts and historical messages are unchanged. '+(result.warnings||[]).join(' '));
-    } catch (error) { if (!controller.signal.aborted) setFieldError(error instanceof Error ? error.message : 'Could not save contact corrections.'); }
+    } catch(error){if(!controller.signal.aborted){if(sharedReview&&!responseReceived){setSharedUncertain(true);setFieldError('Shared save outcome is unknown. Do not retry; reconcile the operation before another save.');}else setFieldError(error instanceof Error?error.message:'Could not save contact corrections.');}}
     finally { if (!controller.signal.aborted) setFieldSaving(false); }
   };
 
@@ -228,6 +234,7 @@ const ContactProfileContent: React.FC = () => {
     if (!id) return;
 
     try {
+      if(!canEdit){setOrganizations([]);return;}
       const r = await contactFetch(`/api/crm?target=organizations&action=getOrganizations&contactId=${id}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json();
@@ -467,7 +474,7 @@ const ContactProfileContent: React.FC = () => {
 
             {/* Contact info row */}
             <div className="flex flex-wrap gap-4 mt-4">
-              {contact.email && (
+              {canEdit&&contact.email && (
                 <button
                   onClick={() => {
                     const emailSection = document.getElementById('email-section');
@@ -531,7 +538,7 @@ const ContactProfileContent: React.FC = () => {
 
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2 mt-4">
-              {contact.email && (
+              {canEdit&&contact.email && (
                 <>
                   <button
                     onClick={() => {
@@ -570,7 +577,7 @@ const ContactProfileContent: React.FC = () => {
                     <PhoneCall className="w-3.5 h-3.5" />
                     Call
                   </a>
-                  <button
+                  {canEdit&&<button
                     onClick={() => {
                       localStorage.setItem('wa_open_contact', JSON.stringify({ phone: contact.phone!, name: contact.name }));
                       navigate('/whatsapp');
@@ -579,23 +586,23 @@ const ContactProfileContent: React.FC = () => {
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     WhatsApp
-                  </button>
+                  </button>}
                 </>
               )}
-              <button
+              {canEdit&&<button
                 onClick={() => navigate('/leads')}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 text-green-300 rounded-lg text-xs font-medium transition-colors"
               >
                 <User className="w-3.5 h-3.5" />
                 Create Lead
-              </button>
-              <button
+              </button>}
+              {canEdit&&<button
                 onClick={() => setShowEnrichModal(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-300 rounded-lg text-xs font-medium transition-colors"
               >
                 <Globe className="w-3.5 h-3.5" />
                 Enrich
-              </button>
+              </button>}
             </div>
           </div>
         </div>
@@ -621,15 +628,15 @@ const ContactProfileContent: React.FC = () => {
               </button>
             ) : (
               <div className="flex gap-2">
-                <button disabled={fieldSaving} onClick={() => {saveController.current?.abort();setConflict(null);setCompareId(null);setCandidateLoading(false);setEditingFields(false);}} className="text-xs text-gray-500 hover:text-white transition-colors">Cancel</button>
-                <button onClick={saveContactFields} disabled={fieldSaving||candidateLoading} className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50">
+                <button disabled={fieldSaving} onClick={() => {saveController.current?.abort();setConflict(null);setSharedAcknowledged(false);setSharedReason('');setCompareId(null);setCandidateLoading(false);setEditingFields(false);}} className="text-xs text-gray-500 hover:text-white transition-colors">Cancel</button>
+                <button onClick={()=>void saveContactFields()} disabled={fieldSaving||candidateLoading||sharedUncertain} className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50">
                   {fieldSaving ? 'Saving…' : 'Save'}
                 </button>
               </div>
             )}
           </div>
           {fieldError && <p role="alert" className="text-red-400 text-sm mb-3">{fieldError}</p>}
-          {conflict && <section aria-label="Contact conflicts" className="border border-amber-500/40 rounded-lg p-3 mb-3 text-sm"><p>{conflict.visibleCount} matching contacts you can review · {conflict.matchedFields.join(', ')}</p><ul className="space-y-3 my-3">{conflict.candidates.map(candidate=><li key={candidate.id}><strong>{candidate.name}</strong>{candidate.company && <span> · {candidate.company}</span>}<p className="text-xs text-gray-400">{candidate.matchedFields.join(', ')} · {candidate.category==='conflicting'?'Conflicting evidence':candidate.category==='exact'?'Exact identifier match':'Possible match'}</p><div className="flex gap-3 mt-1"><a href={`#/contacts/${candidate.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">View contact</a><button type="button" className="text-amber-400" onClick={()=>setCompareId(candidate.id)}>Compare contacts</button></div></li>)}</ul>{conflict.nextCursor && <button type="button" disabled={candidateLoading||fieldSaving} onClick={()=>void loadMoreCandidates()} className="text-blue-400">{candidateLoading?'Loading candidates…':'More permitted matches'}</button>}<p className="text-xs text-gray-400 mt-2">{conflict.guidance} {editingFields?'Your unsaved changes remain below.':'Comparison is read only; no merge is available.'}</p></section>}
+          {conflict && <section aria-label="Contact conflicts" className="border border-amber-500/40 rounded-lg p-3 mb-3 text-sm"><p>{conflict.visibleCount} matching contacts you can review · {conflict.matchedFields.join(', ')}</p><ul className="space-y-3 my-3">{conflict.candidates.map(candidate=><li key={candidate.id}><strong>{candidate.name}</strong>{candidate.company && <span> · {candidate.company}</span>}<p className="text-xs text-gray-400">{candidate.matchedFields.join(', ')} · {candidate.category==='conflicting'?'Conflicting evidence':candidate.category==='exact'?'Exact identifier match':'Possible match'}</p><div className="flex gap-3 mt-1"><a href={`#/contacts/${candidate.id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">View contact</a><button type="button" className="text-amber-400" onClick={()=>setCompareId(candidate.id)}>Compare contacts</button></div></li>)}</ul>{conflict.nextCursor && <button type="button" disabled={candidateLoading||fieldSaving} onClick={()=>void loadMoreCandidates()} className="text-blue-400">{candidateLoading?'Loading candidates…':'More permitted matches'}</button>}{canEdit&&editingFields&&conflict.sharedSaveAvailable&&<div className="border-t border-amber-500/30 mt-3 pt-3"><label className="flex items-start gap-2"><input type="checkbox" checked={sharedAcknowledged} disabled={fieldSaving} onChange={event=>setSharedAcknowledged(event.target.checked)}/>I reviewed all displayed matches. These are separate people or records that intentionally share this identifier.</label><label className="block mt-2">Reason for keeping separate<input aria-label="Shared identifier reason" maxLength={500} value={sharedReason} disabled={fieldSaving} onChange={event=>setSharedReason(event.target.value)} className="block w-full bg-gray-800 rounded p-2"/></label><p className="text-xs text-gray-400 my-2">Only this contact is corrected. Matching contacts, messages and relationships are unchanged. A protected audit intent and outcome are recorded.</p><button type="button" disabled={!sharedAcknowledged||!sharedReason.trim()||fieldSaving||candidateLoading||sharedUncertain} onClick={()=>void saveContactFields(true)} className="bg-amber-600 px-3 py-2 rounded disabled:opacity-50">Keep separate and save shared identifier</button><button type="button" disabled={fieldSaving} onClick={()=>{setConflict(null);setSharedAcknowledged(false);setSharedReason('');setFieldError('');}} className="ml-3 underline">Cancel shared save</button></div>}{conflict.sharedSaveGuidance&&<p>{conflict.sharedSaveGuidance}</p>}<p className="text-xs text-gray-400 mt-2">{conflict.guidance} {editingFields?'Your unsaved changes remain below.':'Comparison is read only; no merge is available.'}</p></section>}
           {historyNotice && <p role="status" className="text-sm text-amber-300">{historyNotice}</p>}
           {compareId && id && <ContactCompare left={id} right={compareId} draft={editingFields?fieldDraft:undefined} onClose={()=>setCompareId(null)}/>}
           {fieldNotice && <p role="status" className="text-green-400 text-sm mb-3">{fieldNotice}</p>}
@@ -692,7 +699,7 @@ const ContactProfileContent: React.FC = () => {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {canEdit&&<div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <Package className="w-4 h-4 text-purple-400" />
@@ -731,8 +738,9 @@ const ContactProfileContent: React.FC = () => {
         </div>
       </div>
 
+      }
       {/* Organization Links */}
-      {organizations.length > 0 && (
+      {canEdit&&organizations.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -789,7 +797,7 @@ const ContactProfileContent: React.FC = () => {
       )}
 
       {/* Add Organization Button (if no organizations yet) */}
-      {organizations.length === 0 && (
+      {canEdit&&organizations.length === 0 && (
         <button
           onClick={() => setShowOrgModal(true)}
           className="w-full flex items-center justify-center gap-2 p-4 border border-dashed border-purple-500/50 rounded-lg text-purple-400 hover:bg-purple-500/5 transition-colors"
@@ -803,7 +811,7 @@ const ContactProfileContent: React.FC = () => {
       <div id="email-section" className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         {/* Header row */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800/50">
-          <h2 className="font-semibold text-white text-sm">Activity Timeline</h2>
+          <h2 className="font-semibold text-white text-sm">{canEdit?'Activity Timeline':'Your attributed notes'}</h2>
           <button
             onClick={() => { setShowNoteForm(v => !v); setNoteText(''); }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 rounded-lg text-xs font-medium transition-colors"
@@ -869,8 +877,8 @@ const ContactProfileContent: React.FC = () => {
         {filteredEvents.length === 0 ? (
           <div className="py-16 text-center text-gray-500">
             <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-sm">{timelineFilter === 'ALL' ? 'No activity yet' : `No ${TYPE_CONFIG[timelineFilter]?.label ?? timelineFilter} activity`}</p>
-            <p className="text-xs mt-1">{timelineFilter === 'ALL' ? 'Interactions will appear here as they happen' : 'Switch to All to see other activity'}</p>
+            <p className="font-medium text-sm">{timelineFilter === 'ALL' ? canEdit?'No activity yet':'No own attributed notes loaded' : `No ${TYPE_CONFIG[timelineFilter]?.label ?? timelineFilter} activity`}</p>
+            <p className="text-xs mt-1">{timelineFilter === 'ALL' ? canEdit?'Interactions will appear here as they happen':'Other notes and business history are restricted' : 'Switch to All to see other activity'}</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-800/40">
@@ -940,7 +948,7 @@ const ContactProfileContent: React.FC = () => {
       </div>
 
       {/* Source + Meta */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
+      {canEdit&&<div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
           <div>
             <p className="text-xs text-gray-500 mb-1">Source</p>
@@ -965,6 +973,7 @@ const ContactProfileContent: React.FC = () => {
         </div>
       </div>
 
+      }
       {/* WooCommerce Order Search/Link */}
       {canEdit && (contact.email || contact.phone) && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">

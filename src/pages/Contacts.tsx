@@ -1,3 +1,4 @@
+import ContactCreate from '../components/ContactCreate';
 import { useApp } from '../context/AppContext';
 import { authHeaders } from '../lib/auth';
 import React, { useState, useEffect, useRef } from 'react';
@@ -72,6 +73,8 @@ function SourceIcons({ contact, size = 'sm' }: { contact: Contact; size?: 'sm' |
 
 const Contacts: React.FC = () => {
   const navigate = useNavigate();
+  const {state}=useApp();const businessScope=['owner','manager'].includes(state.user?.role||'');
+  const [creating,setCreating]=useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -108,7 +111,7 @@ const Contacts: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Contacts</h1>
+          <h1 className="text-2xl font-bold text-white">Contacts</h1>{businessScope&&<button onClick={()=>setCreating(true)} className="bg-amber-600 px-3 py-2 rounded text-white">New contact</button>}
           <p className="text-gray-400 text-sm mt-0.5">{total===null?'Unknown':total} permitted matches · {contacts.length} shown · Page revenue JMD {totalRevenue.toLocaleString()}</p>
         </div>
         <button
@@ -121,6 +124,7 @@ const Contacts: React.FC = () => {
       </div>
 
       <nav aria-label="Contact pages" className="flex gap-3 text-sm"><button disabled={loading||!history.length} onClick={()=>{const prior=history[history.length-1];setHistory(values=>values.slice(0,-1));setCursor(prior);}} className="px-3 py-2 bg-gray-800 rounded disabled:opacity-40">Previous contacts</button><button disabled={loading||!nextCursor} onClick={()=>{setHistory(values=>[...values,cursor]);setCursor(nextCursor);}} className="px-3 py-2 bg-gray-800 rounded disabled:opacity-40">Next contacts</button></nav>
+      {creating&&businessScope&&<ContactCreate onClose={()=>setCreating(false)} onCreated={()=>{resetFilters();setRefresh(value=>value+1);}}/>}
       {/* Stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
@@ -128,7 +132,7 @@ const Contacts: React.FC = () => {
           { label: 'WooCommerce on page',    value: wooCount,          icon: ShoppingCart,   color: 'text-purple-400' },
           { label: 'WhatsApp on page',       value: whatsappCount,     icon: MessageCircle,  color: 'text-green-400'  },
           { label: 'Revenue on page',  value: `JMD ${(totalRevenue / 1000).toFixed(0)}k`, icon: TrendingUp, color: 'text-amber-400' },
-        ].map(stat => (
+        ].filter(stat=>businessScope||stat.label==='Permitted matches').map(stat => (
           <div key={stat.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-500">{stat.label}</span>
@@ -153,7 +157,7 @@ const Contacts: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <select
-            value={filterSource}
+            disabled={!businessScope} value={filterSource}
             onChange={e => {setFilterSource(e.target.value);resetFilters();}}
             className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50"
           >
@@ -226,7 +230,7 @@ const Contacts: React.FC = () => {
                     <p className="text-white font-medium text-sm truncate">{contact.name}</p>
                     <p className="text-gray-400 text-xs truncate">{contact.email || contact.phone || '—'}</p>
                     <div className="flex items-center gap-2 mt-1">
-                      <SourceIcons contact={contact} size="xs" />
+                      {businessScope&&<SourceIcons contact={contact} size="xs" />}
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_COLORS[contact.status] || STATUS_COLORS.NEW}`}>
                         {contact.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </span>
@@ -278,16 +282,16 @@ const Contacts: React.FC = () => {
                   </div>
                   {/* Multi-source icons — hover each for tooltip */}
                   <div>
-                    <SourceIcons contact={contact} size="sm" />
+                    {businessScope?<SourceIcons contact={contact} size="sm" />:<span className="text-xs text-gray-500">Restricted</span>}
                   </div>
                   <div>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[contact.status] || STATUS_COLORS.NEW}`}>
                       {contact.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                     </span>
                   </div>
-                  <div className="text-sm text-white font-medium">{contact.total_orders || 0}</div>
+                  <div className="text-sm text-white font-medium">{businessScope?contact.total_orders||0:'Restricted'}</div>
                   <div className="text-sm text-white">
-                    {(contact.total_revenue || 0) > 0
+                    {!businessScope?'Restricted':(contact.total_revenue || 0) > 0
                       ? `JMD ${contact.total_revenue.toLocaleString()}`
                       : <span className="text-gray-600">—</span>}
                   </div>

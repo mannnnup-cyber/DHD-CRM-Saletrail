@@ -1,4 +1,4 @@
-import { type ContactCaller, permittedContact, scopeContacts, reject, uuid } from './auth-server.js';
+import { type ContactCaller, permittedContact, scopeContacts, basicContact, basicContactProjection, reject, uuid } from './auth-server.js';
 import { emailIdentity, phoneSuffix, matchingEvidence, type ContactIdentity } from './review.js';
 export async function optionalContactHistory(query:any){try{return await query;}catch{return {data:null,count:null,error:true};}}
 export const contactProjection = 'id,name,email,phone,phone_normalized,company,assigned_to,source,sources,created_at,contact_type';
@@ -15,17 +15,18 @@ export async function contactCandidates(caller: ContactCaller, id: string, ident
   if(after !== undefined && after !== null && !uuid(after)) reject(400, 'Invalid candidate cursor.');
   const filter = candidateFilter(identity, includeName);
   if(!filter) return {candidates:[],visibleCount:0,nextCursor:null};
-  const base = (count = false) => scopeContacts(caller.admin.from('contacts').select(contactProjection, count ? {count:'exact',head:true} : undefined).neq('id',id).or(filter),caller);
+  const base = (count = false) => scopeContacts(caller.admin.from('contacts').select(caller.manager?contactProjection:basicContactProjection, count ? {count:'exact',head:true} : undefined).neq('id',id).or(filter),caller);
   const {count,error:countError}=await base(true);
   let query=base().order('id',{ascending:true});if(after)query=query.gt('id',after);
   const {data,error}=await query.limit(21);
   if(error||countError||!Number.isInteger(count)||count<0)reject(503,'Could not check contact candidates.');
   const page=(data||[]).slice(0,20);
-  return { candidates:page.map((row: ContactIdentity)=>({...row,...matchingEvidence(identity,row)})), visibleCount:count, nextCursor:(data||[]).length>20 ? page[page.length-1].id : null };
+  return { candidates:page.map((row: ContactIdentity)=>({...caller.manager?row:basicContact(row),...matchingEvidence(identity,row)})), visibleCount:count, nextCursor:(data||[]).length>20 ? page[page.length-1].id : null };
 }
 export async function compareContacts(caller: ContactCaller, ids: unknown[]) {
   if(ids.length!==2 || ids[0]===ids[1]) reject(400,'Choose two different contacts.');
   const contacts=await Promise.all(ids.map(id=>permittedContact(caller,id)));
+  if(!caller.manager){const items=await Promise.all(contacts.map(async contact=>{const {data,error}=await optionalContactHistory(caller.admin.from('interactions').select('id,type,direction,subject,content,timestamp').eq('contact_id',contact.id).eq('type','NOTE').eq('metadata->>actor_id',caller.id).eq('metadata->>source','contact-note').eq('metadata->>version','1').order('timestamp',{ascending:false}).limit(10));return {contact:basicContact(contact),ownNotes:error?[]:data||[],ownNotesStatus:error?'unavailable':'available',counts:{},countStatus:{},historyStatus:'restricted',activity:[],activityRestricted:true,activityStatus:'restricted'};}));await Promise.all(ids.map(id=>permittedContact(caller,id,'id')));return {success:true,items,evidence:matchingEvidence(contacts[0],contacts[1]),readOnly:true};}
   const tables=['leads','deals','tasks','emails','whatsapp_messages','woo_orders','quotes','invoices','calls','cellular_calls','whatsapp_calls','interactions'] as const;
   let active=0;const queue:Array<()=>void>=[];
   const bounded=async<T>(task:()=>Promise<T>):Promise<T>=>{if(active>=4)await new Promise<void>(resolve=>queue.push(resolve));active++;try{return await task();}finally{active--;queue.shift()?.();}};

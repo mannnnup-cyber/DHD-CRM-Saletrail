@@ -16,18 +16,17 @@ Owner policy is now controlling, not an open choice:
 - Reps may access assigned contacts and only their own properly attributed notes. Other staff notes and restricted history must remain hidden in API responses, counts, search, comparison and UI.
 - Existing customer IDs, records and relationships must be preserved.
 
-### Mandatory local alignment before release
+### Local policy alignment implemented — verification required
 
-The existing candidate is **not policy-complete**. Current editIdentity/resolve hard409 behavior prevents a deliberate distinct-person save with a shared identifier. Reps still receive contact financial aggregates and some lead/deal/task/email counts; these are not silently grandfathered into the adopted restricted-history policy.
+The owner authorized final local corrections after this plan was prepared. Shared identifier creation/correction now uses explicit owner/manager review, acknowledgment and reason, a signed three-minute actor/purpose/target/proposal/original/candidate-state grant, and a durable single-use UUID claim in the existing interactions primary key. All matches must fit a complete review of at most 20; overflow fails closed. Matching contacts and relationships are never reused, merged or modified by the decision. Identity correction retains the seven-field conditional update.
 
-Prepare a bounded application follow-up, then obtain independent QA/security and a new frozen commit:
+A protected NOTE with source contact-shared-review records the intent before mutation; contact_id stays NULL to avoid contact deletion cascades. Outcome finalization is checked. Failed intent prevents the save; failed or lost outcome returns uncertainty and blocks automatic UI retry. This is a recoverable write-ahead audit, not an atomic save-and-audit transaction. An uncertain operation must be reconciled by its operation ID before another attempt.
 
-1. Give owner/manager an explicit **keep separate / save shared identifier** decision after viewing permitted matches. Server validates the explicit decision and edit snapshot; it must never select another contact ID, modify the matching contact or transfer any child. Acknowledgment is not a merge approval or durable CONTACT-001B decision system. Ordinary collision remains a warning/review step, not a permanent unique-email/phone constraint. Test both creation and correction. Do not simply remove conflict checks or add an unconditional bypass flag.
-2. Restrict rep contact list/detail/comparison to an explicit basic-contact allowlist plus own attributed NOTE data. Omit total_orders,total_revenue,average_order_value,first_order_date,last_order_date and all restricted relationship/activity counts from rep responses. Return explicit restricted/unavailable states, not invented zeros. Do not query those histories for reps. Own-note predicates remain contact_id + NOTE + canonical actor_id + source=contact-note + version=1. Treat organization membership history as restricted for reps; owner/manager organization access remains. Assigned-contact count/pagination remains permitted and scoped.
-3. Preserve seven-original-field conditional edits, no existing-contact resolver reuse, disabled legacy merge/enrichment, order-link CAS and truthful failed-link UI. Verify deliberate shared saves do not bypass assignment/role checks. No new global identifier constraints or hosted schema changes.
-4. Parallel no-match creation currently can produce two distinct records. Shared identifiers are allowed, so matching values are not themselves proof of an error. Repeated request/retry duplication remains unresolved: require owner acceptance of the documented limit for this release or a separately approved narrow idempotency design before release. Never claim atomic deduplication across workers/providers. This preparation does not implement that design.
+Rep list/detail/candidates/comparison now use a basic-field allowlist and properly attributed own-note queries only. Financial/provenance/other-note/channel/relationship history is not queried or returned. Organization endpoints return explicit restricted/unavailable results without membership counts. Owner/manager business-history access remains. UI hides restricted sections instead of showing invented zeros. Both correction and manual creation preserve drafts through review/cancel and uncertain outcomes.
 
-No application change above was made by this planning task. Do not release8c76b75 under the adopted policies without closing these gates.
+See docs/CONTACT-001A-FINAL-POLICY-CORRECTIONS.md for exact files, final independent test evidence and remaining limits. The earlier 460-test checkpoint above is historical and superseded only by the final correction verification report.
+
+Residual limits still require release decisions: separate database statements cannot atomically fence candidate, role or assignment changes after the final check; ordinary no-match creation/retries lack general idempotency; distinct valid review grants intentionally can create separate contacts. The single-use claim prevents replay of one grant, not every repeated business request. Do not add global identifier uniqueness or silently reuse a contact. No new hosted schema object was introduced. Hosted acceptance and all subsequent release gates remain required.
 
 ## 2. Smallest deployment-trigger correction — approval A
 
@@ -176,7 +175,7 @@ No actual hosted cleanup SQL is prepared as a blanket DELETE script. Future appr
 
 ## 7. Owner approvals to request next
 
-1. Bounded local policy-alignment work and re-verification (not production release).
+1. Bounded local policy alignment was separately authorized and is complete locally: 498/498 tests, TypeScript, production build and independent scoped QA/security PASS. See the final-policy report; production release is still unauthorized.
 2. A: the single inactive-hook PATCH after native-master preservation is verified; B: subsequent feature-only push for independent review.
 3. Actual private hosted backup/restore work; D: precisely scoped synthetic Auth/fixture writes and cleanup, with provider isolation.
 4. C: exact forward SQL above, separately approved targeted rollback if needed; no other hosted SQL.
@@ -187,3 +186,7 @@ No production authorization is requested implicitly through a test PASS, a docum
 ## 8. Preparation review
 
 Independent security safety-plan review: PASS; this is not execution/release approval. Independent QA plan-coverage review: PASS with an actor/fixture clarification, incorporated above (RepA/RepB are actors; U is the unassigned contact). Neither reviewer ran hosted tests or made changes. Historical460-test results were verified against unchanged source, not rerun. Current release execution remains blocked until the ordered gates pass.
+
+## 9. Final local correction verification (2026-10-25)
+
+The earlier preparation-only wording describes the prior documentation task. The subsequent owner-authorized final corrections changed local application/tests/docs only. Final checks: 498/498 tests across 26 files (30.70s), TypeScript PASS, production build PASS (2,785 modules, 1m29s), independent source QA/security PASS. The lead executed final commands; QA independently reviewed source and results. No hosted fixtures, SQL, customer records, webhook/Vercel settings, push, merge or deployment were changed. Step0's local checks are complete; later release gates and risk decisions remain open. Details: docs/CONTACT-001A-FINAL-POLICY-CORRECTIONS.md.

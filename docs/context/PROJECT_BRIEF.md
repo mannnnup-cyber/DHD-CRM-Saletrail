@@ -79,3 +79,5 @@ reply delivery are separate release checks. WhatsApp remains unavailable and
 email collection still requires the owner's mailbox app-password repair.
 
 CONTACT-001A (2026-10-23, local implementation awaiting release review): permitted staff can review possible duplicate contacts and compare authorized identity/provenance/count summaries. Owners/managers retain contact correction with actionable conflict review. No merge, automatic identity overwrite, durable distinct decision or merge approval/execution is enabled. Hosted security-view repair is prepared only.
+
+CONTACT-001A adopted policy (2026-10-25, local review): shared email/phone does not establish the same person. Owners/managers can deliberately retain distinct records through explicit reviewed, reasoned, audited keep-separate creation/correction. Reps see assigned basic contact information and only their own server-attributed notes; financial/channel/organization histories remain restricted. No automatic identity selection, merge or transfer occurs.

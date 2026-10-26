@@ -473,3 +473,7 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 - Added role-matrix, concurrency, privacy and reliability regressions. Cross-worker duplicate creation remains a demonstrated residual risk.
 - Captured read-only hosted schema evidence and prepared a separate Free-tier backup/recovery/migration validation plan; no hosted changes.
 - Production Deploy Hook still prevents a verified safe push; no release or deployment authorized. Final evidence is in docs/CONTACT-001A-ARCHITECT-REVIEW-RESPONSE.md.
+
+2026-10-25 CONTACT-001A local policy correction: explicit signed shared-identifier review with durable existing-table audit claim/outcome, owner/manager New Contact dialog, stale-safe correction confirmation, strict rep basic/own-note API and UI projections. Local tests only; no hosted mutation or release.
+
+CONTACT-001A policy verification: root full suite498/498 (26 files), final type-check and production build PASS; independent QA/security PASS. See completed WP-CONTACT-001A-POLICY-CORRECTIONS. This evidence is local; no hosted or release action occurred.

@@ -8,6 +8,7 @@ export async function guardOrganizations(req:VercelRequest,res:VercelResponse):P
       if(req.method!=='GET')reject(405,'GET required.');
       const members=action==='getMembers',id=members?req.query.organizationId:req.query.contactId;
       await permittedContact(caller,id,'id');
+      if(!caller.manager){res.json({success:true,available:false,restricted:true,guidance:'Organization history is restricted for this role.'});return true;}
       const parent=members?'organization_id':'contact_id',foreign=members?'contact_id':'organization_id';
       const projection=`id,role,started_at,ended_at,is_primary,created_at,organization_id,contacts:contacts!${foreign}!inner(id,name,email,phone,company,contact_type,assigned_to)`;
       const base=()=>{let q=caller.admin.from('contact_organizations').select(projection).eq(parent,id);if(!caller.manager)q=q.eq('contacts.assigned_to',caller.id);if(members&&req.query.current!=='false')q=q.is('ended_at',null);return q;};
