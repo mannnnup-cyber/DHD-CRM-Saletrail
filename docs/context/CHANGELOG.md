@@ -458,3 +458,7 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 
 ## 2026-10-22 — Partial mailbox sync visibility
 - Failed imports now retain reported saved counts, refresh saved messages after partial saves, and show uncertain timeout/network results without claiming success or retrying automatically.
+
+2026-10-26 WhatsApp media local fix: shared sendFile/sendMedia executor is a hoisted async function declaration, resolving skipped switch-case const initialization. Eight actual-handler regressions reproduce the prior TDZ and pass after the declaration-only fix using mocked providers. Existing config, validation, provider payload and persistence semantics are preserved; no live send/deployment performed.
+
+WhatsApp media verification: independent QA/security source PASS, type-check PASS, build PASS (2,782 modules,1m39s). Initial full305/308 deadline failures resolved in exact three-file serial rerun14/14; all308 distinct tests covered passing across runs. No live-delivery or deployment claim.

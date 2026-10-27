@@ -294,3 +294,5 @@ disabled until reviewed live readback. No real label mutations exercised.
 WP-INBOX-USABILITY-EMAIL-REFRESH: implementation in review, independent QA/security pending. No hosted contact corrections or provider sync performed by implementation. Automatic mailbox scheduling remains a future packet; current collection is explicit manual import.
 
 WP-INBOX-PARTIAL-SYNC: in review; narrow UI correction for partial manual import failure counts and newest saved-message refresh. No backend/provider changes.
+
+WP-WHATSAPP-MEDIA-INITIALIZATION (2026-10-26): Done locally. Declaration-only TDZ fix8/8 focused actual-handler tests PASS; independent QA/security source, type and production build PASS. Initial full305/308 had three deadline failures; exact three-file serial rerun14/14 PASS, covering all308 distinct tests across runs. See completed packet; no single-clean-full-run claim. No provider send, hosted write, deployment or call-feature implementation.

@@ -223,3 +223,5 @@ filter and compact chips. New server-only activation flag
 `WHATSAPP_LABEL_WRITES_ENABLED` defaults false. No schema changes.
 
 Inbox usability: src/lib/contacts/edit-server.ts isolates authenticated owner/manager CRM identity corrections; api/contacts.ts dispatches editIdentity before legacy client guard. Sidebar persists desktop collapse; UnifiedInbox offers explicit AI-free mailbox sync and newest-page refresh. ContactProfile corrections include name/email/phone/company.
+
+WhatsApp media initialization regression: api/whatsapp.ts shared executeEvolutionSendMedia declaration is hoisted for both media aliases; tests/whatsapp-media.test.ts invokes the actual handler with synthetic settings/database/provider responses.
