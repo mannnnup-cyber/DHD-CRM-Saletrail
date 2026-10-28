@@ -1,0 +1,13 @@
+import {expect,it} from 'vitest';
+import fs from 'node:fs';import path from 'node:path';import {spawnSync} from 'node:child_process';import {pathToFileURL} from 'node:url';import ts from 'typescript';
+it('native emitted communications handlers reach their authentication guards without network access',()=>{
+ const scratch=path.resolve('work');fs.mkdirSync(scratch,{recursive:true});const temp=fs.mkdtempSync(path.join(scratch,'communications-runtime-'));
+ try{
+  fs.writeFileSync(path.join(temp,'package.json'),'{"type":"module"}');fs.symlinkSync(fs.realpathSync(path.resolve('node_modules')),path.join(temp,'node_modules'),process.platform==='win32'?'junction':'dir');
+  const sources=['api/whatsapp.ts','api/recordings.ts','src/lib/communications/access-server.ts',...fs.readdirSync(path.resolve('src/lib/whatsapp')).filter(name=>name.endsWith('.ts')&&!name.endsWith('.test.ts')).map(name=>'src/lib/whatsapp/'+name)];
+  for(const source of sources){const output=ts.transpileModule(fs.readFileSync(source,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;const destination=path.join(temp,source.replace(/\.ts$/,'.js'));fs.mkdirSync(path.dirname(destination),{recursive:true});fs.writeFileSync(destination,output);}
+  const script=`globalThis.fetch=()=>{throw new Error('Network forbidden')}; const results=[]; for(const [file,method,action] of [['whatsapp','GET','getAllCalls'],['recordings','POST','listRecordings']]){const {default:handler}=await import(${JSON.stringify(pathToFileURL(path.join(temp,'api')).href)}+'/'+file+'.js');const res={code:200,headers:{},setHeader(k,v){this.headers[k]=v},status(c){this.code=c;return this},json(payload){results.push({code:this.code,payload});return this}};await handler({method,query:{action},headers:{},body:{}},res);} console.log('RESULT:'+JSON.stringify(results));`;
+  const result=spawnSync(process.execPath,['--input-type=module','-e',script],{encoding:'utf8',timeout:30000,env:{...process.env,SUPABASE_PROJECT_URL:'https://synthetic.invalid',NEXT_PUBLIC_SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-anon',SUPABASE_SECRET_KEY:'synthetic-modern'}});
+  expect(result.status,result.stderr).toBe(0);const line=result.stdout.split('\n').find(line=>line.startsWith('RESULT:'));expect(JSON.parse(line!.slice(7))).toEqual([{code:401,payload:{success:false,error:'Authentication required.'}},{code:401,payload:{success:false,error:'Authentication required.'}}]);
+ }finally{if(path.dirname(path.resolve(temp))!==scratch)throw new Error('Unsafe scratch target');fs.rmSync(temp,{recursive:true,force:true});}
+},40000);

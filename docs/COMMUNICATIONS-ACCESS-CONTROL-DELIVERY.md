@@ -1,0 +1,50 @@
+# Communications access-control follow-up
+
+Started: 2026-10-26; resumed 2026-10-27 (America/Bogota). Local branch: fix/communications-access-control, based on media-fix commit 6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a. LOCAL BROWSER PACKET COMPLETE; production release remains blocked. Finalized 2026-10-28. No release approval implied.
+
+## Published media patch
+
+Owner requested push and continue. Existing media branch fix/whatsapp-media-initialization was pushed without history rewriting. Remote SHA verified as 6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a. GitHub webhook641005278 was read back inactive before push. No master push, merge or production deployment was requested/performed; native branch preview generation may occur. CONTACT-001A stays at its separate 3257ce3 commit.
+
+GitHub subsequently recorded deployment7349837164 for that media SHA as Preview; the Vercel commit status was success and pointed to deployment2T4aVLrSd8kujKakZUJivaGxSh1P. Remote master remained b3b55c82b31decba8a7bd66bdaa20b086a14d383. This proves branch publication/preview status, not production media delivery.
+
+## Bounded security scope
+
+This follow-up secures browser routes for WhatsApp messaging/media, call history, device administration/forward-command creation and recording/transcription management. Fresh authenticated identity and active owner/manager role are required; arbitrary body/header identities cannot authorize these operations. Reps are denied until a separately reviewed channel/device assignment contract exists. This does not change their permitted contact/own-note policy in CONTACT-001A.
+
+Browser callers must send the current user session, use correct methods, avoid privileged database clients, and fetch protected media as authenticated local blobs with cancellation and URL revocation. Arbitrary URL media proxying is disabled rather than exposing an SSRF surface; URL-only avatars/CDN fallback can be unavailable until a separate constrained proxy design is reviewed. Decrypted stored-message media remains the intended supported path. Private media must not enter public caches. No tokens in URLs or credential forwarding to third-party URLs.
+
+## Critical compatibility boundary and release blockers
+
+Read-only source inspection of the current DHD-CRM-Companion repository found no Authorization/Bearer/API-key headers in CommandWorker, RecordingUploadWorker and WhatsAppCallListener. They use getDeviceCommands/ackCommand/uploadRecording/addWhatsAppCall. Existing GSM ingestion is also a separate machine path. Applying browser JWT requirements blindly would interrupt deployed phones.
+
+For this bounded packet those narrowly named machine routes and no-action provider webhooks retain their protocol, with explicit method restrictions where compatible. **They remain unauthenticated/open and are not secured by browser endpoint gating.** Device phone numbers, x-user-email and user-agent strings are not credentials. No claim of full communications containment is permitted. A separately reviewed device enrollment/credential rollout and provider ingress verification must precede calling this production-secure. No credentials, device enrollment, hosted permissions, provider settings or Android release were changed here.
+
+Recording Storage object confidentiality and browser direct-Supabase pages also require separate verification. Protecting recording APIs alone does not establish that public Storage URLs are private. Call lifecycle replay/deduplication, phone/LID/contact mapping, duration/global statistics and missed-call workflow remain future work, not silently included in the auth correction.
+
+## Verification and exact changes
+
+Exact local implementation:
+
+- `src/lib/communications/access-server.ts`: explicit own-property action/method classification; fresh Supabase Auth identity and canonical active owner/manager role using the modern server secret; sanitized errors and private/no-store responses. Array/prototype/unknown actions fail closed. Authentication/data URL conflicts fail closed instead of authenticating against one project and reading another.
+- `api/whatsapp.ts`: browser gate before settings/provider/private data effects; POST for stateful connection/QR/status operations; forwarding actor comes from verified identity, not x-user-email. Existing label/unread handler remains separate. Explicit machine/public classifications preserve compatible methods. Provider raw connection response details and secret-prefix masking are removed. Arbitrary media URL mode and redirects to stored arbitrary URLs are disabled. Stored-message decode is authenticated, no-store and does not follow provider redirects. Active/unrecognized MIME is attachment/octet-stream with nosniff.
+- `api/recordings.ts`: browser list/transcript/process/transcribe actions require fresh owner/manager Auth before bounded JSON stream parsing and provider/database operations. Existing multipart machine upload remains separate/open. Configuration absence no longer causes unconditional client construction before request authorization.
+- `src/lib/communications/client.ts`, `CommunicationsAccess.tsx`, `ProtectedMedia.tsx`: same-origin API fetches attach only the current session and reject redirects; media elements/downloads use cancellable private blob requests with size checks and URL revocation. Actor/source changes clear stale media. Downloads cannot open active blobs as an inline application-origin page. No token-bearing URLs or browser privileged key is introduced.
+- WhatsApp, CallLogs, CompanionApp and Settings callers use authenticated requests and matching methods. Route wrappers prevent disallowed children from mounting side effects; Sidebar visibility matches those restrictions. RecordingSettings/CoachingDashboard receive the same UI role wrapper, but their existing direct-Supabase/storage internals are not certified by it. WhatsApp's direct database realtime subscription is removed and replaced with authenticated polling. Send failures no longer silently appear as successful sends; draft text is preserved without automatic resend. Sensitive message debug logging is removed.
+- Tests cover actual handlers, authentication/method/action negatives, positive owner/manager paths, server actor provenance, media MIME/URL/redirect behavior, recordings parsing order, machine/public classification, blob cancellation/cleanup and native ESM resolution. All transports are mocked; no calls, sends, uploads, transcription or hosted writes occur.
+
+Final frozen-source full suite: **439/439 tests, 24/24 files, 33.95s, PASS**. Independent QA executed the single clean complete run serially with min/max workers1, hookTimeout60000 and testTimeout15000. Coverage includes114 authorization/method/handler tests, eight media-send tests,14 ProtectedMedia DOM tests,12 WhatsApp UI tests and native emitted WhatsApp/recording entrypoint checks. Initial focused122/122 and later144/144 runs are preliminary evidence, superseded by the complete result. A prior run was intentionally interrupted for the final chat-switch correction and is not recorded as a test failure. Independent TypeScript check passed (tsc --noEmit, exit0). Final build recheck on 2026-10-28 passed: 2,785 modules, 54.24s, dist/index.html1,299.02kB / gzip345.33kB. The prior build process result was unavailable after interruption; system npm/Node attempts stalled before Vite and were stopped. The final check invoked the installed Vite CLI directly with bundled Node24.22.1, equivalent to the package build script (vite build), without dependency/source changes.
+
+Scoped independent source security review passed the browser guard, method/action/target checks, recording parse order, private media and forwarding attribution. This does not certify every legacy business field: the legacy send timeline can still use caller-supplied userId for attribution; that is a separate provenance limitation, not authorization to send as an unauthenticated user. No global audit-provenance claim is made.
+
+## Release and rollback limits
+
+Browser hardening is a bounded improvement, not complete closure of the communications security surface. Reps lose shared legacy call/inbox access rather than receiving an unverified assignment scheme; a future rep-specific channel design needs its own review. URL-only media/avatar fallback may now display unavailable. Polling replaces the old direct realtime path. These behavior changes require synthetic browser acceptance before production.
+
+Do not merge/deploy this packet as proof that devices, webhooks, recording storage or customer identities are secure. Credential enrollment must be coordinated with an Android update; no existing phone may be silently locked out or treated as authenticated merely by phone number. Provider verification and Storage confidentiality remain independently required. A code rollback would restore the previous missing browser authorization and SSRF risk; prefer a reviewed roll-forward or separately approved containment, not blind rollback. No database rollback applies because no schema/data changes were made.
+
+## Final disposition
+
+Independent QA full suite and source review: PASS. Final scoped security review including the chat-switch draft guard: PASS. No source/test edits followed READY2; finalization changed documents only. Git diff scope/check passed. GitNexus tooling remained unavailable/incomplete; manual critical-impact caller tracing was used. Existing deployment config, SQL/migrations, provider settings and CONTACT-001A were unchanged. No real call, message, file upload, transcription, hosted mutation, merge or production deployment occurred. This security branch remains local; the earlier isolated media branch was already published separately. Browser packet is complete, not a claim that all communication/device/recording security issues are resolved.
+
+Final private bundle scan: two available configured privileged values checked, zero matches; sb_secret prefix zero matches. No values printed. This is a bounded configured-secret sample, not proof about unavailable secrets.

@@ -77,3 +77,6 @@ eligible replies. Reps remain denied pending a verified assignment design.
 Provider history may be old and reply windows may have expired; live inbound and
 reply delivery are separate release checks. WhatsApp remains unavailable and
 email collection still requires the owner's mailbox app-password repair.
+
+
+Local communications security follow-up (2026-10-27, unreleased): shared WhatsApp/call/device and recording management require active owner/manager access; reps see explicit unavailable guidance until a channel-assignment policy is verified. Owner/manager stored-message media loads with session headers; arbitrary URL-only media/avatars can be unavailable. No automatic channel permission expansion, real send, call or hosted change.

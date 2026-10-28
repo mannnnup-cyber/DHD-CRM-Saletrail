@@ -296,3 +296,8 @@ WP-INBOX-USABILITY-EMAIL-REFRESH: implementation in review, independent QA/secur
 WP-INBOX-PARTIAL-SYNC: in review; narrow UI correction for partial manual import failure counts and newest saved-message refresh. No backend/provider changes.
 
 WP-WHATSAPP-MEDIA-INITIALIZATION (2026-10-26): Done locally. Declaration-only TDZ fix8/8 focused actual-handler tests PASS; independent QA/security source, type and production build PASS. Initial full305/308 had three deadline failures; exact three-file serial rerun14/14 PASS, covering all308 distinct tests across runs. See completed packet; no single-clean-full-run claim. No provider send, hosted write, deployment or call-feature implementation.
+
+
+WP-COMMUNICATIONS-ACCESS-CONTROL: In Review locally on separate fix/communications-access-control branch, based on pushed media patch6d1ac1e. Browser guards/callers/media completed; focused144 tests and later12 WhatsApp UI tests PASS; independent final full/type/build in progress. Explicit machine/webhook/Storage legacy exposures remain OPEN. CONTACT-001A unchanged; no production release.
+
+WP-COMMUNICATIONS-ACCESS-CONTROL finalized locally2026-10-28:439/439 tests, typecheck, build and independent scoped QA/security PASS. Completed packet and delivery report retain OPEN machine/webhook/Storage and hosted-acceptance blockers. No production release or hosted change.

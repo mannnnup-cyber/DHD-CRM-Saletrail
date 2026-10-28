@@ -1,3 +1,5 @@
+import CommunicationsAccess from '../components/CommunicationsAccess';
+import {communicationsFetch} from '../lib/communications/client';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed,
@@ -175,7 +177,7 @@ const CallLogs: React.FC = () => {
         ...(repFilter  !== 'all'  ? { rep:  repFilter  } : {}),
         ...(dateFilter !== 'all'  ? { date: dateFilter } : {}),
       });
-      const res  = await fetch(`/api/whatsapp?${params}`);
+      const res  = await communicationsFetch(`/api/whatsapp?${params}`);
       const data = await res.json();
       if (data.success) {
         setGsmCalls(prev => reset ? (data.calls || []) : [...prev, ...(data.calls || [])]);
@@ -194,7 +196,7 @@ const CallLogs: React.FC = () => {
   // Load unique reps for filter dropdown
   const loadReps = useCallback(async () => {
     try {
-      const res  = await fetch('/api/whatsapp?action=getDevices');
+      const res  = await communicationsFetch('/api/whatsapp?action=getDevices');
       const data = await res.json();
       if (data.success) {
         setReps((data.devices || []).map((d: any) => ({
@@ -210,7 +212,7 @@ const CallLogs: React.FC = () => {
   const loadWACalls = useCallback(async () => {
     setWaLoading(true);
     try {
-      const res  = await fetch('/api/whatsapp?action=getAllCalls&limit=200');
+      const res  = await communicationsFetch('/api/whatsapp?action=getAllCalls&limit=200');
       const data = await res.json();
       if (data.success) setWaCalls(data.calls || []);
     } catch {}
@@ -756,4 +758,4 @@ const CallLogs: React.FC = () => {
   );
 };
 
-export default CallLogs;
+export default function CallLogsAccess(){return <CommunicationsAccess><CallLogs/></CommunicationsAccess>;}

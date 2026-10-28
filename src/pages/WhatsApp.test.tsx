@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../context/AppContext', () => ({ useApp: () => ({ state: { user: { id: 'owner-1', name: 'Owner', role: 'owner' } }, addCall: vi.fn() }) }));
 vi.mock('../lib/supabase', () => ({ supabase: {} }));
-vi.mock('../lib/auth', () => ({ authHeaders: () => ({ Authorization: 'Bearer synthetic' }) }));
+vi.mock('../lib/auth', () => ({ getAccessToken:()=> 'synthetic', authHeaders: () => ({ Authorization: 'Bearer synthetic' }) }));
 import WhatsApp from './WhatsApp';
 let root: Root; let container: HTMLDivElement; let unavailable = false;
 const chat = { id: '18760000000@s.whatsapp.net', name: 'Synthetic customer', lastMessage: 'Synthetic incoming', timestamp: '2026-10-21T12:00:00Z', unread: 0 };
@@ -33,6 +33,19 @@ beforeEach(async () => {
 });
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('WhatsApp label and unread UI',()=>{
+  it.each(['same','switched'])('unconfirmed send preserves only the %s chat draft',async mode=>{
+    sourceChats=[chat,{...chat,id:'18760000001@s.whatsapp.net',name:'Second conversation'}];
+    const refresh=Array.from(container.querySelectorAll('button')).find(b=>b.title==='Refresh from database + pull latest from Evolution API')!;
+    await act(async()=>refresh.click());await flush();
+    const first=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Synthetic customer'))!;await act(async()=>first.click());await flush();
+    let resolve:any;const baseline=vi.mocked(fetch).getMockImplementation()!;vi.mocked(fetch).mockImplementation((url:any,options:any)=>String(url).includes('action=send')?new Promise(r=>{resolve=r;}):baseline(url,options));
+    const input=container.querySelector('textarea')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(input,'Draft from first chat');input.dispatchEvent(new Event('input',{bubbles:true}));});
+    await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await flush();expect(resolve).toBeTypeOf('function');
+    if(mode==='switched'){const second=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Second conversation'))!;await act(async()=>second.click());await flush();}
+    resolve({ok:false,json:async()=>({success:false,error:'Synthetic denial'})});await flush();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(mode==='same'?'Draft from first chat':'');
+    if(mode==='same')expect(container.textContent).toContain('Message was not confirmed');else expect(container.textContent).not.toContain('Draft from first chat');
+  });
   it('keeps one phone label menu, preserves duplicate names and shows read-only limitation',async()=>{
     const button=Array.from(container.querySelectorAll('button')).find(b=>b.textContent===' Phone labels') || Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'));
     expect(button).toBeTruthy();await act(async()=>button!.click());await flush();

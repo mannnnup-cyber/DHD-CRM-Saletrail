@@ -1,3 +1,4 @@
+import CommunicationsAccess from '../components/CommunicationsAccess';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { formatDistanceToNow } from 'date-fns';
@@ -20,7 +21,7 @@ interface Call {
   };
 }
 
-export default function CoachingDashboard() {
+function CoachingDashboard() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'positive' | 'negative'>('all');
@@ -367,3 +368,5 @@ export default function CoachingDashboard() {
     </div>
   );
 }
+
+export default function CoachingDashboardAccess(){return <CommunicationsAccess><CoachingDashboard/></CommunicationsAccess>;}

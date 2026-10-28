@@ -11,14 +11,15 @@
 
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import {communicationsOwner,communicationsFailure} from '../src/lib/communications/access-server.js';
 import formidable from 'formidable';
 import fs from 'fs';
 import path from 'path';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const databaseUrl=process.env.SUPABASE_PROJECT_URL||process.env.SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_URL;
+const databaseKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Keep the existing machine upload protocol; browser actions independently require the modern secret.
+const supabase:any=databaseUrl&&databaseKey?createClient(databaseUrl,databaseKey):null;
 
 // Disable default Next.js body parser for file uploads
 export const config = {
@@ -86,6 +87,15 @@ async function shouldSkipRecording(
     console.error('[recordings] Error checking settings:', err);
     return false; // Record by default on error
   }
+}
+
+async function recordingBrowserBody(req:VercelRequest){
+  if(!/^application\/json(?:;|$)/i.test(String(req.headers['content-type']||'')))throw new Error('JSON required.');
+  let body=req.body;
+  if(body===undefined){const chunks:Buffer[]=[];let size=0;for await(const chunk of req){const value=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=value.length;if(size>16384)throw new Error('Recording request too large.');chunks.push(value);}body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}
+  if(typeof body==='string')body=JSON.parse(body);
+  if(!body||typeof body!=='object'||Array.isArray(body)||JSON.stringify(body).length>16384)throw new Error('Invalid recording request.');
+  req.body=body;
 }
 
 /**
@@ -375,7 +385,13 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const action = req.query.action as string;
+  const action = req.query.action;
+  if(typeof action!=='string'||!['uploadRecording','listRecordings','getTranscript','processTranscriptions','transcribe'].includes(action))return res.status(400).json({success:false,error:'Unknown recording action.'});
+  if(action!=='uploadRecording'){
+    try{await communicationsOwner(req,res);}catch(error){return communicationsFailure(res,error);}
+    try{await recordingBrowserBody(req);}catch{return res.status(400).json({success:false,error:'Provide a bounded JSON recording request.'});}
+  }
+  if(!supabase)return res.status(503).json({success:false,error:'Recording storage is unavailable.'});
 
   try {
     switch (action) {

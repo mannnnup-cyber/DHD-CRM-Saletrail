@@ -1,7 +1,10 @@
+import {ProtectedImage,ProtectedAudio,ProtectedVideo,ProtectedDownload} from '../components/ProtectedMedia';
+import CommunicationsAccess from '../components/CommunicationsAccess';
+import {communicationsFetch} from '../lib/communications/client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive, CornerUpLeft, Info, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { supabase } from '../lib/supabase';
+
 import { authHeaders } from '../lib/auth';
 import { unreadBadge, selectUnreadChats, validChatId } from '../lib/whatsapp/inbox';
 import {usePhoneLabels} from '../lib/whatsapp/use-phone-labels';
@@ -119,7 +122,7 @@ const MediaImage = ({ src, onClick }: { src: string; onClick?: () => void }) => 
           <span className="text-xs">Photo unavailable</span>
         </div>
       )}
-      <img
+      <ProtectedImage
         src={src}
         alt="Photo"
         className={`max-w-full rounded-lg ${status === 'ok' ? 'block' : 'hidden'}`}
@@ -175,7 +178,7 @@ interface DBTestResult {
   error?: string;
 }
 
-export default function WhatsApp() {
+function WhatsApp() {
   const { state, addCall } = useApp();
   const [activeTab, setActiveTab] = useState<'inbox' | 'calls' | 'stats' | 'setup'>('inbox');
   const [chatFilter, setChatFilter] = useState<'all' | 'individual' | 'groups'>('all');
@@ -215,7 +218,7 @@ export default function WhatsApp() {
       return;
     }
     try {
-      const response = await fetch('/api/whatsapp?action=inboxUnread', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatIds: selection.ids }) });
+      const response = await communicationsFetch('/api/whatsapp?action=inboxUnread', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatIds: selection.ids }) });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error || 'CRM unread tracking is unavailable.');
       if (sequence !== unreadLoadSequence.current) return;
@@ -235,6 +238,7 @@ export default function WhatsApp() {
   const [calls, setCalls] = useState<any[]>([]);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError,setSendError]=useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showTemplates, setShowTemplates] = useState(false);
   const [assignDropdown, setAssignDropdown] = useState(false);
@@ -344,7 +348,7 @@ export default function WhatsApp() {
   // Check connection status via backend API
   const checkStatus = useCallback(async () => {
     try {
-      const r = await fetch('/api/whatsapp?action=status');
+      const r = await communicationsFetch('/api/whatsapp?action=status');
       const data = await r.json();
       if (data.success) {
         // null = unknown state (e.g. fresh DB wipe, can't reach Evolution API)
@@ -363,7 +367,7 @@ export default function WhatsApp() {
   // Check webhook status - call backend API which has access to env vars
   const checkWebhookStatus = useCallback(async () => {
     try {
-      const r = await fetch('/api/whatsapp?action=webhookInfo');
+      const r = await communicationsFetch('/api/whatsapp?action=webhookInfo');
       const data = await r.json();
       if (data.success) {
         setWebhookStatus({
@@ -382,7 +386,7 @@ export default function WhatsApp() {
   // Load current Evolution API config (URL + key) from backend
   const loadEvolutionConfig = useCallback(async () => {
     try {
-      const r = await fetch('/api/whatsapp?action=getEvolutionConfig');
+      const r = await communicationsFetch('/api/whatsapp?action=getEvolutionConfig');
       const data = await r.json();
       if (data.success) {
         setEvolutionApiUrl(data.apiUrl || '');
@@ -398,7 +402,7 @@ export default function WhatsApp() {
     setSavingEvolutionConfig(true);
     setEvolutionConfigResult(null);
     try {
-      const res = await fetch('/api/whatsapp?action=saveEvolutionConfig', {
+      const res = await communicationsFetch('/api/whatsapp?action=saveEvolutionConfig', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -427,12 +431,12 @@ export default function WhatsApp() {
       // Use syncHistory if enabled to get full chat history with last messages
       const action = messageHistoryEnabled ? 'syncHistory' : 'chats';
       // Prefer DB-backed chats endpoint
-      const r = await fetch(`/api/whatsapp?action=chatsFromDb`);
+      const r = await communicationsFetch(`/api/whatsapp?action=chatsFromDb`);
       let data = await r.json();
 
       // Fallback to provider if DB not available or empty
       if (!data?.success || !data?.chats || data.chats.length === 0) {
-        const rp = await fetch(`/api/whatsapp?action=${action}`);
+        const rp = await communicationsFetch(`/api/whatsapp?action=${action}`);
         data = await rp.json();
       }
 
@@ -513,12 +517,11 @@ export default function WhatsApp() {
   }, [messageHistoryEnabled, refreshUnread]);
 
   // Load messages for a chat via backend API
-  const loadMessages = useCallback(async (chatId: string) => {
+  const loadMessages = useCallback(async (chatId: string, fresh=false) => {
     const sequence = ++messageLoadSequence.current;
-    setLoading(true);
-    setMessagesChatId(null);
+    if(!fresh){setLoading(true);setMessagesChatId(null);}
     try {
-      if (chatMessagesCache.current[chatId]) {
+      if (!fresh && chatMessagesCache.current[chatId]) {
         setMessages(chatMessagesCache.current[chatId]);
         setMessagesChatId(chatId);
         lastMessageCountRef.current = chatMessagesCache.current[chatId].length;
@@ -527,7 +530,7 @@ export default function WhatsApp() {
         return;
       }
 
-      const r = await fetch(`/api/whatsapp?action=messages&chatId=${encodeURIComponent(chatId)}`);
+      const r = await communicationsFetch(`/api/whatsapp?action=messages&chatId=${encodeURIComponent(chatId)}`);
       const data = await r.json();
 
       if (sequence !== messageLoadSequence.current || selectedChatRef.current?.id !== chatId) return;
@@ -563,7 +566,7 @@ export default function WhatsApp() {
     // Also load calls for this chat
     const loadCallsForChat = async () => {
       try {
-        const callRes = await fetch(`/api/whatsapp?action=getCalls&chatId=${encodeURIComponent(chatId)}&limit=20`);
+        const callRes = await communicationsFetch(`/api/whatsapp?action=getCalls&chatId=${encodeURIComponent(chatId)}&limit=20`);
         const callData = await callRes.json();
         if (callData.success && callData.calls) {
           setCalls(callData.calls);
@@ -587,7 +590,7 @@ export default function WhatsApp() {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch('/api/whatsapp?action=inboxSeen', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId, messageIds: ids }) });
+        const response = await communicationsFetch('/api/whatsapp?action=inboxSeen', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId, messageIds: ids }) });
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.error || 'Could not save CRM read state.');
         if (!cancelled) void refreshUnread(chats.map(chat => chat.id));
@@ -605,7 +608,7 @@ export default function WhatsApp() {
     setSyncing2(true);
     setSyncResult(null);
     try {
-      const r = await fetch('/api/whatsapp?action=syncEvolutionMessages', {
+      const r = await communicationsFetch('/api/whatsapp?action=syncEvolutionMessages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 30 }) // sync top 30 most recent chats
@@ -645,7 +648,7 @@ export default function WhatsApp() {
   // Load all calls from all chats
   const loadAllCalls = useCallback(async () => {
     try {
-      const res = await fetch('/api/whatsapp?action=getAllCalls&limit=500');
+      const res = await communicationsFetch('/api/whatsapp?action=getAllCalls&limit=500');
       const data = await res.json();
       if (data.success && data.calls) {
         setAllCalls(data.calls);
@@ -661,7 +664,7 @@ export default function WhatsApp() {
     setWebhookConfigResult(null);
     try {
       const webhookUrl = `${window.location.origin}/api/whatsapp`;
-      const res = await fetch('/api/whatsapp?action=setWebhook', {
+      const res = await communicationsFetch('/api/whatsapp?action=setWebhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ webhookUrl })
@@ -672,7 +675,7 @@ export default function WhatsApp() {
         // Update webhookStatus so gap banner disappears
         setWebhookStatus(prev => ({ ...prev, configured: true, url: webhookUrl, lastMessageAt: new Date().toISOString() }));
         // Trigger a sync to pull any messages missed while webhook was down
-        fetch('/api/whatsapp?action=syncEvolutionMessages', {
+        communicationsFetch('/api/whatsapp?action=syncEvolutionMessages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 200 })
@@ -693,7 +696,7 @@ export default function WhatsApp() {
     setLoadingMoreHistory(true);
     setMoreHistoryResult(null);
     try {
-      const r = await fetch('/api/whatsapp?action=syncEvolutionMessages', {
+      const r = await communicationsFetch('/api/whatsapp?action=syncEvolutionMessages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId, limit: 500 })
@@ -735,7 +738,9 @@ export default function WhatsApp() {
   const sendMessage = async () => {
     if (!replyText.trim() || !selectedChat) return;
     setSending(true);
+    setSendError('');
     const text = replyText;
+    const requestChatId=selectedChat.id;
     const quotedMsg = replyingTo;
     setReplyText('');
     setReplyingTo(null);
@@ -745,14 +750,14 @@ export default function WhatsApp() {
       text,
       timestamp: Math.floor(Date.now() / 1000),
       fromMe: true,
-      status: 'sent',
+      status: 'unknown',
       type: 'text',
       ...(quotedMsg ? { quotedText: quotedMsg.text || '[media]', quotedAuthor: quotedMsg.fromMe ? 'You' : selectedChat.name } : {})
     } as any;
     setMessages(prev => [...prev, newMsg]);
 
     try {
-      const r = await fetch('/api/whatsapp?action=send', {
+      const r = await communicationsFetch('/api/whatsapp?action=send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -765,8 +770,9 @@ export default function WhatsApp() {
       });
       const data = await r.json();
 
-      if (data.success) {
-        setMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, status: 'delivered' } : m));
+      if(selectedChatRef.current?.id!==requestChatId){setSending(false);return;}
+      if (r.ok && data.success) {
+        setMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, status: 'sent' } : m));
 
         // Update chat's last message in the list
         setChats(prev => prev.map(c =>
@@ -787,9 +793,13 @@ export default function WhatsApp() {
           source: 'WhatsApp',
           outcome: 'Message Sent'
         } as any);
-      }
+      }else throw new Error('Message was not confirmed.');
     } catch {
-      // Message still shows locally
+      if(selectedChatRef.current?.id===requestChatId){
+        setMessages(prev=>prev.filter(m=>m.id!==newMsg.id));
+        setReplyText(current=>current||text);
+        setSendError('Message was not confirmed. Your draft is preserved; check delivery before retrying.');
+      }
     }
     setSending(false);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -797,49 +807,37 @@ export default function WhatsApp() {
 
   // Send new message to a new contact
   const sendNewMessage = async () => {
-    console.log('[sendNewMessage] START - phone:', newMessagePhone, 'text:', newMessageText);
 
     if (!newMessagePhone.trim() || !newMessageText.trim()) {
-      console.log('[sendNewMessage] VALIDATION FAILED - phone empty or text empty');
       return;
     }
 
-    console.log('[sendNewMessage] Validation passed, formatting phone...');
 
     // Format phone number — strip non-digits, add Jamaica country code if needed
     let phone = newMessagePhone.replace(/\D/g, '');
-    console.log('[sendNewMessage] After strip non-digits:', phone);
 
     // Jamaica numbers are 10 digits starting with 876 — prepend country code 1
     if (phone.length === 10 && phone.startsWith('876')) {
       phone = `1${phone}`;
-      console.log('[sendNewMessage] Applied 10-digit rule:', phone);
     }
     // 7-digit local number — prepend 1876
     if (phone.length === 7) {
       phone = `1876${phone}`;
-      console.log('[sendNewMessage] Applied 7-digit rule:', phone);
     }
     phone = `${phone}@c.us`;
-    console.log('[sendNewMessage] Final formatted phone:', phone);
 
     setSendingNew(true);
-    console.log('[sendNewMessage] Set sending state to true');
 
     try {
-      console.log('[sendNewMessage] About to fetch /api/whatsapp?action=send');
-      const r = await fetch('/api/whatsapp?action=send', {
+      const r = await communicationsFetch('/api/whatsapp?action=send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: phone, message: newMessageText })
       });
-      console.log('[sendNewMessage] Fetch completed, status:', r.status);
 
       const data = await r.json();
-      console.log('[sendNewMessage] Response data:', data);
 
       if (data.success) {
-        console.log('[sendNewMessage] SUCCESS - closing dialog and refreshing chats');
         setShowNewMessage(false);
         setNewMessagePhone('');
         setNewMessageText('');
@@ -859,7 +857,6 @@ export default function WhatsApp() {
           outcome: 'Message Sent'
         } as any);
       } else {
-        console.log('[sendNewMessage] FAILURE - data.error:', data.error);
         alert('Failed to send message: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
@@ -867,13 +864,13 @@ export default function WhatsApp() {
       alert('Failed to send message: ' + String(error));
     }
     setSendingNew(false);
-    console.log('[sendNewMessage] END - set sending state to false');
   };
+
 
   // Persist chat status change to DB so it survives refresh
   const updateChatStatus = async (chatId: string, status: 'active' | 'resolved' | 'pending', assignedTo?: string, assignedToUserId?: string) => {
     try {
-      await fetch('/api/whatsapp?action=updateChatStatus', {
+      await communicationsFetch('/api/whatsapp?action=updateChatStatus', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId, status, assignedTo, assignedToUserId })
@@ -921,93 +918,8 @@ export default function WhatsApp() {
     selectedChatRef.current = selectedChat;
   }, [selectedChat]);
 
-  // Supabase real-time subscription — receive new messages instantly without polling
-  useEffect(() => {
-    if (!supabase || typeof (supabase as any).channel !== 'function') return;
-
-    const channel = (supabase as any)
-      .channel('whatsapp-live')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages' }, (payload: any) => {
-        const msg = payload.new;
-        if (!msg) return;
-
-        const ts = msg.created_at ? new Date(msg.created_at) : new Date();
-        const rawTs = Math.floor(ts.getTime() / 1000);
-        const formattedMsg: Message = {
-          id: msg.provider_message_id || msg.id,
-          text: msg.body || '',
-          timestamp: String(rawTs),
-          fromMe: msg.direction === 'outbound',
-          status: 'unknown',
-          storageId: msg.provider === 'evolution' ? msg.id : undefined,
-          type: msg.message_type || msg.type || 'text',
-          mediaUrl: msg.media_url || undefined
-        };
-
-        const isOpenChat = selectedChatRef.current?.id === msg.chat_id;
-
-        // Append to visible conversation
-        // - Skip if same provider_message_id already exists (exact dup)
-        // - Replace optimistic message (Date.now() id) if body+direction match
-        if (isOpenChat) {
-          setMessages(prev => {
-            if (prev.some(m => m.id === formattedMsg.id)) return prev;
-            // Replace matching optimistic message (sent from this session)
-            const optimisticIdx = formattedMsg.fromMe
-              ? prev.findIndex(m => m.text === formattedMsg.text && m.fromMe && m.status === 'sent')
-              : -1;
-            if (optimisticIdx !== -1) {
-              const next = [...prev];
-              next[optimisticIdx] = formattedMsg;
-              return next;
-            }
-            return [...prev, formattedMsg];
-          });
-          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-        }
-
-        // Browser notification for inbound messages in background chats
-        if (!isOpenChat && msg.direction === 'inbound' && 'Notification' in window && Notification.permission === 'granted') {
-          const senderName = msg.sender_name || (msg.chat_id || '').replace('@c.us', '');
-          new Notification(`WhatsApp: ${senderName}`, {
-            body: (msg.body || '').slice(0, 100) || 'New message',
-            icon: '/favicon.ico',
-            tag: msg.chat_id
-          });
-        }
-
-        // Update (or create) chat entry in the sidebar list, move it to top
-        setChats(prev => {
-          const existing = prev.find(c => c.id === msg.chat_id);
-          const rawSnippet = (msg.body || '').slice(0, 80);
-          const snippet = friendlyLastMessage(rawSnippet);
-          const updatedChat: Chat = existing
-            ? {
-                ...existing,
-                lastMessage: snippet,
-                timestamp: formatChatTimestamp(rawTs),
-                rawTimestamp: rawTs,
-                unreadKnown: false
-              }
-            : {
-                id: msg.chat_id,
-                name: msg.sender_name || (msg.chat_id || '').replace('@c.us', '').replace('@s.whatsapp.net', ''),
-                lastMessage: snippet,
-                timestamp: formatChatTimestamp(rawTs),
-                rawTimestamp: rawTs,
-                unread: 0, unreadKnown: false,
-                assignedTo: 'Unassigned',
-                phone: (msg.chat_id || '').replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', ''),
-                status: 'active'
-              };
-          return [updatedChat, ...prev.filter(c => c.id !== msg.chat_id)];
-        });
-      })
-      .subscribe();
-
-    return () => { (supabase as any).removeChannel(channel); };
-  }, []); // subscribe once on mount
-
+  // Private message updates use the same authenticated API as initial history.
+  useEffect(()=>{const timer=setInterval(()=>{const chatId=selectedChatRef.current?.id;if(chatId&&document.visibilityState==='visible')void loadMessages(chatId,true);},15000);return()=>clearInterval(timer);},[loadMessages]);
   // Initial load
   useEffect(() => {
     checkStatus();
@@ -1016,7 +928,7 @@ export default function WhatsApp() {
     loadEvolutionConfig();
     // Silently sync contact names from Evolution API once on mount
     // so @lid JIDs resolve to real names on next chat load
-    fetch('/api/whatsapp?action=syncContactNames', { method: 'POST',
+    communicationsFetch('/api/whatsapp?action=syncContactNames', { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: '{}' })
       .catch(() => {}); // fire-and-forget, non-blocking
   }, [checkStatus, checkWebhookStatus, loadChats, loadEvolutionConfig]);
@@ -1068,7 +980,7 @@ export default function WhatsApp() {
     if (fetchingAvatars.current.has(chatId)) return;
     fetchingAvatars.current.add(chatId);
     try {
-      const r = await fetch(`/api/whatsapp?action=avatar&chatId=${encodeURIComponent(chatId)}`);
+      const r = await communicationsFetch(`/api/whatsapp?action=avatar&chatId=${encodeURIComponent(chatId)}`);
       const data = await r.json();
       if (data.available && data.url) {
         setAvatars(prev => ({ ...prev, [chatId]: data.url }));
@@ -1097,7 +1009,7 @@ export default function WhatsApp() {
     if (q.length < 2) { setMsgSearchResults([]); return; }
     setSearchingMsgs(true);
     try {
-      const r = await fetch(`/api/whatsapp?action=searchMessages&q=${encodeURIComponent(q)}`);
+      const r = await communicationsFetch(`/api/whatsapp?action=searchMessages&q=${encodeURIComponent(q)}`);
       const data = await r.json();
       if (data.success) setMsgSearchResults(data.results || []);
     } catch {}
@@ -1114,7 +1026,7 @@ export default function WhatsApp() {
     if (q.length < 2) { setUnifiedSearchResults([]); return; }
     setUnifiedSearching(true);
     try {
-      const r = await fetch(`/api/whatsapp?action=searchUnified&q=${encodeURIComponent(q)}&limit=30`);
+      const r = await communicationsFetch(`/api/whatsapp?action=searchUnified&q=${encodeURIComponent(q)}&limit=30`);
       const data = await r.json();
       if (data.success) {
         setUnifiedSearchResults(data.results || []);
@@ -1176,7 +1088,7 @@ export default function WhatsApp() {
     setBulkActionInProgress(true);
 
     try {
-      const res = await fetch('/api/whatsapp?action=bulkUpdateChats', {
+      const res = await communicationsFetch('/api/whatsapp?action=bulkUpdateChats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1258,7 +1170,7 @@ export default function WhatsApp() {
     if (!forwardMsg) return;
     setForwardingTo(targetChatId);
     try {
-      await fetch('/api/whatsapp?action=send', {
+      await communicationsFetch('/api/whatsapp?action=send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: targetChatId, message: forwardMsg.text || '' })
@@ -1274,7 +1186,7 @@ export default function WhatsApp() {
     setEmojiPickerMsgId(null);
     setMsgReactions(prev => ({ ...prev, [msgId]: emoji }));
     try {
-      await fetch('/api/whatsapp?action=sendReaction', {
+      await communicationsFetch('/api/whatsapp?action=sendReaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: selectedChat.id, messageId: msgId, fromMe, reaction: emoji })
@@ -1295,7 +1207,7 @@ export default function WhatsApp() {
       reader.readAsDataURL(attachFile);
       reader.onload = async () => {
         const base64 = (reader.result as string).split(',')[1];
-        const r = await fetch('/api/whatsapp?action=sendFile', {
+        const r = await communicationsFetch('/api/whatsapp?action=sendFile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1878,7 +1790,7 @@ export default function WhatsApp() {
                       )}
                       <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm">
                         {avatars[chat.id]
-                          ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[chat.id])}`} alt="" className="w-full h-full object-cover" />
+                          ? <ProtectedImage src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[chat.id])}`} alt="" className="w-full h-full object-cover" />
                           : chat.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1945,7 +1857,7 @@ export default function WhatsApp() {
                   <button className="flex items-center gap-3 hover:bg-gray-700/30 rounded-lg px-2 py-1 -ml-2 transition-colors" onClick={() => setShowContactInfo(v => !v)} title="View contact info">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold flex-shrink-0">
                       {avatars[selectedChat.id]
-                        ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[selectedChat.id])}`} alt="" className="w-full h-full object-cover" />
+                        ? <ProtectedImage src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[selectedChat.id])}`} alt="" className="w-full h-full object-cover" />
                         : selectedChat.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="text-left">
@@ -2099,7 +2011,7 @@ export default function WhatsApp() {
                                     <span className="text-2xl">▶</span>
                                   </div>
                                 ) : (
-                                  <img src={proxyUrl} alt="" className="w-full h-full object-cover" />
+                                  <ProtectedImage src={proxyUrl} alt="" className="w-full h-full object-cover" />
                                 )}
                               </button>
                             );
@@ -2207,14 +2119,14 @@ export default function WhatsApp() {
                                 {isAudio && (
                                   <div className="flex items-center gap-2 mb-1">
                                     <Volume2 className="w-4 h-4 flex-shrink-0 opacity-70" />
-                                    <audio controls className="w-48 h-8" src={proxyUrl} />
+                                    <ProtectedAudio controls className="w-48 h-8" src={proxyUrl} />
                                   </div>
                                 )}
                                 {isVideo && (
-                                  <video controls className="max-w-full rounded-lg mb-1 max-h-48" src={proxyUrl} />
+                                  <ProtectedVideo controls className="max-w-full rounded-lg mb-1 max-h-48" src={proxyUrl} />
                                 )}
                                 {isDoc && (
-                                  <a
+                                  <ProtectedDownload
                                     href={proxyUrl}
                                     download
                                     target="_blank"
@@ -2223,7 +2135,7 @@ export default function WhatsApp() {
                                   >
                                     <FileText className="w-4 h-4" />
                                     Download document
-                                  </a>
+                                  </ProtectedDownload>
                                 )}
                               </>
                             );
@@ -2407,6 +2319,7 @@ export default function WhatsApp() {
                       {sending ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                     </button>
                   </div>
+                  {sendError&&<p role="alert" className="text-sm text-red-300 mt-2">{sendError}</p>}
                 </div>
               </>
             ) : (
@@ -2945,7 +2858,7 @@ export default function WhatsApp() {
             {/* Contact Avatar */}
             <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-3xl mx-auto mb-6">
               {avatars[callingChatId]
-                ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[callingChatId])}`} alt="" className="w-full h-full object-cover" />
+                ? <ProtectedImage src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[callingChatId])}`} alt="" className="w-full h-full object-cover" />
                 : selectedChat?.name.charAt(0).toUpperCase()}
             </div>
 
@@ -3037,7 +2950,7 @@ export default function WhatsApp() {
             <div className="p-5 flex flex-col items-center gap-4 border-b border-gray-800">
               <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-2xl flex-shrink-0">
                 {avatars[selectedChat.id]
-                  ? <img src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[selectedChat.id])}`} alt="" className="w-full h-full object-cover" />
+                  ? <ProtectedImage src={`/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(avatars[selectedChat.id])}`} alt="" className="w-full h-full object-cover" />
                   : selectedChat.name.charAt(0).toUpperCase()}
               </div>
               <div className="text-center">
@@ -3099,12 +3012,14 @@ export default function WhatsApp() {
           <button className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full bg-black/40" onClick={() => setLightboxUrl(null)}>
             <X className="w-6 h-6" />
           </button>
-          <img src={lightboxUrl} alt="Media" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
-          <a href={lightboxUrl} download className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium" onClick={e => e.stopPropagation()}>
+          <ProtectedImage src={lightboxUrl} alt="Media" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
+          <ProtectedDownload href={lightboxUrl} download className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium" onClick={e => e.stopPropagation()}>
             <Download className="w-4 h-4" /> Download
-          </a>
+          </ProtectedDownload>
         </div>
       )}
     </div>
   );
 }
+
+export default function WhatsAppAccess(){return <CommunicationsAccess><WhatsApp/></CommunicationsAccess>;}

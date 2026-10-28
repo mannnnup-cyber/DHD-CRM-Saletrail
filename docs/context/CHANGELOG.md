@@ -462,3 +462,8 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 2026-10-26 WhatsApp media local fix: shared sendFile/sendMedia executor is a hoisted async function declaration, resolving skipped switch-case const initialization. Eight actual-handler regressions reproduce the prior TDZ and pass after the declaration-only fix using mocked providers. Existing config, validation, provider payload and persistence semantics are preserved; no live send/deployment performed.
 
 WhatsApp media verification: independent QA/security source PASS, type-check PASS, build PASS (2,782 modules,1m39s). Initial full305/308 deadline failures resolved in exact three-file serial rerun14/14; all308 distinct tests covered passing across runs. No live-delivery or deployment claim.
+
+
+2026-10-27 (local, unreleased): explicit fresh owner/manager communications browser guards; caller auth headers and restricted-role mounts; private stored-message blob media with URL-proxy disabled, forced document download and no public cache; recording browser guard before parse; server actor on forwarding; uncertain sends preserve current-chat drafts without false delivery. Machine protocol unchanged and not secured by this packet.
+
+2026-10-28: communications browser access-control packet finalized locally (439 tests, type/build and independent review PASS); production and machine enrollment remain separately gated.

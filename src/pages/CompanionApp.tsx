@@ -1,3 +1,5 @@
+import CommunicationsAccess from '../components/CommunicationsAccess';
+import {communicationsFetch} from '../lib/communications/client';
 import { useState, useEffect } from 'react';
 import {
   Smartphone, Download, QrCode, CheckCircle2, Phone, Mic,
@@ -26,7 +28,7 @@ const STEPS = [
   { n: '6', title: 'Make a call & sync',    body: 'Make any call, then tap Sync Now on the Home screen. Done — your call will appear in Call Logs.' },
 ];
 
-export default function CompanionApp() {
+function CompanionApp() {
   const [stepsOpen, setStepsOpen]     = useState(true);
   const [copied, setCopied]           = useState(false);
 
@@ -241,7 +243,7 @@ function DeviceAdmin() {
   async function loadDevices() {
     setLoading(true);
     try {
-      const res = await fetch('/api/whatsapp?action=getDevices');
+      const res = await communicationsFetch('/api/whatsapp?action=getDevices');
       const data = await res.json();
       if (data.success) setDevices(data.devices);
       else setError(data.error || 'Failed to load devices');
@@ -255,7 +257,7 @@ function DeviceAdmin() {
   async function checkLatestRelease() {
     setCheckingUpdate(true);
     try {
-      const res = await fetch('/api/whatsapp?action=getLatestRelease');
+      const res = await communicationsFetch('/api/whatsapp?action=getLatestRelease');
       const data = await res.json();
       if (data.success) setLatestRelease({ version: data.version, downloadUrl: data.downloadUrl, publishedAt: data.publishedAt });
     } catch {}
@@ -273,7 +275,7 @@ function DeviceAdmin() {
   async function saveName(phone_number: string) {
     setSaving(true);
     try {
-      const res = await fetch('/api/whatsapp?action=updateDeviceName', {
+      const res = await communicationsFetch('/api/whatsapp?action=updateDeviceName', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone_number, device_name: editName.trim() || null }),
@@ -547,3 +549,5 @@ function WebhookQR() {
     </div>
   );
 }
+
+export default function CompanionAppAccess(){return <CommunicationsAccess><CompanionApp/></CommunicationsAccess>;}

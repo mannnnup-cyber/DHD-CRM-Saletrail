@@ -1,3 +1,4 @@
+import CommunicationsAccess from '../components/CommunicationsAccess';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
@@ -15,7 +16,7 @@ interface RecordingSettingsType {
   updated_at: string;
 }
 
-export default function RecordingSettings() {
+function RecordingSettings() {
   const [settings, setSettings] = useState<RecordingSettingsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -343,3 +344,5 @@ export default function RecordingSettings() {
     </div>
   );
 }
+
+export default function RecordingSettingsAccess(){return <CommunicationsAccess><RecordingSettings/></CommunicationsAccess>;}

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import {classifyWhatsApp,communicationsOwner,communicationsFailure} from '../src/lib/communications/access-server.js';
 import { handleWhatsAppInbox } from '../src/lib/whatsapp/inbox-server.js';
 
 function normalizePhone(raw: string): string {
@@ -149,10 +150,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (['phoneLabels', 'phoneAssignments', 'phoneLabelChange', 'inboxUnread', 'inboxSeen'].includes(String(req.query.action))) return handleWhatsAppInbox(req, res);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  let browserActor:Awaited<ReturnType<typeof communicationsOwner>>|undefined;
+  try{if(classifyWhatsApp(req)==='browser')browserActor=await communicationsOwner(req,res,_supabaseUrl);}catch(error){return communicationsFailure(res,error);}
   // Secrets prefer server env (Vercel) with app_settings as fallback, so rotated
   // credentials can live in Vercel without being rewritten into the database.
   // The non-secret Evolution API URL keeps DB-wins so the Settings UI can
@@ -580,7 +583,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           success: true,
           apiUrl: url,
           apiKeySet: !!key,
-          apiKeyMasked: key ? key.slice(0, 4) + '…' + key.slice(-4) : '',
+          apiKeyMasked: key ? 'Configured (hidden)' : '',
           source: url === (process.env.EVOLUTION_API_URL || '') ? 'env' : 'database'
         });
       }
@@ -741,7 +744,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'mediaProxy': {
         const mediaUrl = req.query.url as string;
-        const msgId = req.query.msgId as string; // Evolution API message ID (provider_message_id)
+        if(mediaUrl!==undefined)return res.status(400).json({error:'URL-based media proxying is disabled. Use a stored message identifier.'});
+        const msgId = req.query.msgId as string;
+        if(typeof msgId!=='string'||!msgId||msgId.length>200||!/^[-A-Za-z0-9_.:@]+$/.test(msgId))return res.status(400).json({error:'A valid stored message identifier is required.'}); // Evolution API message ID (provider_message_id)
 
         // --- msgId mode: fetch media via Evolution API's base64 decode endpoint ---
         // WhatsApp media URLs are encrypted CDN links; Evolution API decrypts them
@@ -766,7 +771,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               fallbackRow = fb2;
             }
             if (fallbackRow?.media_url) {
-              return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(fallbackRow.media_url)}`);
+              return res.status(503).json({error:'Stored URL media is unavailable; authenticated provider decoding is required.'});
             }
             return res.status(503).json({ error: 'Evolution API not configured and no cached media URL' });
           }
@@ -792,7 +797,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (!msgRow?.raw) {
             // Last resort: try direct URL proxy with stored media_url
             if (msgRow?.media_url) {
-              return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+              return res.status(503).json({error:'Stored URL media is unavailable; authenticated provider decoding is required.'});
             }
             console.error('[mediaProxy/msgId] Message not found in DB:', msgId);
             return res.status(404).json({ error: 'Message not found' });
@@ -807,14 +812,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               method: 'POST',
               headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
               body: JSON.stringify({ message: rawMsg, convertToMp4: false }),
+              redirect: 'error',
               signal: AbortSignal.timeout(20000)
             });
 
             if (!r.ok) {
-              console.error('[mediaProxy/msgId] Evolution API error:', r.status, await r.text().catch(() => ''));
+              console.error('[mediaProxy/msgId] Evolution API error:', r.status);
               // Fallback to stored CDN URL when Evolution API is unreachable
               if (msgRow?.media_url) {
-                return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+                return res.status(503).json({error:'Stored URL media is unavailable; authenticated provider decoding is required.'});
               }
               return res.status(r.status).json({ error: `Evolution API returned ${r.status}` });
             }
@@ -823,10 +829,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Response may be: { base64: "data:image/jpeg;base64,..." } or { base64: "raw..." }
             const b64Raw: string = rData.base64 || rData.data?.base64 || '';
             if (!b64Raw) {
-              console.error('[mediaProxy/msgId] No base64 in response:', JSON.stringify(rData).slice(0, 200));
+              console.error('[mediaProxy/msgId] No media data in provider response');
               // Fallback to stored CDN URL when Evolution API returns no data
               if (msgRow?.media_url) {
-                return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+                return res.status(503).json({error:'Stored URL media is unavailable; authenticated provider decoding is required.'});
               }
               return res.status(404).json({ error: 'No media data in Evolution API response' });
             }
@@ -842,51 +848,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
             // Normalize OGG audio MIME for broad browser support
             if (mimeType.startsWith('audio/ogg')) mimeType = 'audio/ogg';
+            const safeInline=/^(image\/(jpeg|png|gif|webp)|audio\/(ogg|mpeg|mp4|wav|webm)|video\/(mp4|webm|ogg))$/.test(mimeType.toLowerCase().split(';')[0].trim());
+            if(!safeInline)mimeType='application/octet-stream';
+            if(b64Data.length>28*1024*1024)return res.status(413).json({error:'Media exceeds the supported size.'});
             res.setHeader('Content-Type', mimeType);
-            res.setHeader('Content-Disposition', 'inline'); // stream in <audio>/<img>, don't download
-            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.setHeader('Content-Disposition', safeInline?'inline':'attachment');
+            res.setHeader('Cache-Control', 'private, no-store');
             return res.send(Buffer.from(b64Data, 'base64'));
           } catch (err: any) {
             console.error('[mediaProxy/msgId] Error:', err.message);
             // Fallback to stored CDN URL when Evolution API throws (network timeout, ECONNREFUSED, etc.)
             if (msgRow?.media_url) {
-              return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
+              return res.status(503).json({error:'Stored URL media is unavailable; authenticated provider decoding is required.'});
             }
             return res.status(500).json({ error: err.message });
           }
         }
 
-        // --- URL mode: direct proxy (for avatars, locally-stored media, etc.) ---
-        if (!mediaUrl) return res.status(400).json({ error: 'url or msgId required' });
-        let parsed: URL;
-        try { parsed = new URL(mediaUrl); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
-        // Allow both https and http (Evolution API on Railway uses http internally)
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-          return res.status(400).json({ error: 'HTTP/HTTPS only' });
-        }
-
-        // If the media URL is from the Evolution API server, add the API key header
-        const isEvolutionUrl = EVOLUTION_API_URL && mediaUrl.startsWith(EVOLUTION_API_URL);
-        const headers: Record<string, string> = {};
-        if (isEvolutionUrl && EVOLUTION_API_KEY) {
-          headers['apikey'] = EVOLUTION_API_KEY;
-        }
-
-        try {
-          const mr = await fetch(mediaUrl, { headers });
-          if (!mr.ok) {
-            console.error('[mediaProxy] Fetch failed:', mr.status, mediaUrl);
-            return res.status(mr.status).json({ error: `Media fetch failed: ${mr.status}` });
-          }
-          const ct = mr.headers.get('content-type') || 'application/octet-stream';
-          res.setHeader('Content-Type', ct);
-          res.setHeader('Cache-Control', 'public, max-age=86400');
-          const buf = await mr.arrayBuffer();
-          return res.send(Buffer.from(buf));
-        } catch (err: any) {
-          console.error('[mediaProxy] Error:', err.message, mediaUrl);
-          return res.status(500).json({ error: err.message });
-        }
+        return res.status(400).json({error:'A stored message identifier is required.'});
       }
 
       case 'sendReaction': {
@@ -1535,11 +1514,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const createData = await createRes.json();
 
           if (!createRes.ok || !createData.instance) {
-            console.error('[whatsapp] Evolution createInstance failed:', createData);
+            console.error('[whatsapp] Evolution createInstance failed:', createRes.status);
             return res.status(400).json({
               success: false,
-              error: createData.error || 'Failed to create Evolution instance',
-              details: createData
+              error: 'Failed to create Evolution instance'
             });
           }
 
@@ -1708,8 +1686,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             success: true,
             authenticated,
             phone,
-            instanceName,
-            raw: statusData
+            instanceName
           });
         } catch (err: any) {
           console.error('[whatsapp] getInstanceStatus error:', err);
@@ -2879,7 +2856,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             command: fwdCmd,
             target_number: fwdCmd === 'forward_enable' ? String(targetNumber).replace(/[^0-9+]/g, '') : null,
             sim_slot: simSlotNum,
-            created_by: String(req.headers['x-user-email'] || 'system'),
+            created_by: browserActor!.email,
             status: 'pending',
           })
           .select()

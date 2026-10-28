@@ -1,3 +1,5 @@
+import {communicationsFetch} from '../lib/communications/client';
+import CommunicationsAccess from '../components/CommunicationsAccess';
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { authHeaders } from '../lib/auth';
@@ -118,7 +120,7 @@ const Settings: React.FC = () => {
     if (!forwardPollPhone) return;
     const interval = setInterval(async () => {
       try {
-        const r = await fetch('/api/whatsapp?action=getForwardStatus');
+        const r = await communicationsFetch('/api/whatsapp?action=getForwardStatus');
         const data = await r.json();
         if (data.success) {
           setForwardStatus(data.forwardStatus || {});
@@ -274,7 +276,7 @@ const Settings: React.FC = () => {
     setMessage(null);
 
     try {
-      const r = await fetch('/api/whatsapp?action=createInstance', {
+      const r = await communicationsFetch('/api/whatsapp?action=createInstance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -310,7 +312,8 @@ const Settings: React.FC = () => {
     setWhatsAppPolling(true);
 
     try {
-      const r = await fetch(`/api/whatsapp?action=getInstanceStatus&instanceName=${instanceName}`, {
+      const r = await communicationsFetch(`/api/whatsapp?action=getInstanceStatus&instanceName=${instanceName}`, {
+        method: 'POST',
         signal: AbortSignal.timeout(5000) // 5 second timeout per request
       });
       const data = await r.json();
@@ -347,7 +350,7 @@ const Settings: React.FC = () => {
 
     try {
       // Manually save the instance name and phone - user confirmed connection on phone
-      const r = await fetch('/api/whatsapp?action=debugSaveInstance', {
+      const r = await communicationsFetch('/api/whatsapp?action=debugSaveInstance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instanceName })
@@ -376,7 +379,7 @@ const Settings: React.FC = () => {
     setMessage(null);
 
     try {
-      const r = await fetch('/api/whatsapp?action=disconnect', {
+      const r = await communicationsFetch('/api/whatsapp?action=disconnect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -419,7 +422,7 @@ const Settings: React.FC = () => {
     try {
       const [devR, fwdR] = await Promise.all([
         fetch('/api/users?action=listDevices', { headers: authHeaders() }),
-        fetch('/api/whatsapp?action=getForwardStatus').catch(() => ({ ok: false, json: async () => ({ success: false }) } as Response)),
+        communicationsFetch('/api/whatsapp?action=getForwardStatus').catch(() => ({ ok: false, json: async () => ({ success: false }) } as Response)),
       ]);
       const devData = await devR.json();
       const fwdData = fwdR.ok ? await fwdR.json() : { success: false };
@@ -451,7 +454,7 @@ const Settings: React.FC = () => {
   const handleVerifyForwardStatus = async (devicePhone: string, simSlot: number) => {
     setSendingForward(devicePhone);
     try {
-      const r = await fetch('/api/whatsapp?action=sendForwardCommand', {
+      const r = await communicationsFetch('/api/whatsapp?action=sendForwardCommand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -496,7 +499,7 @@ const Settings: React.FC = () => {
 
     setSendingForward(devicePhone);
     try {
-      const r = await fetch('/api/whatsapp?action=sendForwardCommand', {
+      const r = await communicationsFetch('/api/whatsapp?action=sendForwardCommand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1906,4 +1909,4 @@ const Settings: React.FC = () => {
   );
 };
 
-export default Settings;
+export default function SettingsAccess(){return <CommunicationsAccess><Settings/></CommunicationsAccess>;}
