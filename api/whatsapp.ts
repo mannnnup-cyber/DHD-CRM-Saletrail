@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import {attachmentMetadata} from '../src/lib/whatsapp/attachments.js';
 import {classifyWhatsApp,communicationsOwner,communicationsFailure} from '../src/lib/communications/access-server.js';
 import { handleWhatsAppInbox } from '../src/lib/whatsapp/inbox-server.js';
+const literalSearchPattern=(query:string)=>'%'+query.replace(/[\\%_]/g,'\\$&')+'%';
 
 function normalizePhone(raw: string): string {
   const digits = (raw || '').replace(/[^\d]/g, '');
@@ -703,12 +705,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           // Select only display columns — raw is excluded (can be 70+ MB for active group chats)
-          const { data: msgsDesc } = await supabase
+          const { data: msgsDesc, error: messagesError } = await supabase
             .from('whatsapp_messages')
-            .select('id, provider_message_id, chat_id, body, message_type, media_url, direction, created_at, sender_name, contact_id')
+            .select('id, provider_message_id, chat_id, body, message_type, type, media_url, direction, created_at, sender_name, contact_id, attachment_file_name:raw->message->documentMessage->>fileName, attachment_nested_file_name:raw->data->message->documentMessage->>fileName, attachment_mime_type:raw->message->documentMessage->>mimetype, attachment_nested_mime_type:raw->data->message->documentMessage->>mimetype, attachment_file_size:raw->message->documentMessage->>fileLength, attachment_nested_file_size:raw->data->message->documentMessage->>fileLength')
             .eq('chat_id', chatId)
             .order('created_at', { ascending: false })
             .limit(1000);
+          if(messagesError)return res.status(503).json({success:false,error:'Stored messages are temporarily unavailable.'});
           const msgs = (msgsDesc || []).reverse();
 
           const formatted = (msgs || []).map((m: any) => ({
@@ -719,7 +722,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             storageId: m.id,
             status: 'unknown',
             type: m.message_type || m.type || 'text', // message_type is new col; fall back to legacy 'type'
-            mediaUrl: m.media_url || null
+            mediaUrl: m.media_url || null,
+            ...attachmentMetadata(m)
           }));
 
           return res.json({ success: true, messages: formatted });
@@ -1121,12 +1125,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'searchMessages': {
-        const q = req.query.q as string;
+        const q=typeof req.query.q==='string'?req.query.q.trim():req.query.q===undefined?'':null;
+        if(q===null||q.length>200)return res.status(400).json({success:false,error:'Search must be at most 200 characters.'});
         if (!q || q.length < 2) return res.json({ success: true, results: [] });
         if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
         const { data: msgs } = await supabase
-          .from('whatsapp_messages').select('*')
-          .ilike('body', `%${q}%`)
+          .from('whatsapp_messages').select('id,provider_message_id,chat_id,body,created_at,direction,sender_name')
+          .ilike('body', literalSearchPattern(q))
           .order('created_at', { ascending: false }).limit(50);
         return res.json({ success: true, results: msgs || [] });
       }
@@ -1335,20 +1340,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'searchUnified': {
         // Unified search: finds contacts, chats, and messages in one query
-        const q = req.query.q as string;
-        const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-        const offset = parseInt(req.query.offset as string) || 0;
+        const q=typeof req.query.q==='string'?req.query.q.trim():req.query.q===undefined?'':null;
+        if(q===null||q.length>200)return res.status(400).json({success:false,error:'Search must be at most 200 characters.'});
+        const limit=Number(req.query.limit??20);
+        const offset=Number(req.query.offset??0);
+        if(Array.isArray(req.query.limit)||Array.isArray(req.query.offset)||!Number.isInteger(limit)||limit<1||limit>50||!Number.isInteger(offset)||offset<0||offset>1000)return res.status(400).json({success:false,error:'Invalid search page.'});
 
         if (!q || q.length < 2) return res.json({ success: true, results: [], total: 0 });
         if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
 
         try {
-          const searchPattern = `%${q}%`;
+          const searchPattern = literalSearchPattern(q);
+          const quotedPattern=JSON.stringify(searchPattern);
 
           // 1. Search messages by text content
           const { data: messages } = await supabase
             .from('whatsapp_messages')
-            .select('*')
+            .select('id,provider_message_id,chat_id,body,created_at,direction,sender_name')
             .ilike('body', searchPattern)
             .order('created_at', { ascending: false })
             .limit(20);
@@ -1372,7 +1380,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const { data: chatMetaRows } = await supabase
             .from('whatsapp_chats')
             .select('*')
-            .or(`contact_name.ilike.${searchPattern},chat_id.ilike.${searchPattern}`)
+            .or(`contact_name.ilike.${quotedPattern},chat_id.ilike.${quotedPattern}`)
             .limit(10);
 
           // Merge: chatMetaRows overrides message-based results for same chat_id
@@ -1402,9 +1410,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // 3. Search contacts by name, company, or phone (linked to WhatsApp)
           const { data: contacts } = await supabase
             .from('contacts')
-            .select('*')
+            .select('id,name,company,phone,status')
             .eq('source', 'WHATSAPP')
-            .or(`name.ilike.${searchPattern},company.ilike.${searchPattern},phone_normalized.ilike.${q.replace(/[^\d]/g, '')}`)
+            .or(`name.ilike.${quotedPattern},company.ilike.${quotedPattern}${q.replace(/\D/g, '').length>=3?',phone_normalized.ilike.'+JSON.stringify('%'+q.replace(/\D/g, '')+'%'):''}`)
             .limit(10);
 
           // Combine and deduplicate by type

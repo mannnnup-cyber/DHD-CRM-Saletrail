@@ -467,3 +467,5 @@ WhatsApp media verification: independent QA/security source PASS, type-check PAS
 2026-10-27 (local, unreleased): explicit fresh owner/manager communications browser guards; caller auth headers and restricted-role mounts; private stored-message blob media with URL-proxy disabled, forced document download and no public cache; recording browser guard before parse; server actor on forwarding; uncertain sends preserve current-chat drafts without false delivery. Machine protocol unchanged and not secured by this packet.
 
 2026-10-28: communications browser access-control packet finalized locally (439 tests, type/build and independent review PASS); production and machine enrollment remain separately gated.
+
+2026-10-28: WhatsApp inbox UI locally verified: viewport/pane scrolling, anchored cancellable search, bounded filename/document cards, safe attachment drafts/session handling and3MiB upload budget. Full456 tests, final UI18/type/build and independent QA/security PASS; preview review only, no production INP claim.

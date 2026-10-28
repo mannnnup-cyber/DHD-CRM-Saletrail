@@ -1,11 +1,12 @@
 import {ProtectedImage,ProtectedAudio,ProtectedVideo,ProtectedDownload} from '../components/ProtectedMedia';
 import CommunicationsAccess from '../components/CommunicationsAccess';
 import {communicationsFetch} from '../lib/communications/client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import {attachmentMetadata,attachmentKind,attachmentSize,MAX_ATTACHMENT_BYTES,MAX_ATTACHMENT_PAYLOAD_BYTES} from '../lib/whatsapp/attachments';
 import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive, CornerUpLeft, Info, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
-import { authHeaders } from '../lib/auth';
+import { authHeaders, getAccessToken } from '../lib/auth';
 import { unreadBadge, selectUnreadChats, validChatId } from '../lib/whatsapp/inbox';
 import {usePhoneLabels} from '../lib/whatsapp/use-phone-labels';
 import {WhatsAppLabelControls,PhoneLabelChips} from '../components/WhatsAppLabels';
@@ -167,6 +168,9 @@ interface Message {
   storageId?: string;
   type: string;
   mediaUrl?: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
 }
 
 interface DBTestResult {
@@ -250,6 +254,8 @@ function WhatsApp() {
   const [sendingNew, setSendingNew] = useState(false);
   const [messageHistoryEnabled] = useState(false); // kept for legacy loadChats branch, unused
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesViewportRef=useRef<HTMLDivElement>(null);
+  const scrollMessagesToEnd=useCallback(()=>{const panel=messagesViewportRef.current;if(panel){if(typeof panel.scrollTo==='function')panel.scrollTo({top:panel.scrollHeight,behavior:'smooth'});else panel.scrollTop=panel.scrollHeight;}},[]);
   const lastMessageCountRef = useRef<number>(0);
   const chatMessagesCache = useRef<Record<string, Message[]>>({});
   const selectedChatRef = useRef<Chat | null>(null);
@@ -266,6 +272,11 @@ function WhatsApp() {
   const [unifiedSearchQuery, setUnifiedSearchQuery] = useState('');
   const [unifiedSearchResults, setUnifiedSearchResults] = useState<any[]>([]);
   const [unifiedSearching, setUnifiedSearching] = useState(false);
+  const unifiedSearchRef=useRef<HTMLDivElement>(null);
+  const unifiedRequest=useRef<AbortController|null>(null);
+  const unifiedSequence=useRef(0);
+  const suppressUnifiedFocus=useRef(false);
+  const messageSearchSequence=useRef(0);
   const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [bulkActionInProgress, setBulkActionInProgress] = useState(false);
@@ -276,7 +287,16 @@ function WhatsApp() {
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
   const [moreHistoryResult, setMoreHistoryResult] = useState<string | null>(null);
   const [sendingFile, setSendingFile] = useState(false);
+  const [attachmentChatId,setAttachmentChatId]=useState<string|null>(null);
+  const [attachmentError,setAttachmentError]=useState('');
+  const [attachmentUncertain,setAttachmentUncertain]=useState(false);
+  const attachmentRef=useRef<File|null>(null);
+  attachmentRef.current=attachFile;
+  const attachmentReader=useRef<FileReader|null>(null);
+  const attachmentRequest=useRef<AbortController|null>(null);
+  const attachmentPreviewUrls=useRef<Set<string>>(new Set());
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  useEffect(()=>{const used=new Set(messages.map(message=>message.mediaUrl));if(lightboxUrl)used.add(lightboxUrl);for(const url of attachmentPreviewUrls.current)if(!used.has(url)){URL.revokeObjectURL(url);attachmentPreviewUrls.current.delete(url);}},[messages,lightboxUrl]);
   const [showMediaGallery, setShowMediaGallery] = useState(false);
   const [forwardMsg, setForwardMsg] = useState<any>(null);
   const [forwardingTo, setForwardingTo] = useState<string | null>(null);
@@ -519,6 +539,7 @@ function WhatsApp() {
   // Load messages for a chat via backend API
   const loadMessages = useCallback(async (chatId: string, fresh=false) => {
     const sequence = ++messageLoadSequence.current;
+    const shouldScroll=!fresh||!messagesViewportRef.current||messagesViewportRef.current.scrollHeight-messagesViewportRef.current.clientHeight-messagesViewportRef.current.scrollTop<80;
     if(!fresh){setLoading(true);setMessagesChatId(null);}
     try {
       if (!fresh && chatMessagesCache.current[chatId]) {
@@ -526,7 +547,7 @@ function WhatsApp() {
         setMessagesChatId(chatId);
         lastMessageCountRef.current = chatMessagesCache.current[chatId].length;
         setLoading(false);
-        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      if(shouldScroll)setTimeout(() => scrollMessagesToEnd(), 100);
         return;
       }
 
@@ -544,7 +565,8 @@ function WhatsApp() {
           status: msg.status === 'read' || msg.status === 'delivered' || msg.status === 'sent' ? msg.status : 'unknown',
           storageId: msg.storageId,
           type: msg.type || 'text',
-          mediaUrl: msg.mediaUrl || undefined
+          mediaUrl: msg.mediaUrl || undefined,
+          ...attachmentMetadata({...msg,body:msg.text})
         }));
 
         setMessages(formatted);
@@ -561,7 +583,7 @@ function WhatsApp() {
     }
     if (sequence !== messageLoadSequence.current) return;
     setLoading(false);
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    if(shouldScroll)setTimeout(() => scrollMessagesToEnd(), 100);
 
     // Also load calls for this chat
     const loadCallsForChat = async () => {
@@ -802,7 +824,7 @@ function WhatsApp() {
       }
     }
     setSending(false);
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    setTimeout(() => scrollMessagesToEnd(), 100);
   };
 
   // Send new message to a new contact
@@ -1004,45 +1026,22 @@ function WhatsApp() {
     setNotifPermission(perm);
   };
 
-  // Message search
-  const searchMessages = useCallback(async (q: string) => {
-    if (q.length < 2) { setMsgSearchResults([]); return; }
-    setSearchingMsgs(true);
-    try {
-      const r = await communicationsFetch(`/api/whatsapp?action=searchMessages&q=${encodeURIComponent(q)}`);
-      const data = await r.json();
-      if (data.success) setMsgSearchResults(data.results || []);
-    } catch {}
-    setSearchingMsgs(false);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => searchMessages(msgSearchQuery), 400);
-    return () => clearTimeout(t);
-  }, [msgSearchQuery, searchMessages]);
-
-  // Unified search (contacts + chats + messages)
-  const searchUnified = useCallback(async (q: string) => {
-    if (q.length < 2) { setUnifiedSearchResults([]); return; }
-    setUnifiedSearching(true);
-    try {
-      const r = await communicationsFetch(`/api/whatsapp?action=searchUnified&q=${encodeURIComponent(q)}&limit=30`);
-      const data = await r.json();
-      if (data.success) {
-        setUnifiedSearchResults(data.results || []);
-      }
-    } catch (err) {
-      console.error('Unified search error:', err);
-      setUnifiedSearchResults([]);
-    }
-    setUnifiedSearching(false);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => searchUnified(unifiedSearchQuery), 300);
-    return () => clearTimeout(t);
-  }, [unifiedSearchQuery, searchUnified]);
-
+  const closeUnifiedSearch=useCallback((clear=false)=>{unifiedSequence.current++;unifiedRequest.current?.abort();setUnifiedSearchActive(false);setUnifiedSearchResults([]);setUnifiedSearching(false);if(clear){setUnifiedSearchQuery('');setSearchQuery('');}},[]);
+  useEffect(()=>{const outside=(event:PointerEvent)=>{if(unifiedSearchRef.current&&!unifiedSearchRef.current.contains(event.target as Node))closeUnifiedSearch();};document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[closeUnifiedSearch]);
+  useEffect(()=>{
+    const sequence=++messageSearchSequence.current,abort=new AbortController(),query=msgSearchQuery.trim();
+    setMsgSearchResults([]);setSearchingMsgs(false);
+    if(!showSearchPanel||query.length<2)return()=>abort.abort();
+    const timer=setTimeout(async()=>{setSearchingMsgs(true);try{const response=await communicationsFetch(`/api/whatsapp?action=searchMessages&q=${encodeURIComponent(query)}`,{signal:abort.signal});const data=await response.json();if(!abort.signal.aborted&&sequence===messageSearchSequence.current&&response.ok&&data.success)setMsgSearchResults(data.results||[]);}catch{}finally{if(!abort.signal.aborted&&sequence===messageSearchSequence.current)setSearchingMsgs(false);}},350);
+    return()=>{clearTimeout(timer);abort.abort();messageSearchSequence.current++;};
+  },[msgSearchQuery,showSearchPanel]);
+  useEffect(()=>{
+    const sequence=++unifiedSequence.current,abort=new AbortController(),query=unifiedSearchQuery.trim();unifiedRequest.current=abort;
+    setUnifiedSearchResults([]);setUnifiedSearching(unifiedSearchActive&&activeTab==='inbox'&&query.length>=2);
+    if(!unifiedSearchActive||activeTab!=='inbox'||query.length<2)return()=>abort.abort();
+    const timer=setTimeout(async()=>{setUnifiedSearching(true);try{const response=await communicationsFetch(`/api/whatsapp?action=searchUnified&q=${encodeURIComponent(query)}&limit=30`,{signal:abort.signal});const data=await response.json();if(!abort.signal.aborted&&sequence===unifiedSequence.current&&response.ok&&data.success)setUnifiedSearchResults(Array.isArray(data.results)?data.results.slice(0,30):[]);}catch{}finally{if(!abort.signal.aborted&&sequence===unifiedSequence.current)setUnifiedSearching(false);}},300);
+    return()=>{clearTimeout(timer);abort.abort();unifiedSequence.current++;};
+  },[unifiedSearchQuery,unifiedSearchActive,activeTab]);
   // Toggle chat selection for bulk actions — entering selection mode automatically
   const toggleChatSelection = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1125,8 +1124,7 @@ function WhatsApp() {
 
   // Handle unified search result selection
   const selectUnifiedResult = (result: any) => {
-    setUnifiedSearchActive(false);
-    setUnifiedSearchQuery('');
+    closeUnifiedSearch(true);
     if (result.type === 'chat') {
       const chat = chats.find(c => c.id === result.id);
       if (chat) {
@@ -1194,57 +1192,40 @@ function WhatsApp() {
     } catch {}
   };
 
-  // Send file attachment
-  const sendAttachment = async () => {
-    if (!attachFile || !selectedChat) return;
-    if (attachFile.size > 4 * 1024 * 1024) {
-      alert('File too large — max 4 MB');
-      return;
-    }
-    setSendingFile(true);
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(attachFile);
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const r = await communicationsFetch('/api/whatsapp?action=sendFile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chatId: selectedChat.id,
-            fileBase64: base64,
-            fileName: attachFile.name,
-            mimeType: attachFile.type,
-            caption: attachCaption
-          })
-        });
-        const data = await r.json();
-        if (data.success) {
-          const previewMsg: Message = {
-            id: data.messageId || Date.now().toString(),
-            text: attachCaption || `[File: ${attachFile.name}]`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            fromMe: true,
-            status: 'sent',
-            type: attachFile.type.startsWith('image/') ? 'imageMessage' : 'documentMessage',
-            mediaUrl: URL.createObjectURL(attachFile)
-          };
-          setMessages(prev => [...prev, previewMsg]);
-          setAttachFile(null);
-          setAttachCaption('');
-          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-        } else {
-          alert('Failed to send file: ' + (data.error || 'Unknown error'));
-        }
-        setSendingFile(false);
-      };
-    } catch {
-      setSendingFile(false);
-    }
+  const chooseAttachment=(file:File|null)=>{if(sendingFile)return;attachmentRef.current=file;setAttachFile(file);setAttachmentChatId(selectedChatRef.current?.id||null);setAttachCaption('');setAttachmentError('');setAttachmentUncertain(false);};
+  const revokeAttachmentPreviews=useCallback(()=>{for(const url of attachmentPreviewUrls.current)URL.revokeObjectURL(url);attachmentPreviewUrls.current.clear();},[]);
+  useEffect(()=>{const priorChat=selectedChat?.id;return()=>{if(attachmentReader.current?.readyState===1)attachmentReader.current.abort();revokeAttachmentPreviews();if(priorChat&&chatMessagesCache.current[priorChat])chatMessagesCache.current[priorChat]=chatMessagesCache.current[priorChat].map(message=>message.mediaUrl?.startsWith('blob:')?{...message,mediaUrl:undefined}:message);};},[selectedChat?.id,revokeAttachmentPreviews]);
+  useEffect(()=>()=>{if(attachmentReader.current?.readyState===1)attachmentReader.current.abort();attachmentRequest.current?.abort();revokeAttachmentPreviews();},[revokeAttachmentPreviews]);
+  const sendAttachment=async()=>{
+    const file=attachFile,chat=selectedChat,caption=attachCaption,actorToken=getAccessToken();
+    if(!file||!chat||attachmentChatId!==chat.id||sendingFile||attachmentUncertain)return;
+    if(file.size>MAX_ATTACHMENT_BYTES){setAttachmentError('File too large. Maximum attachment size is 3 MB (3 MiB).');return;}
+    if(file.name.length>254||caption.length>500){setAttachmentError('Use a filename under 255 characters and a caption up to 500 characters.');return;}
+    setSendingFile(true);setAttachmentError('');let httpStarted=false,knownRejected=false;const abort=new AbortController();attachmentRequest.current=abort;
+    try{
+      const dataUrl=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();attachmentReader.current=reader;reader.onload=()=>typeof reader.result==='string'?resolve(reader.result):reject(new Error('Unable to read file'));reader.onerror=()=>reject(new Error('Unable to read file'));reader.onabort=()=>reject(new Error('File reading cancelled'));reader.readAsDataURL(file);});
+      if(selectedChatRef.current?.id!==chat.id||attachmentRef.current!==file||abort.signal.aborted||getAccessToken()!==actorToken)return;
+      const base64=dataUrl.split(',')[1];if(!base64)throw new Error('Unable to read file');
+      const payload=JSON.stringify({chatId:chat.id,fileBase64:base64,fileName:file.name,mimeType:file.type||'application/octet-stream',caption});
+      if(new TextEncoder().encode(payload).byteLength>MAX_ATTACHMENT_PAYLOAD_BYTES)throw new Error('Encoded attachment exceeds the supported request size');
+      httpStarted=true;const response=await communicationsFetch('/api/whatsapp?action=sendFile',{method:'POST',headers:{'Content-Type':'application/json'},body:payload,signal:abort.signal});knownRejected=[400,401,403,413,415].includes(response.status);const result=await response.json();
+      if(abort.signal.aborted)return;if(getAccessToken()!==actorToken){if(httpStarted&&selectedChatRef.current?.id===chat.id&&attachmentRef.current===file){setAttachmentUncertain(true);setAttachmentError('Upload outcome is unknown. Check this conversation before choosing the file again; do not resend automatically.');}return;}
+      if(!response.ok||!result.success)throw new Error('Upload not confirmed');
+      if(attachmentRef.current!==file)return;
+      if(selectedChatRef.current?.id===chat.id){const preview=URL.createObjectURL(file);attachmentPreviewUrls.current.add(preview);const message:Message={id:result.messageId||String(Date.now()),text:caption||'',timestamp:String(Math.floor(Date.now()/1000)),fromMe:true,status:'sent',type:file.type.startsWith('image/')?'imageMessage':'documentMessage',mediaUrl:preview,fileName:file.name,mimeType:file.type||'application/octet-stream',fileSize:file.size};setMessages(current=>[...current,message]);chatMessagesCache.current[chat.id]=[...(chatMessagesCache.current[chat.id]||[]),message];setTimeout(scrollMessagesToEnd,100);}
+      setAttachFile(null);attachmentRef.current=null;setAttachCaption('');setAttachmentError('');
+    }catch{
+      if(abort.signal.aborted)return;if(getAccessToken()!==actorToken){if(httpStarted&&selectedChatRef.current?.id===chat.id&&attachmentRef.current===file){setAttachmentUncertain(true);setAttachmentError('Upload outcome is unknown. Check this conversation before choosing the file again; do not resend automatically.');}return;}
+      if(httpStarted&&!knownRejected){setAttachmentUncertain(true);setAttachmentError('Upload outcome is unknown. Check this conversation before choosing the file again; do not resend automatically.');}
+      else if(selectedChatRef.current?.id===chat.id)setAttachmentError(httpStarted?'File was not accepted. Your attachment and caption are preserved.':'File could not be read or is too large to send. Your attachment and caption are preserved.');
+    }finally{if(attachmentRequest.current===abort){attachmentRequest.current=null;setSendingFile(false);}}
   };
-
   // (messageCount/loadingCount removed — Green API quota tracking no longer needed)
 
+  const timeline=useMemo(()=>{
+    const time=(value:any)=>{const n=Number(value);return Number.isFinite(n)&&n>0?(n<1e12?n*1000:n):(Date.parse(value)||0);};
+    return [...messages.map(message=>({...message,_type:'message'})),...calls.map(call=>({...call,_type:'call'}))].sort((a,b)=>time(a.timestamp)-time(b.timestamp));
+  },[messages,calls]);
   const filteredChats = chats.filter(c => {
     if(!phoneLabelControls.matches(c.id))return false;
     const isGroup = c.id.includes('@g.us');
@@ -1312,9 +1293,9 @@ function WhatsApp() {
   const isUsingRealData = hasRealData && connected === true;
 
   return (
-    <div className="h-full flex flex-col">
+    <div data-testid="whatsapp-page" className="[color-scheme:dark] h-full min-h-0 flex flex-col gap-3 p-2 sm:p-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <MessageCircle className="w-7 h-7 text-green-400" />
@@ -1409,7 +1390,7 @@ function WhatsApp() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-800/40 rounded-xl p-1">
+      <div className="flex gap-1 shrink-0 bg-gray-800/40 rounded-xl p-1">
         {(['inbox', 'calls', 'stats', 'setup'] as const).map(tab => (
           <button
             key={tab}
@@ -1471,30 +1452,31 @@ function WhatsApp() {
               </div>
             );
           })()}
-          <div className="flex-1 flex gap-4 min-h-0" style={{ height: 'calc(100vh - 340px)' }}>
+          <div data-testid="whatsapp-workspace" className="flex-1 flex gap-3 min-h-0 min-w-0">
           {/* Chat List */}
-          <div className="w-80 flex-shrink-0 flex flex-col bg-gray-800/40 rounded-xl border border-gray-700/50 overflow-hidden">
-            <div className="p-3 border-b border-gray-700/50 space-y-2">
+          <div aria-label="Conversations" className={`${selectedChat?'hidden md:flex':'flex'} w-full md:w-80 shrink-0 min-h-0 flex-col bg-gray-800/40 rounded-xl border border-gray-700/50 overflow-hidden`}>
+            <div ref={unifiedSearchRef} className="relative shrink-0 p-3 border-b border-gray-700/50 space-y-2" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))closeUnifiedSearch();}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();closeUnifiedSearch();const input=event.currentTarget.querySelector('input');if(input&&document.activeElement!==input){suppressUnifiedFocus.current=true;input.focus();}}if(event.key==='ArrowDown'||event.key==='ArrowUp'){const items=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-search-result]'));if(items.length){event.preventDefault();const index=items.indexOf(document.activeElement as HTMLButtonElement);items[index===-1?(event.key==='ArrowDown'?0:items.length-1):(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();}}}}>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
                   type="text"
                   placeholder="Search chats, messages, contacts..."
-                  value={unifiedSearchActive ? unifiedSearchQuery : searchQuery}
+                  aria-label="Search WhatsApp conversations"
+                  aria-expanded={unifiedSearchActive&&unifiedSearchQuery.length>=2}
+                  aria-controls="whatsapp-search-results"
+                  maxLength={200}
+                  value={unifiedSearchQuery}
                   onChange={e => {
-                    if (unifiedSearchActive) {
-                      setUnifiedSearchQuery(e.target.value);
-                    } else {
-                      setSearchQuery(e.target.value);
-                    }
+                    unifiedSequence.current++;unifiedRequest.current?.abort();setUnifiedSearchResults([]);setUnifiedSearchActive(true);
+                    setUnifiedSearchQuery(e.target.value);setSearchQuery(e.target.value);
                   }}
-                  onFocus={() => setUnifiedSearchActive(true)}
+                  onFocus={() => {if(suppressUnifiedFocus.current){suppressUnifiedFocus.current=false;return;}setUnifiedSearchActive(true);}} onClick={()=>setUnifiedSearchActive(true)}
                   className="w-full pl-9 pr-3 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 />
               </div>
               {/* Unified search results dropdown */}
               {unifiedSearchActive && unifiedSearchQuery.length >= 2 && (
-                <div className="absolute left-3 right-3 top-14 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                <div id="whatsapp-search-results" role="region" aria-label="WhatsApp search results" aria-busy={unifiedSearching} className="absolute left-3 right-3 top-14 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-20 max-h-[min(24rem,55dvh)] overflow-y-auto overflow-x-hidden overscroll-contain">
                   {unifiedSearching && (
                     <div className="p-3 text-gray-400 text-xs text-center">Searching...</div>
                   )}
@@ -1533,7 +1515,7 @@ function WhatsApp() {
                                 {unifiedSearchResults.filter((r: any) => r.type === 'chat').map((r: any) => (
                                   <button
                                     key={r.id}
-                                    onClick={() => selectUnifiedResult(r)}
+                                    data-search-result onClick={() => selectUnifiedResult(r)}
                                     className="w-full text-left px-3 py-2.5 hover:bg-gray-700/60 border-b border-gray-700/20 transition-colors flex items-center gap-3"
                                   >
                                     <div className={`w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br ${getColor(r.name)} flex items-center justify-center text-white font-bold text-sm`}>
@@ -1568,7 +1550,7 @@ function WhatsApp() {
                                 {unifiedSearchResults.filter((r: any) => r.type === 'message').slice(0, 5).map((r: any) => (
                                   <button
                                     key={r.id}
-                                    onClick={() => selectUnifiedResult(r)}
+                                    data-search-result onClick={() => selectUnifiedResult(r)}
                                     className="w-full text-left px-3 py-2.5 hover:bg-gray-700/60 border-b border-gray-700/20 transition-colors flex items-center gap-3"
                                   >
                                     <div className={`w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br ${getColor(r.chatName)} flex items-center justify-center text-white font-bold text-sm`}>
@@ -1596,7 +1578,7 @@ function WhatsApp() {
                                 {unifiedSearchResults.filter((r: any) => r.type === 'contact').slice(0, 3).map((r: any) => (
                                   <button
                                     key={r.id}
-                                    onClick={() => selectUnifiedResult(r)}
+                                    data-search-result onClick={() => selectUnifiedResult(r)}
                                     className="w-full text-left px-3 py-2.5 hover:bg-gray-700/60 border-b border-gray-700/20 transition-colors flex items-center gap-3"
                                   >
                                     <div className={`w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br ${getColor(r.name)} flex items-center justify-center text-white font-bold text-sm`}>
@@ -1621,8 +1603,7 @@ function WhatsApp() {
               {unifiedSearchActive && (
                 <button
                   onClick={() => {
-                    setUnifiedSearchActive(false);
-                    setUnifiedSearchQuery('');
+                    closeUnifiedSearch(true);
                   }}
                   className="w-full text-xs text-gray-500 hover:text-gray-300 py-1 transition-colors"
                 >
@@ -1681,7 +1662,7 @@ function WhatsApp() {
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-700/50 overflow-x-auto scrollbar-hide">
+              <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-700/50 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <button
                   onClick={() => { setChatFilter('all'); setAssignmentFilter('all'); }}
                   className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
@@ -1748,7 +1729,7 @@ function WhatsApp() {
               {unreadError ? <p role="status">{unreadError}</p> : <details><summary className="cursor-pointer">Unread is personal to you in CRM</summary><p className="mt-1">Stored history starts unread. Opening a chat marks its loaded messages read for you; no phone read receipts are sent. Counts cover up to 500 supported loaded conversations.</p></details>}
               {!unreadError && unreadExcluded > 0 && <p className="mt-1" role="status">Unread tracking is unavailable for {unreadExcluded} conversation{unreadExcluded === 1 ? '' : 's'}; their unread state is unknown.</p>}
             </div>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
 
               {filteredChats.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">
@@ -1849,11 +1830,12 @@ function WhatsApp() {
           </div> {/* end chat list */}
 
           {/* Message Area */}
-          <div className="flex-1 flex flex-col bg-gray-800/40 rounded-xl border border-gray-700/50 overflow-hidden">
+          <div aria-label="Conversation" className={`${selectedChat?'flex':'hidden md:flex'} flex-1 min-h-0 min-w-0 flex-col bg-gray-800/40 rounded-xl border border-gray-700/50 overflow-hidden`}>
             {selectedChat ? (
               <>
                 {/* Chat Header */}
-                <div className="p-4 border-b border-gray-700/50 flex items-center justify-between">
+                <div className="shrink-0 p-3 border-b border-gray-700/50 flex flex-wrap items-center justify-between gap-2">
+                  <button type="button" aria-label="Back to conversations" className="md:hidden shrink-0 p-2 rounded-lg hover:bg-gray-700" onClick={()=>setSelectedChat(null)}><ChevronRight className="w-5 h-5 rotate-180"/></button>
                   <button className="flex items-center gap-3 hover:bg-gray-700/30 rounded-lg px-2 py-1 -ml-2 transition-colors" onClick={() => setShowContactInfo(v => !v)} title="View contact info">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold flex-shrink-0">
                       {avatars[selectedChat.id]
@@ -2024,7 +2006,9 @@ function WhatsApp() {
 
                 {/* Messages */}
                 <div
-                  className="flex-1 overflow-y-auto p-4 space-y-3"
+                  ref={messagesViewportRef}
+                  aria-label="Message history"
+                  className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-4 space-y-3"
                   style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)', backgroundSize: '20px 20px' }}
                 >
                   {/* Load More History button — always at top of message thread */}
@@ -2051,16 +2035,6 @@ function WhatsApp() {
                     </div>
                   ) : (
                     (() => {
-                      // Merge messages and calls into unified timeline
-                      const timeline = [
-                        ...messages.map((msg: any) => ({ ...msg, _type: 'message' })),
-                        ...calls.map((call: any) => ({ ...call, _type: 'call' }))
-                      ].sort((a, b) => {
-                        const timeA = new Date(a.timestamp).getTime();
-                        const timeB = new Date(b.timestamp).getTime();
-                        return timeA - timeB;
-                      });
-
                       return timeline.map(item => {
                         if (item._type === 'message') {
                           const msg = item as any;
@@ -2075,7 +2049,7 @@ function WhatsApp() {
                                   <button onClick={() => setForwardMsg(msg)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-600 rounded-lg" title="Forward"><Share2 className="w-3 h-3" /></button>
                                 </div>
                               )}
-                        <div className={`max-w-xs lg:max-w-md rounded-2xl ${
+                        <div className={`min-w-0 max-w-[85%] lg:max-w-md break-words rounded-2xl ${
                           msg.fromMe
                             ? 'bg-green-600 text-white rounded-br-sm'
                             : 'bg-gray-700 text-gray-100 rounded-bl-sm'
@@ -2126,16 +2100,10 @@ function WhatsApp() {
                                   <ProtectedVideo controls className="max-w-full rounded-lg mb-1 max-h-48" src={proxyUrl} />
                                 )}
                                 {isDoc && (
-                                  <ProtectedDownload
-                                    href={proxyUrl}
-                                    download
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-2 mb-1 underline opacity-80 hover:opacity-100 text-xs"
-                                  >
-                                    <FileText className="w-4 h-4" />
-                                    Download document
-                                  </ProtectedDownload>
+                                  <div className="rounded-lg border border-white/20 bg-black/10 p-3 mb-1 min-w-0" aria-label="Document attachment">
+                                    <div className="flex gap-2 min-w-0"><FileText className="w-7 h-7 shrink-0 opacity-80"/><div className="min-w-0"><p className="text-sm font-semibold break-all">{msg.fileName||'Document'}</p><p className="text-xs opacity-70">{attachmentKind(msg.type,msg.mimeType)}{msg.fileSize!==undefined?' · '+attachmentSize(msg.fileSize):''}</p></div></div>
+                                    <ProtectedDownload href={proxyUrl} download={msg.fileName||true} className="inline-flex items-center gap-1 mt-2 text-xs underline"><Download className="w-3 h-3"/>Download</ProtectedDownload>
+                                  </div>
                                 )}
                               </>
                             );
@@ -2214,7 +2182,7 @@ function WhatsApp() {
                 </div>
 
                 {/* Reply Box */}
-                <div className="p-3 border-t border-gray-700/50">
+                <div data-testid="whatsapp-composer" className="shrink-0 p-3 border-t border-gray-700/50 bg-gray-900/70">
                   {showTemplates && (
                     <div className="mb-3 bg-gray-700/50 rounded-xl p-3 border border-gray-600/50">
                       <p className="text-gray-400 text-xs mb-2 font-medium">Quick Templates:</p>
@@ -2233,8 +2201,8 @@ function WhatsApp() {
                     </div>
                   )}
                   {/* File attachment preview */}
-                  {attachFile && (
-                    <div className="mb-2 flex items-center gap-3 p-3 bg-gray-700/60 rounded-xl border border-gray-600/50">
+                  {attachFile && attachmentChatId===selectedChat?.id && (
+                    <div className="mb-2 flex flex-wrap items-center gap-2 p-3 bg-gray-700/60 rounded-xl border border-gray-600/50" aria-label="Attachment draft">
                       <FileText className="w-5 h-5 text-blue-400 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-white text-xs font-medium truncate">{attachFile.name}</p>
@@ -2244,15 +2212,15 @@ function WhatsApp() {
                         type="text"
                         value={attachCaption}
                         onChange={e => setAttachCaption(e.target.value)}
-                        placeholder="Caption (optional)"
+                        placeholder="Caption (optional)" maxLength={500} disabled={sendingFile||attachmentUncertain}
                         className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded-lg text-white text-xs placeholder-gray-500 focus:outline-none focus:border-green-500"
                       />
-                      <button onClick={() => { setAttachFile(null); setAttachCaption(''); }} className="text-gray-500 hover:text-red-400">
+                      <button disabled={sendingFile} aria-label="Remove attachment" onClick={() => chooseAttachment(null)} className="text-gray-500 hover:text-red-400">
                         <X className="w-4 h-4" />
                       </button>
                       <button
                         onClick={sendAttachment}
-                        disabled={sendingFile}
+                        disabled={sendingFile||attachmentUncertain}
                         className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium flex items-center gap-1"
                       >
                         {sendingFile ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
@@ -2260,6 +2228,7 @@ function WhatsApp() {
                       </button>
                     </div>
                   )}
+                  {attachmentError&&attachmentChatId===selectedChat?.id&&<p role="alert" className="text-xs text-red-300 mb-2">{attachmentError}</p>}
                   {/* Reply preview bar */}
                   {replyingTo && (
                     <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-gray-700/60 rounded-xl border-l-2 border-green-500">
@@ -2276,7 +2245,7 @@ function WhatsApp() {
                     type="file"
                     accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
                     className="hidden"
-                    onChange={e => { if (e.target.files?.[0]) setAttachFile(e.target.files[0]); e.target.value = ''; }}
+                    onChange={e => { if (e.target.files?.[0]) chooseAttachment(e.target.files[0]); e.target.value = ''; }}
                   />
                   <div className="flex items-end gap-2">
                     <button
@@ -2287,7 +2256,7 @@ function WhatsApp() {
                       <FileText className="w-5 h-5" />
                     </button>
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      disabled={sendingFile} onClick={() => fileInputRef.current?.click()}
                       className="p-2 text-gray-400 hover:text-blue-400 transition-colors"
                       title="Attach file"
                     >
@@ -2305,7 +2274,7 @@ function WhatsApp() {
                           sendMessage();
                         }
                       }}
-                      onPaste={e => { const img = Array.from(e.clipboardData?.items||[]).find((i:any)=>i.type.startsWith("image/")); if(img){e.preventDefault();const f=(img as any).getAsFile();if(f)setAttachFile(f);} }}
+                      onPaste={e => { const img = Array.from(e.clipboardData?.items||[]).find((i:any)=>i.type.startsWith("image/")); if(img){e.preventDefault();const f=(img as any).getAsFile();if(f)chooseAttachment(f);} }}
                       placeholder="Type a message or paste an image... (Enter to send)"
                       rows={1}
                       className="flex-1 px-4 py-2.5 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-green-500 resize-none"
@@ -3022,4 +2991,4 @@ function WhatsApp() {
   );
 }
 
-export default function WhatsAppAccess(){return <CommunicationsAccess><WhatsApp/></CommunicationsAccess>;}
+export default memo(function WhatsAppAccess(){return <CommunicationsAccess className="h-full min-h-0 flex flex-col"><WhatsApp/></CommunicationsAccess>;});

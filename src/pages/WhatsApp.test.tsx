@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../context/AppContext', () => ({ useApp: () => ({ state: { user: { id: 'owner-1', name: 'Owner', role: 'owner' } }, addCall: vi.fn() }) }));
 vi.mock('../lib/supabase', () => ({ supabase: {} }));
-vi.mock('../lib/auth', () => ({ getAccessToken:()=> 'synthetic', authHeaders: () => ({ Authorization: 'Bearer synthetic' }) }));
+const session=vi.hoisted(()=>({token:'synthetic'}));
+vi.mock('../lib/auth', () => ({ getAccessToken:()=> session.token, authHeaders: () => ({ Authorization: 'Bearer synthetic' }) }));
 import WhatsApp from './WhatsApp';
 let root: Root; let container: HTMLDivElement; let unavailable = false;
 const chat = { id: '18760000000@s.whatsapp.net', name: 'Synthetic customer', lastMessage: 'Synthetic incoming', timestamp: '2026-10-21T12:00:00Z', unread: 0 };
@@ -13,7 +14,7 @@ const incomingId = '10000000-0000-4000-8000-000000000001';
 const outgoingId = '10000000-0000-4000-8000-000000000002';
 const flush = () => act(async () => { for (let i=0; i<12; i++) await Promise.resolve(); });
 beforeEach(async () => {
-  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; unavailable=false; sourceChats=[chat];
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; unavailable=false; sourceChats=[chat];session.token='synthetic';
   Object.defineProperty(document,'visibilityState',{ configurable:true,value:'visible' });
   HTMLElement.prototype.scrollIntoView=vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
@@ -125,4 +126,18 @@ describe('WhatsApp label and unread UI',()=>{
     expect(container.textContent).toContain('Verified labels: 0 / 1');expect(container.querySelector('[aria-label="Phone conversation labels"]')).toBeNull();expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
   });
 
+});
+
+
+describe('WhatsApp inbox UI and attachment lifecycle',()=>{
+  async function open(){await act(async()=>Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Synthetic customer'))!.click());await flush();}
+  async function choose(size=4){const file=new File([new Uint8Array(size)],'invoice.pdf',{type:'application/pdf'});const input=container.querySelector('input[type=file]')!;await act(async()=>{Object.defineProperty(input,'files',{configurable:true,value:[file]});input.dispatchEvent(new Event('change',{bubbles:true}));});return file;}
+  async function send(){await act(async()=> (container.querySelector('[aria-label="Attachment draft"]')!.querySelectorAll('button')[1] as HTMLButtonElement).click());await flush();}
+  function reader(){let current:any;class Reader{readyState=1;result:any;onload:any;onerror:any;onabort:any;readAsDataURL=vi.fn(()=>{current=this;});abort(){this.readyState=2;this.onabort?.();}}vi.stubGlobal('FileReader',Reader);return ()=>current;}
+  it('owns a bounded full-height workspace and mobile back navigation',async()=>{expect(container.querySelector('[data-testid="whatsapp-workspace"]')?.className).toContain('min-h-0');expect(container.querySelector('[data-testid="whatsapp-workspace"]')?.getAttribute('style')||'').not.toContain('340');await open();expect(container.querySelector('[data-testid="whatsapp-composer"]')).toBeTruthy();await act(async()=> (container.querySelector('[aria-label="Back to conversations"]') as HTMLButtonElement).click());expect(container.querySelector('[aria-label="Conversation"]')?.className).toContain('hidden');});
+  it('rejects oversized files before reading or sending and preserves the draft',async()=>{await open();const read=reader();await choose(3*1024*1024+1);await send();expect(read()).toBeUndefined();expect(container.textContent).toContain('Maximum attachment size');expect(container.querySelector('[aria-label="Attachment draft"]')).toBeTruthy();expect(vi.mocked(fetch).mock.calls.some(([u])=>String(u).includes('action=sendFile'))).toBe(false);});
+  it('catches asynchronous file read failures without false success',async()=>{await open();const read=reader();await choose();await send();await act(async()=>read().onerror());await flush();expect(container.textContent).toContain('File could not be read');expect(container.querySelector('[aria-label="Attachment draft"]')).toBeTruthy();});
+  it('does not dispatch a read completed under a changed token',async()=>{await open();const read=reader();await choose();await send();session.token='changed';await act(async()=>{read().result='data:application/pdf;base64,YQ==';read().onload();});await flush();expect(vi.mocked(fetch).mock.calls.some(([u])=>String(u).includes('action=sendFile'))).toBe(false);});
+  it('locks uncertain dispatched uploads after a token change without painting success',async()=>{await open();const read=reader();let resolve:any;const baseline=vi.mocked(fetch).getMockImplementation()!;vi.mocked(fetch).mockImplementation((u:any,o:any)=>String(u).includes('action=sendFile')?new Promise(r=>{resolve=r;}):baseline(u,o));await choose();await send();await act(async()=>{read().result='data:application/pdf;base64,YQ==';read().onload();});await flush();expect(resolve).toBeTypeOf('function');session.token='changed';resolve({ok:true,status:200,json:async()=>({success:true,messageId:'sent'})});await flush();expect(container.textContent).toContain('Upload outcome is unknown');expect((container.querySelector('[aria-label="Attachment draft"]')!.querySelectorAll('button')[1] as HTMLButtonElement).disabled).toBe(true);});
+  it('keeps Escape closed when focus returns from a search result',async()=>{const baseline=vi.mocked(fetch).getMockImplementation()!;vi.mocked(fetch).mockImplementation((u:any,o:any)=>String(u).includes('action=searchUnified')?Promise.resolve({ok:true,json:async()=>({success:true,results:[{id:chat.id,type:'chat',chatId:chat.id,name:'Result one',phone:'18760000000',status:'active'}]})} as any):baseline(u,o));const input=container.querySelector('[aria-label="Search WhatsApp conversations"]') as HTMLInputElement;await act(async()=>{input.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Result');input.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>{await new Promise(r=>setTimeout(r,360));});await flush();const result=container.querySelector('[data-search-result]') as HTMLButtonElement;expect(result).toBeTruthy();await act(async()=>{result.focus();result.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));});await flush();expect(document.activeElement).toBe(input);expect(container.querySelector('#whatsapp-search-results')).toBeNull();});
 });
