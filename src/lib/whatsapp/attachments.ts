@@ -16,4 +16,3 @@ export function attachmentKind(type:string,mimeType?:string){
  return mimeType==='application/pdf'?'PDF document':'Document';
 }
 export function attachmentSize(bytes?:number){if(bytes===undefined)return '';return bytes<1024?`${bytes} B`:bytes<1024*1024?`${Math.ceil(bytes/1024)} KB`:`${(bytes/(1024*1024)).toFixed(1)} MB`;}
-

@@ -41,3 +41,5 @@ Synthetic desktop1366x768 checks: workspace208..752, composer680..751; search po
 Existing rows without recorded filenames/sizes retain generic Document/unknown metadata rather than fabricated values. URL-only protected-media restrictions from the browser security packet remain. Existing device/webhook/Storage and call-tracking limitations remain outside this UI packet. A code rollback would be a reviewed branch revert; no database rollback is needed. Preserve the underlying browser security commit047beaf; never roll back to unauthenticated media behavior as a UI workaround.
 
 Final private bundle scan: two available configured privileged values checked, zero matches; sb_secret prefix zero matches. Values were not printed. This is a bounded sample, not a global secret audit.
+
+Publication follow-up: normalized one trailing blank line in the new attachment helper after its first staging check flagged it. This is whitespace-only, with no executable change; retained as a separate commit without rewriting published history.
