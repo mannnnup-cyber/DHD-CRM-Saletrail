@@ -1,3 +1,5 @@
+import {settingsFetch} from '../lib/settings/client';
+import {writableSetting} from '../lib/settings/projection';
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { authHeaders } from '../lib/auth';
@@ -141,49 +143,28 @@ const Settings: React.FC = () => {
 
   const STORAGE_KEY = 'dhd_crm_settings';
 
-  // Always load from localStorage first — instant and reliable
-  const loadFromStorage = (): Record<string, string> => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  };
-
   const loadSettings = async () => {
     setLoading(true);
-
-    // 1. Load localStorage immediately so UI is never blank
-    const stored = loadFromStorage();
-    if (Object.keys(stored).length > 0) {
-      setLocalValues(stored);
-      const configured: Record<string, boolean> = {};
-      Object.entries(stored).forEach(([k, v]) => { configured[k] = !!v; });
-      setIsConfigured(configured);
-    }
-
-    // 2. Try Supabase in background — merge if it returns more/newer data
+    // Remove the legacy credential cache; typed credentials now live only in memory.
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
     try {
-      const r = await fetch('/api/settings?action=list');
+      const r = await settingsFetch('/api/settings?action=list');
       const data = await r.json();
       if (!data.success && data.tableError) {
         setTableNotFound(true);
-      } else if (data.success && data.settings && Object.keys(data.settings).length > 0) {
+      } else if (r.ok && data.success && data.settings) {
         setTableNotFound(false);
-        const rawValues: Record<string, string> = { ...stored };
+        const rawValues: Record<string, string> = {};
         Object.entries(data.settings).forEach(([key, value]) => {
-          const isPasswordKey = key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET');
           const isMasked = value === '••••••••';
-          // Keep locally-typed password over the masked DB value
-          if (isPasswordKey && isMasked) return;
+          if (isMasked) return;
           rawValues[key] = value as string;
         });
         setLocalValues(rawValues);
         setIsConfigured(data.isConfigured || {});
-        // Keep localStorage in sync with DB values
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(rawValues));
-      }
+      } else setMessage({ type: 'error', text: 'Settings could not be loaded.' });
     } catch (error) {
-      console.error('Error loading settings from API:', error);
+      setMessage({ type: 'error', text: 'Settings could not be loaded.' });
     }
     setLoading(false);
   };
@@ -201,31 +182,22 @@ const Settings: React.FC = () => {
     setSaving(true);
     setMessage(null);
 
-    // Always save to localStorage first — this is the reliable fallback
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(localValues));
-    } catch (e) {
-      console.error('localStorage save failed:', e);
-    }
-
-    // Also attempt to sync to Supabase (best-effort)
-    try {
-      const r = await fetch('/api/settings?action=save', {
+      const r = await settingsFetch('/api/settings?action=save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: localValues })
+        body: JSON.stringify({ settings: Object.fromEntries(Object.entries(localValues).filter(([key])=>writableSetting(key))) })
       });
       const data = await r.json();
-      if (data.success) {
+      if (r.ok && data.success) {
         setMessage({ type: 'success', text: 'Settings saved!' });
+        await loadSettings();
       } else {
         if (data.tableError) setTableNotFound(true);
-        // Still show success since localStorage save worked
-        setMessage({ type: 'success', text: 'Settings saved locally. (Database table not set up yet — see notice above)' });
+        setMessage({ type: 'error', text: data.error || 'Settings were not saved. Reload before retrying.' });
       }
     } catch (error) {
-      // API unreachable — localStorage save still succeeded
-      setMessage({ type: 'success', text: 'Settings saved locally.' });
+      setMessage({ type: 'error', text: 'Settings save was not confirmed. Reload before retrying.' });
     }
     setSaving(false);
   };
@@ -236,13 +208,13 @@ const Settings: React.FC = () => {
 
     try {
       if (type === 'email') {
-        const r = await fetch('/api/settings?action=testEmail', {
+        const r = await settingsFetch('/api/settings?action=testEmail', {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: '{}'
         });
         const data = await r.json();
         setMessage({ type: data.success ? 'success' : 'error', text: data.message || data.error });
       } else if (type === 'resend') {
-        const r = await fetch('/api/settings?action=testResend', {
+        const r = await settingsFetch('/api/settings?action=testResend', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ apiKey: localValues['RESEND_API_KEY'] })
@@ -250,7 +222,7 @@ const Settings: React.FC = () => {
         const data = await r.json();
         setMessage({ type: data.success ? 'success' : 'error', text: data.message || data.error });
       } else if (type === 'openai') {
-        const r = await fetch('/api/settings?action=testOpenAI', {
+        const r = await settingsFetch('/api/settings?action=testOpenAI', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ apiKey: localValues['OPENAI_API_KEY'] })
@@ -274,7 +246,7 @@ const Settings: React.FC = () => {
     setMessage(null);
 
     try {
-      const r = await fetch('/api/whatsapp?action=createInstance', {
+      const r = await settingsFetch('/api/whatsapp?action=createInstance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -310,7 +282,8 @@ const Settings: React.FC = () => {
     setWhatsAppPolling(true);
 
     try {
-      const r = await fetch(`/api/whatsapp?action=getInstanceStatus&instanceName=${instanceName}`, {
+      const r = await settingsFetch(`/api/whatsapp?action=getInstanceStatus&instanceName=${instanceName}`, {
+        method:'POST',
         signal: AbortSignal.timeout(5000) // 5 second timeout per request
       });
       const data = await r.json();
@@ -347,7 +320,7 @@ const Settings: React.FC = () => {
 
     try {
       // Manually save the instance name and phone - user confirmed connection on phone
-      const r = await fetch('/api/whatsapp?action=debugSaveInstance', {
+      const r = await settingsFetch('/api/whatsapp?action=debugSaveInstance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instanceName })
@@ -376,7 +349,7 @@ const Settings: React.FC = () => {
     setMessage(null);
 
     try {
-      const r = await fetch('/api/whatsapp?action=disconnect', {
+      const r = await settingsFetch('/api/whatsapp?action=disconnect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -1906,4 +1879,4 @@ const Settings: React.FC = () => {
   );
 };
 
-export default Settings;
+export default function SettingsAccess(){const {state}=useApp();const actor=state.user;if(!actor||!['owner','manager'].includes(actor.role))return <p role="status">Settings require an owner or manager.</p>;return <div key={actor.id+':'+actor.role}><Settings/></div>;}

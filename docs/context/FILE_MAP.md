@@ -223,3 +223,8 @@ filter and compact chips. New server-only activation flag
 `WHATSAPP_LABEL_WRITES_ENABLED` defaults false. No schema changes.
 
 Inbox usability: src/lib/contacts/edit-server.ts isolates authenticated owner/manager CRM identity corrections; api/contacts.ts dispatches editIdentity before legacy client guard. Sidebar persists desktop collapse; UnifiedInbox offers explicit AI-free mailbox sync and newest-page refresh. ContactProfile corrections include name/email/phone/company.
+
+
+## SECURITY-001A — 2026-10-30
+
+SECURITY-001A: src/lib/settings/server.ts (fresh owner/manager guard), projection.ts (safe reads/bounded writes), client.ts (current Bearer transport); api/settings.ts and the private configuration slice in api/whatsapp.ts use these controls. Settings.tsx and WhatsApp.tsx update configuration callers only. tests/settings-containment.test.ts, settings-runtime.test.ts and settings-scope.test.ts cover authorization, emitted startup and baseline preservation. Delivery and acceptance: docs/SECURITY-001A-CONTAINMENT-DELIVERY.md.

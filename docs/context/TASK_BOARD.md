@@ -294,3 +294,8 @@ disabled until reviewed live readback. No real label mutations exercised.
 WP-INBOX-USABILITY-EMAIL-REFRESH: implementation in review, independent QA/security pending. No hosted contact corrections or provider sync performed by implementation. Automatic mailbox scheduling remains a future packet; current collection is explicit manual import.
 
 WP-INBOX-PARTIAL-SYNC: in review; narrow UI correction for partial manual import failure counts and newest saved-message refresh. No backend/provider changes.
+
+
+## SECURITY-001A — 2026-10-30
+
+SECURITY-001A settings containment is isolated on fix/security-001a-settings-containment from production b3b55c8. Local verification and independent review are required before commit; publication/deployment remain owner-gated. Full SECURITY-001 callback/device/recording blockers are separate. No hosted changes authorized.

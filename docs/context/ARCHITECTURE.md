@@ -374,3 +374,8 @@ remain a platform limitation; unrelated labels are preserved by individual ops.
 Desktop sidebar collapse is persisted as a layout preference, mobile drawer unchanged. Removed legacy provider unread sidebar polling to avoid confusing personal CRM receipts. Unified Inbox refresh resets to newest page; owner/manager explicit Sync latest emails calls existing authenticated AI-free latest50 import. No background mailbox collector is configured. New contacts editIdentity action independently verifies fresh Auth/profile and modern secret, restricts identity corrections to active owners/managers, validates and rejects existing identifier collisions. Collision preflight is best effort without unique identifier constraints; concurrent duplicates remain possible. No external customer account or historical message rewrite. Existing legacy contact endpoints retain their prior limitations.
 
 Partial manual email sync (2026-10-22): Unified Inbox preserves valid saved counts on failed responses and refreshes the newest saved page after positive partial saves. Timeout/network uncertainty triggers a saved-store reload with an explicit unconfirmed outcome; no provider retry or invented count.
+
+
+## SECURITY-001A — 2026-10-30
+
+Settings containment uses src/lib/settings/server.ts to reuse fresh Email authentication and require active owner/manager access. projection.ts bounds supported writes and masks credentials; client.ts sends current Bearer tokens. Alternate WhatsApp configuration actions use the same guard. Callback, GSM and recording contracts remain unchanged; no new hosted variables or schema. Public search drops raw provider envelopes; arbitrary URL media requests never receive the provider administrative key.

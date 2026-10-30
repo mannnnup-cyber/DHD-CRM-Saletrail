@@ -1,255 +1,63 @@
-import { authenticateEmail } from '../src/lib/inbox/email-server.js';
-import { verifySavedMailbox } from '../src/lib/inbox/mailbox-server.js';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import type {VercelRequest,VercelResponse} from '@vercel/node';
+import {settingsOwner,settingsFailure} from '../src/lib/settings/server.js';
+import {verifySavedMailbox} from '../src/lib/inbox/mailbox-server.js';
+import {isSecretSetting,projectSetting,SETTINGS_MASK,writableSetting,providerOrigin} from '../src/lib/settings/projection.js';
 
-const SUPABASE_URL = process.env.SUPABASE_PROJECT_URL || process.env.VITE_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-const supabase = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+const methods:Record<string,string>={list:'GET',get:'GET',categories:'GET',save:'POST',testEmail:'POST',testResend:'POST',testOpenAI:'POST'};
+const keyValid=(key:unknown):key is string=>typeof key==='string'&&/^[A-Z][A-Z0-9_]{0,99}$/.test(key);
+export default async function handler(req:VercelRequest,res:VercelResponse){
+ res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');
+ if(req.method==='OPTIONS')return res.status(204).end();
+ const action=req.query.action;
+ if(typeof action!=='string'||!Object.prototype.hasOwnProperty.call(methods,action))return res.status(400).json({success:false,error:'Unknown settings action.'});
+ if(req.method!==methods[action])return res.status(405).json({success:false,error:methods[action]+' required.'});
+ const actor=await settingsOwner(req,res);if(!actor)return;
+ const admin=actor.admin;
+ if(req.method==='POST'&&(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||JSON.stringify(req.body).length>65536))return res.status(400).json({success:false,error:'Provide bounded settings data.'});
+ try{
+  if(action==='testEmail'){
+   try{await verifySavedMailbox(admin);return res.json({success:true,message:'Saved IMAP login verified. No messages were imported.'});}
+   catch{return res.status(502).json({success:false,error:'Saved mailbox validation failed. Check the saved credentials and TLS settings.'});}
   }
-
-  const action = req.query.action as string;
-
-  if (action === 'testEmail') {
-    if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'POST required.' });
-    const caller = await authenticateEmail(req, res);
-    if (!caller) return;
-    if (!['owner', 'manager'].includes(caller.role)) return res.status(403).json({ success: false, error: 'Email settings require an owner or manager.' });
-    try { await verifySavedMailbox(caller.admin); return res.json({ success: true, message: 'Saved IMAP login verified. No messages were imported.' }); }
-    catch (error) { return res.status(502).json({ success: false, error: error instanceof Error ? error.message : 'Saved IMAP validation failed.' }); }
+  if(action==='list'||action==='get'||action==='categories'||action==='save'){
+   const {data,error}=await admin.from('app_settings').select('setting_key,setting_value,setting_type,is_encrypted,category,updated_at').order('updated_at',{ascending:false});
+   if(error)return res.status(503).json({success:false,error:'Settings are unavailable.'});
+   const current=new Map<string,any>();for(const row of data||[])if(typeof row.setting_key==='string'&&!current.has(row.setting_key))current.set(row.setting_key,row);
+   if(action==='categories')return res.json({success:true,categories:[...new Set([...current.values()].map(row=>row.category).filter(value=>typeof value==='string'))]});
+   if(action==='get'){
+    if(!keyValid(req.query.key))return res.status(400).json({success:false,error:'Invalid setting key.'});
+    const row=current.get(req.query.key);if(!row)return res.status(404).json({success:false,error:'Setting not found.'});
+    return res.json({success:true,setting:projectSetting(row)});
+   }
+   if(action==='list'){
+    const settings:Record<string,string>=Object.create(null),isConfigured:Record<string,boolean>=Object.create(null);
+    for(const[key,row]of current){const safe=projectSetting(row);settings[key]=safe.setting_value;isConfigured[key]=safe.isConfigured;}
+    return res.json({success:true,settings,isConfigured});
+   }
+   const values=req.body.settings;
+   if(req.body.clearSecrets!==undefined||!values||typeof values!=='object'||Array.isArray(values)||Object.getPrototypeOf(values)!==Object.prototype||Object.keys(values).length>100)return res.status(400).json({success:false,error:'Invalid settings data.'});
+   for(const[key,value]of Object.entries(values))if(!keyValid(key)||!writableSetting(key)||typeof value!=='string'||value.length>16384)return res.status(400).json({success:false,error:'Invalid or unsupported settings value.'});
+   if(values.EVOLUTION_API_URL!==undefined){const origin=providerOrigin(values.EVOLUTION_API_URL);if(!origin)return res.status(400).json({success:false,error:'Evolution requires a trusted HTTPS origin without credentials, path or query.'});values.EVOLUTION_API_URL=origin;}
+   // Preserve the existing blank/masked credential behavior; no new clear workflow.
+   for(const key of Object.keys(values)){
+    const old=current.get(key),secret=isSecretSetting(key,old),value=values[key];
+    if(value===SETTINGS_MASK||secret&&value==='')continue;
+    const type=secret?'password':key.includes('PORT')?'number':key.includes('ENABLED')?'boolean':old?.setting_type||'text';
+    const payload={setting_value:value,setting_type:type,updated_at:new Date().toISOString()};
+    const update=await admin.from('app_settings').update(payload).eq('setting_key',key).select('setting_key');
+    if(update.error)return res.status(503).json({success:false,error:'Settings save was not completed. Reload before retrying.'});
+    if(!update.data?.length){const inserted=await admin.from('app_settings').insert({setting_key:key,...payload});if(inserted.error)return res.status(503).json({success:false,error:'Settings save was not completed. Reload before retrying.'});}
+   }
+   return res.json({success:true,message:'Settings saved successfully'});
   }
-  if (!supabase) {
-    return res.status(500).json({ success: false, error: 'Database not configured' });
-  }
-
-  try {
-    switch (action) {
-      case 'list': {
-        // Get all settings — order newest-first so duplicates (if any) resolve to most recent
-        const { data: settings, error: listError } = await supabase
-          .from('app_settings')
-          .select('*')
-          .order('updated_at', { ascending: false });
-
-        if (listError) {
-          return res.json({
-            success: false,
-            tableError: true,
-            error: listError.message,
-            hint: 'Run the SQL in supabase/email_schema.sql to create the app_settings table'
-          });
-        }
-
-        // Return as key-value object, mask password values
-        const result: Record<string, any> = {};
-        (settings || []).forEach((s: any) => {
-          if (s.setting_type === 'password' && s.setting_value) {
-            result[s.setting_key] = '••••••••'; // Mask password
-          } else {
-            result[s.setting_key] = s.setting_value;
-          }
-        });
-
-        // Also include raw status for checking if configured
-        const rawStatus: Record<string, boolean> = {};
-        (settings || []).forEach((s: any) => {
-          rawStatus[s.setting_key] = !!s.setting_value;
-        });
-
-        return res.json({ success: true, settings: result, isConfigured: rawStatus });
-      }
-
-      case 'get': {
-        // Get a specific setting
-        const { key } = req.query;
-        const { data: setting } = await supabase
-          .from('app_settings')
-          .select('*')
-          .eq('setting_key', key as string)
-          .single();
-
-        if (!setting) {
-          return res.status(404).json({ success: false, error: 'Setting not found' });
-        }
-
-        return res.json({ success: true, setting });
-      }
-
-      case 'save': {
-        // Save/update settings
-        const { settings } = req.body as { settings: Record<string, string> };
-
-        if (!settings || typeof settings !== 'object') {
-          return res.status(400).json({ success: false, error: 'Invalid settings data' });
-        }
-
-        // Get current settings to preserve encrypted values
-        const { data: currentSettings } = await supabase
-          .from('app_settings')
-          .select('setting_key, setting_type, is_encrypted');
-
-        const currentMap: Record<string, any> = {};
-        (currentSettings || []).forEach((s: any) => {
-          currentMap[s.setting_key] = s;
-        });
-
-        // Determine setting_type from key name
-        const inferType = (key: string): string => {
-          if (key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET')) return 'password';
-          if (key.includes('PORT')) return 'number';
-          if (key.includes('ENABLED')) return 'boolean';
-          return 'text';
-        };
-
-        // Save each setting using update-first / insert-fallback to avoid
-        // duplicate rows when the table has no unique constraint on setting_key
-        const upserts = Object.entries(settings).map(async ([key, value]) => {
-          const settingType = inferType(key);
-
-          // Never write the mask string or an empty password — preserve what's stored
-          if (value === '••••••••') return { key, skipped: true };
-          if (settingType === 'password' && value === '') return { key, skipped: true };
-
-          const now = new Date().toISOString();
-          const payload = { setting_value: value, setting_type: settingType, updated_at: now };
-
-          // Try update first
-          const { data: updated, error: updateError } = await supabase!
-            .from('app_settings')
-            .update(payload)
-            .eq('setting_key', key)
-            .select('id');
-
-          if (updateError) return { key, error: updateError.message };
-
-          // If no row existed, insert
-          if (!updated || updated.length === 0) {
-            const { error: insertError } = await supabase!
-              .from('app_settings')
-              .insert({ setting_key: key, ...payload });
-            if (insertError) return { key, error: insertError.message };
-          }
-
-          return { key };
-        });
-
-        const results = await Promise.all(upserts);
-        const failed = results.filter((r: any) => r && r.error);
-
-        if (failed.length > 0) {
-          const firstError = (failed[0] as any).error as string;
-          const tableNotFound = firstError.includes('does not exist') || firstError.includes('relation');
-          return res.status(500).json({
-            success: false,
-            tableError: tableNotFound,
-            error: tableNotFound
-              ? 'The app_settings table does not exist in your Supabase database.'
-              : firstError,
-            hint: tableNotFound
-              ? 'Go to Supabase → SQL Editor and run the contents of supabase/email_schema.sql'
-              : undefined
-          });
-        }
-
-        return res.json({ success: true, message: 'Settings saved successfully' });
-      }
-
-      case 'testResend': {
-        // Test Resend API key
-        const { apiKey } = req.body;
-
-        if (!apiKey) {
-          return res.json({ success: false, error: 'API key required' });
-        }
-
-        try {
-          const response = await fetch('https://api.resend.com/api-keys', {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json'
-            }
-          });
-
-          if (response.ok) {
-            return res.json({ success: true, message: 'Resend API key is valid' });
-          } else {
-            const data = await response.json();
-            return res.json({ success: false, error: data.message || 'Invalid API key' });
-          }
-        } catch (error) {
-          return res.json({ success: false, error: 'Failed to test API key' });
-        }
-      }
-
-      case 'testOpenAI': {
-        const { apiKey } = req.body;
-
-        if (!apiKey) {
-          return res.json({ success: false, error: 'API key required' });
-        }
-
-        const isAnthropic = apiKey.startsWith('sk-ant-');
-
-        try {
-          if (isAnthropic) {
-            const response = await fetch('https://api.anthropic.com/v1/models', {
-              headers: {
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01',
-              }
-            });
-            if (response.ok) {
-              return res.json({ success: true, message: 'Anthropic API key is valid', provider: 'anthropic' });
-            } else {
-              const err = await response.json().catch(() => ({}));
-              return res.json({ success: false, error: (err as any).error?.message || 'Invalid Anthropic API key', provider: 'anthropic' });
-            }
-          } else {
-            const response = await fetch('https://api.openai.com/v1/models', {
-              headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            if (response.ok) {
-              return res.json({ success: true, message: 'OpenAI API key is valid', provider: 'openai' });
-            } else {
-              return res.json({ success: false, error: 'Invalid API key — check your OpenAI key at platform.openai.com', provider: 'openai' });
-            }
-          }
-        } catch (error) {
-          return res.json({ success: false, error: 'Failed to connect to AI provider' });
-        }
-      }
-
-      case 'categories': {
-        // Get all setting categories
-        const { data: categories } = await supabase
-          .from('app_settings')
-          .select('category')
-          .order('category');
-
-        const uniqueCategories = [...new Set((categories || []).map((c: any) => c.category))];
-        return res.json({ success: true, categories: uniqueCategories });
-      }
-
-      default:
-        return res.status(400).json({
-          success: false,
-          error: 'Unknown action',
-          available: ['list', 'get', 'save', 'testEmail', 'testResend', 'testOpenAI', 'categories']
-        });
-    }
-  } catch (err: any) {
-    console.error('Settings API Error:', err);
-    return res.status(500).json({ success: false, error: err.message });
-  }
+  const key=action==='testResend'?'RESEND_API_KEY':'OPENAI_API_KEY';let apiKey=req.body.apiKey;
+  if(apiKey!==undefined&&(typeof apiKey!=='string'||apiKey.length>16384))return res.status(400).json({success:false,error:'Invalid credential input.'});
+  if(!apiKey||apiKey===SETTINGS_MASK){const saved=await admin.from('app_settings').select('setting_value').eq('setting_key',key).order('updated_at',{ascending:false}).limit(1).maybeSingle();if(saved.error)return res.status(503).json({success:false,error:'Saved credential is unavailable.'});apiKey=process.env[key]||saved.data?.setting_value;}
+  if(!apiKey)return res.status(400).json({success:false,error:'Save or enter a credential first.'});
+  const anthropic=action==='testOpenAI'&&apiKey.startsWith('sk-ant-');
+  const url=action==='testResend'?'https://api.resend.com/api-keys':anthropic?'https://api.anthropic.com/v1/models':'https://api.openai.com/v1/models';
+  const headers:Record<string,string>=anthropic?{'x-api-key':apiKey,'anthropic-version':'2023-06-01'}:{Authorization:`Bearer ${apiKey}`};
+  const response=await fetch(url,{headers,redirect:'error',signal:AbortSignal.timeout(10000)});
+  return res.status(response.ok?200:502).json(response.ok?{success:true,message:'Provider credential verified.'}:{success:false,error:'Provider credential validation failed.'});
+ }catch{return res.status(503).json({success:false,error:'Settings operation is unavailable.'});}
 }
