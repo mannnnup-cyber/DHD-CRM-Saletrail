@@ -2,7 +2,8 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../context/AppContext', () => ({ useApp: () => ({ state: { user: { id: 'owner-1', name: 'Owner', role: 'owner' } }, addCall: vi.fn() }) }));
+const actor=vi.hoisted(()=>({user:{id:'owner-1',name:'Owner',role:'owner'}}));
+vi.mock('../context/AppContext', () => ({ useApp: () => ({ state: { user: actor.user }, addCall: vi.fn() }) }));
 vi.mock('../lib/supabase', () => ({ supabase: {} }));
 vi.mock('../lib/auth', () => ({ authHeaders: () => ({ Authorization: 'Bearer synthetic' }) }));
 import WhatsApp from './WhatsApp';
@@ -13,7 +14,7 @@ const incomingId = '10000000-0000-4000-8000-000000000001';
 const outgoingId = '10000000-0000-4000-8000-000000000002';
 const flush = () => act(async () => { for (let i=0; i<12; i++) await Promise.resolve(); });
 beforeEach(async () => {
-  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; unavailable=false; sourceChats=[chat];
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; unavailable=false; sourceChats=[chat];actor.user={id:'owner-1',name:'Owner',role:'owner'};
   Object.defineProperty(document,'visibilityState',{ configurable:true,value:'visible' });
   HTMLElement.prototype.scrollIntoView=vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
@@ -33,6 +34,7 @@ beforeEach(async () => {
 });
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('WhatsApp label and unread UI',()=>{
+  it('clears only private setup credential drafts when actor changes',async()=>{const setup=Array.from(container.querySelectorAll('button')).find(button=>button.textContent?.trim()==='Setup')!;await act(async()=>setup.click());await flush();const input=container.querySelector('input[type=password]') as HTMLInputElement;expect(input).toBeTruthy();await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'previous-owner-private-key');input.dispatchEvent(new Event('input',{bubbles:true}));});expect(input.value).toBe('previous-owner-private-key');actor.user={id:'owner-2',name:'Second',role:'owner'};await act(async()=>root.render(<WhatsApp/>));await flush();expect((container.querySelector('input[type=password]') as HTMLInputElement).value).toBe('');expect(container.textContent).toContain('WhatsApp Business');});
   it('keeps one phone label menu, preserves duplicate names and shows read-only limitation',async()=>{
     const button=Array.from(container.querySelectorAll('button')).find(b=>b.textContent===' Phone labels') || Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'));
     expect(button).toBeTruthy();await act(async()=>button!.click());await flush();

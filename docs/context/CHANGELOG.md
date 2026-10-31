@@ -458,3 +458,8 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 
 ## 2026-10-22 — Partial mailbox sync visibility
 - Failed imports now retain reported saved counts, refresh saved messages after partial saves, and show uncertain timeout/network results without claiming success or retrying automatically.
+
+
+## SECURITY-001A — 2026-10-30
+
+Prepared isolated SECURITY-001A settings containment from b3b55c8: fresh active owner/manager authorization, safe secret projection, bounded writes, current-token UI callers, alternate configuration-route protection and two narrow provider-key response/transport corrections. No callback, companion, recording, database or deployment configuration changes. See delivery report for final evidence and release gates.

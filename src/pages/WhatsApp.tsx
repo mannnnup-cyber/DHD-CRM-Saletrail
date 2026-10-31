@@ -1,3 +1,4 @@
+import {settingsFetch} from '../lib/settings/client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Phone, Send, RefreshCw, CheckCheck, Check, Clock, User, Search, ChevronDown, Wifi, WifiOff, AlertCircle, Smile, Database, CheckCircle2, XCircle, Loader2, Plus, X, FileText, Download, Volume2, Paperclip, Bell, BellOff, ExternalLink, Image, Share2, Copy, Archive, CornerUpLeft, Info, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -288,6 +289,9 @@ export default function WhatsApp() {
   const [evolutionConfigSource, setEvolutionConfigSource] = useState<'env' | 'database' | ''>('');
   const [savingEvolutionConfig, setSavingEvolutionConfig] = useState(false);
   const [evolutionConfigResult, setEvolutionConfigResult] = useState<string | null>(null);
+  const settingsActor=state.user?.id+':'+state.user?.role;
+  const settingsActorRef=useRef(settingsActor);settingsActorRef.current=settingsActor;
+  useEffect(()=>{setEvolutionApiKey('');setEvolutionApiUrl('');setEvolutionConfigSource('');setEvolutionConfigResult(null);setWebhookConfigResult(null);setSavingEvolutionConfig(false);setConfiguringWebhook(false);},[settingsActor]);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([UNASSIGNED]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingWATarget = useRef<{ phone: string; name: string } | null>(null);
@@ -344,7 +348,7 @@ export default function WhatsApp() {
   // Check connection status via backend API
   const checkStatus = useCallback(async () => {
     try {
-      const r = await fetch('/api/whatsapp?action=status');
+      const r = await settingsFetch('/api/whatsapp?action=status');
       const data = await r.json();
       if (data.success) {
         // null = unknown state (e.g. fresh DB wipe, can't reach Evolution API)
@@ -362,9 +366,11 @@ export default function WhatsApp() {
 
   // Check webhook status - call backend API which has access to env vars
   const checkWebhookStatus = useCallback(async () => {
+    const actor=settingsActorRef.current;
     try {
-      const r = await fetch('/api/whatsapp?action=webhookInfo');
+      const r = await settingsFetch('/api/whatsapp?action=webhookInfo');
       const data = await r.json();
+      if(actor!==settingsActorRef.current)return;
       if (data.success) {
         setWebhookStatus({
           configured: data.configured || false,
@@ -381,9 +387,11 @@ export default function WhatsApp() {
 
   // Load current Evolution API config (URL + key) from backend
   const loadEvolutionConfig = useCallback(async () => {
+    const actor=settingsActorRef.current;
     try {
-      const r = await fetch('/api/whatsapp?action=getEvolutionConfig');
+      const r = await settingsFetch('/api/whatsapp?action=getEvolutionConfig');
       const data = await r.json();
+      if(actor!==settingsActorRef.current)return;
       if (data.success) {
         setEvolutionApiUrl(data.apiUrl || '');
         setEvolutionApiKey('');  // start blank — user fills in new key if needed
@@ -394,11 +402,12 @@ export default function WhatsApp() {
 
   // Save updated Evolution API config to DB
   const saveEvolutionConfig = useCallback(async () => {
+    const actor=settingsActorRef.current;
     if (!evolutionApiUrl.trim()) return;
     setSavingEvolutionConfig(true);
     setEvolutionConfigResult(null);
     try {
-      const res = await fetch('/api/whatsapp?action=saveEvolutionConfig', {
+      const res = await settingsFetch('/api/whatsapp?action=saveEvolutionConfig', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -407,17 +416,20 @@ export default function WhatsApp() {
         })
       });
       const data = await res.json();
+      if(actor!==settingsActorRef.current)return;
       if (data.success) {
+        setEvolutionApiKey('');
         setEvolutionConfigResult('✓ Saved. Click Auto-Configure Webhook to reconnect.');
         setEvolutionConfigSource('database');
       } else {
         setEvolutionConfigResult(`✗ ${data.error}`);
       }
     } catch (err: any) {
-      setEvolutionConfigResult(`✗ ${err.message}`);
+      if(actor!==settingsActorRef.current)return;
+      setEvolutionConfigResult('✗ Configuration save was not confirmed.');
     }
     setSavingEvolutionConfig(false);
-    setTimeout(() => setEvolutionConfigResult(null), 8000);
+    setTimeout(() => {if(actor===settingsActorRef.current)setEvolutionConfigResult(null);}, 8000);
   }, [evolutionApiUrl, evolutionApiKey]);
 
   // Load chats from backend API (database-backed, Evolution API)
@@ -657,16 +669,18 @@ export default function WhatsApp() {
 
   // Auto-configure Evolution API webhook with all required events (including CALL)
   const autoConfigureWebhook = useCallback(async () => {
+    const actor=settingsActorRef.current;
     setConfiguringWebhook(true);
     setWebhookConfigResult(null);
     try {
       const webhookUrl = `${window.location.origin}/api/whatsapp`;
-      const res = await fetch('/api/whatsapp?action=setWebhook', {
+      const res = await settingsFetch('/api/whatsapp?action=setWebhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ webhookUrl })
       });
       const data = await res.json();
+      if(actor!==settingsActorRef.current)return;
       if (data.success) {
         setWebhookConfigResult('✓ Webhook configured! MESSAGES_UPSERT, CONNECTION_UPDATE, and CALL events are now enabled.');
         // Update webhookStatus so gap banner disappears
@@ -681,10 +695,11 @@ export default function WhatsApp() {
         setWebhookConfigResult(`✗ ${data.error || 'Failed to configure webhook'}`);
       }
     } catch (err: any) {
-      setWebhookConfigResult(`✗ ${err.message}`);
+      if(actor!==settingsActorRef.current)return;
+      setWebhookConfigResult('✗ Webhook configuration was not confirmed.');
     }
     setConfiguringWebhook(false);
-    setTimeout(() => setWebhookConfigResult(null), 8000);
+    setTimeout(() => {if(actor===settingsActorRef.current)setWebhookConfigResult(null);}, 8000);
   }, []);
 
   // Pull more message history for the current chat from Evolution API
