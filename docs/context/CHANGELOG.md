@@ -463,3 +463,10 @@ lacks Instagram/TikTok); Postiz was the runner-up.
 ## SECURITY-001A — 2026-10-30
 
 Prepared isolated SECURITY-001A settings containment from b3b55c8: fresh active owner/manager authorization, safe secret projection, bounded writes, current-token UI callers, alternate configuration-route protection and two narrow provider-key response/transport corrections. No callback, companion, recording, database or deployment configuration changes. See delivery report for final evidence and release gates.
+
+
+## Independent SECURITY-001 redaction — 2026-11-01
+
+Isolated future provider-envelope credential and variable log/selected immediate-error redaction from prerequisite-dependent SECURITY-001 enforcement. Preserved001A and existing communication contracts. Legacy public endpoints, recording parser and at-rest transcription-error risks remain explicitly unresolved; no full communications recovery or deployment claim.
+
+November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
