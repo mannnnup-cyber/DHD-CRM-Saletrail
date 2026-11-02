@@ -1,5 +1,19 @@
 # Architecture — FollOps
 
+## Current reconciliation — 2026-11-02
+
+Authoritative source snapshot: master37a7253, with released001A settings guards and001B future provider projection. Historical sections below may describe feature branches. Exact code locations/stages are in [state reconciliation](../STATE-RECONCILIATION-2026-11-02.md).
+
+- Intended architecture: new browser data access is API-mediated and privileged configuration is server-only. Reviewed slice tests and bounded available-secret build scans support those slices; they are not platform-wide proof and do not certify legacy exceptions. Secret env-first precedence and nonsecret Evolution URL DB precedence must not be conflated.
+- Email Inbox/manual collector and BrightBean Social Inbox are master capabilities; Content Studio pages/components/src/lib/publishing and its13table/6RPC SQL live only on the unmerged Studio branch. No automatic email collector is configured.
+- WhatsApp provider connection is separate from delivery/receipt/replay correctness. Personal CRM unread and demand-verified phone labels do not prove phone-wide unread/complete association history.
+- Android is a separate repository/branch. The new local shared native coordinator and durable attempt rules are not installed. Server duplicate-safe receipts and recovery remain prerequisites.
+- Forwarding001C preserves callbacks/polling/bindings and adds only browser-management authorization; it is published review-only, not production. Do not import the older full security tree over released001A/B.
+
+## Historical notes retained below
+
+The following dated entries preserve prior decisions; they do not override the current reconciliation or establish present deployment/acceptance.
+
 ## Runtime Shape
 
 FollOps is a React 19, TypeScript, Vite 7, and Tailwind CSS application

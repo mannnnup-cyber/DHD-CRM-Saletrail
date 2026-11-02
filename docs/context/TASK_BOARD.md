@@ -1,5 +1,27 @@
 # Task Board — FollOps
 
+## Current reconciliation — 2026-11-02
+
+This section is the current task board; older dated entries below are history. Production is37a7253, not the local primary checkout098c63f. See [integration status](INTEGRATION_STATUS.md), [functionality roadmap](DEVELOPMENT_ROADMAP.md) and [security/release ledger](SECURITY_RELEASE_LEDGER.md).
+
+The nine historical files still in work-packets/active are reconciled in [the packet state index](../work-packets/STATE-INDEX.md); folder placement does not mean their code remains unimplemented.
+
+| Work | Current state | Next action |
+|---|---|---|
+| SECURITY001A/B | Merged/deployed;001B operational acceptance PARTIAL | Preserve controls; close fresh-event/role/log gaps without inventing events. |
+| SECURITY001C |403tests/type/build/review PASS; review branch published, deployment disabled | Owner review before merge/release. |
+| WhatsApp media/UI | Code already pushed on older stacked branches; NOT master | F1 minimal current-master extraction and full workflow acceptance. |
+| CONTACT001A |498historical tests/review PASS; now published no-deploy | Reconcile newer master and hosted/view/UI gates. |
+| Content Studio | Implemented/tested/pushed; no master PR; hosted objects absent | Preserve BB01–07; validate one post only after gates. |
+| PR15 | Draft content pack, not Studio implementation | Owner visual review; importer remains specified only. |
+| PR14 | Draft conflicting Woo repair | Reconcile source/policy/schema/store API before release. |
+| Android reliability |7d3af63code/92b8059docs local draft;16CLIchecks/direct compile/web PASS | Server/native/recovery gates; no APK rollout. |
+| Historical incident/full security | OPEN/BLOCKED | Retain ledger; no blanket completion or blind old-branch merge. |
+
+## Historical notes retained below
+
+The following dated entries preserve prior decisions; they do not override the current reconciliation or establish present deployment/acceptance.
+
 ## Status Values
 
 Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.

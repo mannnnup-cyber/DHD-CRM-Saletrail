@@ -1,5 +1,17 @@
 # File Map — FollOps
 
+## Current reconciliation — 2026-11-02
+
+Current production source37a7253; local primary checkout098c63f is historical. New canonical documents: INTEGRATION_STATUS.md, DEVELOPMENT_ROADMAP.md, SECURITY_RELEASE_LEDGER.md and CODE_STATE_INVENTORY.json. The consolidated report is docs/STATE-RECONCILIATION-2026-11-02.md.
+
+Source donors: fix/whatsapp-media-initialization/api/whatsapp.ts shared sender; fix/whatsapp-inbox-ui/src/pages/WhatsApp.tsx and attachment/search/layout helpers; feat/contact-001a-secure-review/src/lib/contacts/* and comparison/create UI; feat/brightbean-content-studio/src/lib/publishing/*, src/pages/ContentStudio.tsx and publishing components; fix/woocommerce-sync/src/lib/woocommerce-server.ts and SQL. These paths are branch-qualified and must not be assumed present in master.
+
+Review-only forwarding branch review/security-001c-forwarding contains bb6bcbe application source plus a single-branch no-deployment guard. Separate Companion branch fix/android-call-sync-reliability contains local7d3af63 logic and92b8059review documentation; no APK is part of the release inventory.
+
+## Historical notes retained below
+
+The following dated entries preserve prior decisions; they do not override the current reconciliation or establish present deployment/acceptance.
+
 This file explains the key files, folders, routes, dependencies, integrations,
 and environment variables in the project. The JSON block is intended to stay
 parseable by AI tools and harness systems.

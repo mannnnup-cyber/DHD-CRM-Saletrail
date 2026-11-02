@@ -1,0 +1,1620 @@
+{
+  "checked_utc": "2026-11-02T08:03:45.592842+00:00",
+  "master": "37a7253910c8541fbc35a296ee3371b848f28051",
+  "local_branches": [
+    {
+      "branch": "WP-001-whatsapp",
+      "head": "ba9fc158b6c1c4727524b264f79586f46f95b875",
+      "master_behind": 85,
+      "master_ahead": 5,
+      "ancestor_of_master": false,
+      "remote_same_name": "a2adb32c91e23fafe75fe209fa07ef8374cfc63f",
+      "remote_behind": 0,
+      "remote_ahead": 1,
+      "patches_unique_to_branch": 5,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "WP-001-whatsapp"
+      ],
+      "remote_refs_containing_head": []
+    },
+    {
+      "branch": "WP-ARCHITECTURE-REVALIDATED",
+      "head": "63a449db1c2137719778134b8831cbfb674f738a",
+      "master_behind": 75,
+      "master_ahead": 2,
+      "ancestor_of_master": false,
+      "remote_same_name": "63a449db1c2137719778134b8831cbfb674f738a",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 1,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin/WP-ARCHITECTURE-REVALIDATED"
+      ]
+    },
+    {
+      "branch": "WP-EMAIL-RECOVERY",
+      "head": "a200ae2f49a74f75567283838dcc2b427b6c92f8",
+      "master_behind": 53,
+      "master_ahead": 2,
+      "ancestor_of_master": false,
+      "remote_same_name": "a200ae2f49a74f75567283838dcc2b427b6c92f8",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 2,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin/WP-EMAIL-RECOVERY"
+      ]
+    },
+    {
+      "branch": "WP-EMAIL-RECOVERY-IMPLEMENT",
+      "head": "a936be550d1b52948c84190882447c1dce808f1d",
+      "master_behind": 44,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "a936be550d1b52948c84190882447c1dce808f1d",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/WP-EMAIL-RECOVERY-IMPLEMENT",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-foundation-refresh",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/account-setup-email",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/recovery-email-delivery",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "WP-OPS-STABILIZATION",
+      "head": "5dea94f2109f530ada8c30e8d98ec702d0a280c6",
+      "master_behind": 53,
+      "master_ahead": 3,
+      "ancestor_of_master": false,
+      "remote_same_name": "5dea94f2109f530ada8c30e8d98ec702d0a280c6",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 3,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin/WP-OPS-STABILIZATION"
+      ]
+    },
+    {
+      "branch": "chore/follops-native-agents",
+      "head": "5d6c7f0386f552f624eb222fa7f8638726fd218d",
+      "master_behind": 86,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "5d6c7f0386f552f624eb222fa7f8638726fd218d",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/WP-001-whatsapp",
+        "origin/WP-001-whatsapp-fresh",
+        "origin/WP-ARCHITECTURE-REVALIDATED",
+        "origin/WP-EMAIL-RECOVERY",
+        "origin/WP-EMAIL-RECOVERY-IMPLEMENT",
+        "origin/WP-INBOX-CONTRACT",
+        "origin/WP-MAINTENANCE-BASELINE-IMPLEMENT",
+        "origin/WP-OPS-STABILIZATION",
+        "origin/WP-REBRAND-IMPLEMENT",
+        "origin/WP-SEC-AUTH",
+        "origin/chore/follops-native-agents",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-foundation-refresh",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/account-setup-email",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/recovery-email-delivery",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/planning/phase1-packets",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "docs/contact-001-duplicate-management",
+      "head": "a2356afec539a7dc78b2304427c1d98c8ad12918",
+      "master_behind": 5,
+      "master_ahead": 1,
+      "ancestor_of_master": false,
+      "remote_same_name": null,
+      "remote_behind": null,
+      "remote_ahead": null,
+      "patches_unique_to_branch": 1,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "contact-001-plan"
+      ],
+      "remote_refs_containing_head": [
+        "origin/feat/contact-001a-secure-review"
+      ]
+    },
+    {
+      "branch": "docs/inbox-foundation-refresh",
+      "head": "fc6e1093d247bc0b34f59ffe5c048d4a45a96fdc",
+      "master_behind": 38,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "fc6e1093d247bc0b34f59ffe5c048d4a45a96fdc",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "inbox-review"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-foundation-refresh",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/account-setup-email",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "docs/inbox-release-closeout",
+      "head": "4595f07c03ca91e72fb5e246bdb3903f255dda92",
+      "master_behind": 25,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "017bb6db031f59930e384473566795c56037c76c",
+      "remote_behind": 0,
+      "remote_ahead": 3,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "docs/onboarding-release-closeout",
+      "head": "2903442b8f5defac83b1c80a9a3c7068e0a387c0",
+      "master_behind": 33,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": null,
+      "remote_behind": null,
+      "remote_ahead": null,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "docs/recovery-release-closeout",
+      "head": "5d6f7c533003a614afe38cd17b4801a9447949f8",
+      "master_behind": 34,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": null,
+      "remote_behind": null,
+      "remote_ahead": null,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "docs/social-inbox-release",
+      "head": "098c63fbc82e7ba2a3a802b6341031bb674f84cb",
+      "master_behind": 23,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "6213501a25c19d8f71e99fe36e96c0c2e861d0b1",
+      "remote_behind": 0,
+      "remote_ahead": 1,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "DHD-CRM-Saletrail"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "feat/brightbean-content-studio",
+      "head": "808be251406c0d9e1c4406f52c259feb1269ab2d",
+      "master_behind": 18,
+      "master_ahead": 9,
+      "ancestor_of_master": false,
+      "remote_same_name": "808be251406c0d9e1c4406f52c259feb1269ab2d",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 9,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "brightbean-content-studio"
+      ],
+      "remote_refs_containing_head": [
+        "origin/feat/brightbean-content-studio"
+      ]
+    },
+    {
+      "branch": "feat/brightbean-inbox",
+      "head": "b3baab39337b71ea0b100a663b91838dba531f19",
+      "master_behind": 26,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "b3baab39337b71ea0b100a663b91838dba531f19",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "social-inbox"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "feat/contact-001a-secure-review",
+      "head": "3257ce3fd54d331bde9bc9bea1e3a127c33364c1",
+      "master_behind": 5,
+      "master_ahead": 7,
+      "ancestor_of_master": false,
+      "remote_same_name": "3257ce3fd54d331bde9bc9bea1e3a127c33364c1",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 7,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "contact-001a"
+      ],
+      "remote_refs_containing_head": [
+        "origin/feat/contact-001a-secure-review"
+      ]
+    },
+    {
+      "branch": "feat/email-inbox-mvp",
+      "head": "15f862f091d151b7aefd7d7f0ede3c997a84ce1e",
+      "master_behind": 32,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "15f862f091d151b7aefd7d7f0ede3c997a84ce1e",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "email-inbox"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "feat/whatsapp-labels-unread",
+      "head": "c61450e7b3468e3edf63a4e4320f6e9ecacc32ea",
+      "master_behind": 16,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "c61450e7b3468e3edf63a4e4320f6e9ecacc32ea",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "feat/whatsapp-shared-labels",
+      "head": "8c2cf9dad3fdeee6cdc3423bfeec1ace19d0116c",
+      "master_behind": 12,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "8c2cf9dad3fdeee6cdc3423bfeec1ace19d0116c",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/account-setup-email",
+      "head": "7c79985e9bf5d010b6eb94ecda1780d4f6a0f225",
+      "master_behind": 35,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "7c79985e9bf5d010b6eb94ecda1780d4f6a0f225",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "account-setup"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/account-setup-email",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/communications-access-control",
+      "head": "047beafcc643e9a31a2d54218d1526993164de2d",
+      "master_behind": 5,
+      "master_ahead": 2,
+      "ancestor_of_master": false,
+      "remote_same_name": "047beafcc643e9a31a2d54218d1526993164de2d",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 2,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "communications-access-control"
+      ],
+      "remote_refs_containing_head": [
+        "origin/fix/communications-access-control",
+        "origin/fix/whatsapp-inbox-ui"
+      ]
+    },
+    {
+      "branch": "fix/email-sync-server-settings",
+      "head": "49e3d9c19bd1617126db8c157c0351eb7a8d6d4d",
+      "master_behind": 19,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "49e3d9c19bd1617126db8c157c0351eb7a8d6d4d",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "email-sync-fix"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/inbox-partial-sync",
+      "head": "57e9ffe5c243db7f40c7e94c182e8f971dc7b24d",
+      "master_behind": 6,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "57e9ffe5c243db7f40c7e94c182e8f971dc7b24d",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "inbox-partial-sync"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/feat/contact-001a-secure-review",
+        "origin/fix/communications-access-control",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/inbox-runtime",
+      "head": "fcc321810a288199e29c8d5c611aae14d2ed295b",
+      "master_behind": 30,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "fcc321810a288199e29c8d5c611aae14d2ed295b",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "inbox-runtime"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/inbox-usability-email-refresh",
+      "head": "922b4a4381be479ba327b482fd4c29c26b7684c1",
+      "master_behind": 8,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "922b4a4381be479ba327b482fd4c29c26b7684c1",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "inbox-usability"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/feat/contact-001a-secure-review",
+        "origin/fix/communications-access-control",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/recovery-email-delivery",
+      "head": "b1997f336ae1b4258e7337d8e6bed15d375da190",
+      "master_behind": 42,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "b1997f336ae1b4258e7337d8e6bed15d375da190",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-foundation-refresh",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/account-setup-email",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/recovery-email-delivery",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/security-001-final-hardening",
+      "head": "c2ae05980fb73b962fb467df32a629bf7d4b1c91",
+      "master_behind": 2,
+      "master_ahead": 1,
+      "ancestor_of_master": false,
+      "remote_same_name": null,
+      "remote_behind": null,
+      "remote_ahead": null,
+      "patches_unique_to_branch": 1,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "security-001-final"
+      ],
+      "remote_refs_containing_head": []
+    },
+    {
+      "branch": "fix/security-001-integration-routes",
+      "head": "ce45b52d81067cf548eeb744b9ef7b6f0a219c91",
+      "master_behind": 5,
+      "master_ahead": 5,
+      "ancestor_of_master": false,
+      "remote_same_name": null,
+      "remote_behind": null,
+      "remote_ahead": null,
+      "patches_unique_to_branch": 5,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "security-001"
+      ],
+      "remote_refs_containing_head": []
+    },
+    {
+      "branch": "fix/security-001-provider-redaction",
+      "head": "9845c5dc15b36f5b31edf787c97e5df885d2244a",
+      "master_behind": 1,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "9845c5dc15b36f5b31edf787c97e5df885d2244a",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "security-001-redaction"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/fix/security-001-provider-redaction",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/security-001a-settings-containment",
+      "head": "7d7a15d804a228285dc401f53917f66913280956",
+      "master_behind": 3,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "7d7a15d804a228285dc401f53917f66913280956",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "security-001a"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/security-001c-forwarding",
+      "head": "bb6bcbe4f200c34fa17e028244a919d33f664b5f",
+      "master_behind": 0,
+      "master_ahead": 1,
+      "ancestor_of_master": false,
+      "remote_same_name": null,
+      "remote_behind": null,
+      "remote_ahead": null,
+      "patches_unique_to_branch": 1,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "security-001c"
+      ],
+      "remote_refs_containing_head": [
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/whatsapp-inbox-ui",
+      "head": "269d253ee4333bf411901ed984a73672ffcc70ce",
+      "master_behind": 5,
+      "master_ahead": 4,
+      "ancestor_of_master": false,
+      "remote_same_name": "269d253ee4333bf411901ed984a73672ffcc70ce",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 4,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "whatsapp-inbox-ui"
+      ],
+      "remote_refs_containing_head": [
+        "origin/fix/whatsapp-inbox-ui"
+      ]
+    },
+    {
+      "branch": "fix/whatsapp-lid-label-management",
+      "head": "9617820ae54fde5c50b30ac701ce749cadec33f2",
+      "master_behind": 10,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "9617820ae54fde5c50b30ac701ce749cadec33f2",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "whatsapp-shared-labels"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/feat/contact-001a-secure-review",
+        "origin/fix/communications-access-control",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/whatsapp-media-initialization",
+      "head": "6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a",
+      "master_behind": 5,
+      "master_ahead": 1,
+      "ancestor_of_master": false,
+      "remote_same_name": "6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 1,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "whatsapp-media-fix"
+      ],
+      "remote_refs_containing_head": [
+        "origin/fix/communications-access-control",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-media-initialization"
+      ]
+    },
+    {
+      "branch": "fix/whatsapp-unread-identifiers",
+      "head": "799bbdbf0d31060fc1552913d522c05d4e77150f",
+      "master_behind": 14,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "799bbdbf0d31060fc1552913d522c05d4e77150f",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "whatsapp-labels"
+      ],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/communications-access-control",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/master",
+        "origin/review/security-001c-forwarding"
+      ]
+    },
+    {
+      "branch": "fix/woocommerce-sync",
+      "head": "893068198d6e29578ae4f287411bdd40b228fec4",
+      "master_behind": 18,
+      "master_ahead": 1,
+      "ancestor_of_master": false,
+      "remote_same_name": "893068198d6e29578ae4f287411bdd40b228fec4",
+      "remote_behind": 0,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 1,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [
+        "woocommerce-fix"
+      ],
+      "remote_refs_containing_head": [
+        "origin/fix/woocommerce-sync"
+      ]
+    },
+    {
+      "branch": "master",
+      "head": "86061398cfb4857aaf4486fd40b207c81e0e645d",
+      "master_behind": 84,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "remote_same_name": "37a7253910c8541fbc35a296ee3371b848f28051",
+      "remote_behind": 84,
+      "remote_ahead": 0,
+      "patches_unique_to_branch": 0,
+      "patches_equivalent_in_master": 0,
+      "worktrees": [],
+      "remote_refs_containing_head": [
+        "origin",
+        "origin/WP-001-whatsapp-fresh",
+        "origin/WP-ARCHITECTURE-REVALIDATED",
+        "origin/WP-EMAIL-RECOVERY",
+        "origin/WP-EMAIL-RECOVERY-IMPLEMENT",
+        "origin/WP-INBOX-CONTRACT",
+        "origin/WP-MAINTENANCE-BASELINE-IMPLEMENT",
+        "origin/WP-OPS-STABILIZATION",
+        "origin/WP-REBRAND-IMPLEMENT",
+        "origin/WP-SEC-AUTH",
+        "origin/content/dhd-social-pilot-2026-10",
+        "origin/docs/inbox-foundation-refresh",
+        "origin/docs/inbox-release-closeout",
+        "origin/docs/social-inbox-release",
+        "origin/feat/brightbean-content-studio",
+        "origin/feat/brightbean-inbox",
+        "origin/feat/contact-001a-secure-review",
+        "origin/feat/email-inbox-mvp",
+        "origin/feat/whatsapp-labels-unread",
+        "origin/feat/whatsapp-shared-labels",
+        "origin/fix/account-setup-email",
+        "origin/fix/communications-access-control",
+        "origin/fix/email-sync-server-settings",
+        "origin/fix/inbox-partial-sync",
+        "origin/fix/inbox-runtime",
+        "origin/fix/inbox-usability-email-refresh",
+        "origin/fix/recovery-email-delivery",
+        "origin/fix/security-001-provider-redaction",
+        "origin/fix/security-001a-settings-containment",
+        "origin/fix/whatsapp-inbox-ui",
+        "origin/fix/whatsapp-lid-label-management",
+        "origin/fix/whatsapp-media-initialization",
+        "origin/fix/whatsapp-unread-identifiers",
+        "origin/fix/woocommerce-sync",
+        "origin/master",
+        "origin/planning/phase1-packets",
+        "origin/review/security-001c-forwarding"
+      ]
+    }
+  ],
+  "worktrees": [
+    {
+      "path": "DHD-CRM-Saletrail",
+      "branch": "docs/social-inbox-release",
+      "head": "098c63fbc82e7ba2a3a802b6341031bb674f84cb",
+      "status": []
+    },
+    {
+      "path": "WP-001-whatsapp",
+      "branch": "WP-001-whatsapp",
+      "head": "ba9fc158b6c1c4727524b264f79586f46f95b875",
+      "status": []
+    },
+    {
+      "path": "account-setup",
+      "branch": "fix/account-setup-email",
+      "head": "7c79985e9bf5d010b6eb94ecda1780d4f6a0f225",
+      "status": []
+    },
+    {
+      "path": "brightbean-content-studio",
+      "branch": "feat/brightbean-content-studio",
+      "head": "808be251406c0d9e1c4406f52c259feb1269ab2d",
+      "status": []
+    },
+    {
+      "path": "communications-access-control",
+      "branch": "fix/communications-access-control",
+      "head": "047beafcc643e9a31a2d54218d1526993164de2d",
+      "status": []
+    },
+    {
+      "path": "contact-001-plan",
+      "branch": "docs/contact-001-duplicate-management",
+      "head": "a2356afec539a7dc78b2304427c1d98c8ad12918",
+      "status": []
+    },
+    {
+      "path": "contact-001a",
+      "branch": "feat/contact-001a-secure-review",
+      "head": "3257ce3fd54d331bde9bc9bea1e3a127c33364c1",
+      "status": []
+    },
+    {
+      "path": "email-inbox",
+      "branch": "feat/email-inbox-mvp",
+      "head": "15f862f091d151b7aefd7d7f0ede3c997a84ce1e",
+      "status": []
+    },
+    {
+      "path": "email-sync-fix",
+      "branch": "fix/email-sync-server-settings",
+      "head": "49e3d9c19bd1617126db8c157c0351eb7a8d6d4d",
+      "status": []
+    },
+    {
+      "path": "inbox-partial-sync",
+      "branch": "fix/inbox-partial-sync",
+      "head": "57e9ffe5c243db7f40c7e94c182e8f971dc7b24d",
+      "status": []
+    },
+    {
+      "path": "inbox-review",
+      "branch": "docs/inbox-foundation-refresh",
+      "head": "fc6e1093d247bc0b34f59ffe5c048d4a45a96fdc",
+      "status": []
+    },
+    {
+      "path": "inbox-runtime",
+      "branch": "fix/inbox-runtime",
+      "head": "fcc321810a288199e29c8d5c611aae14d2ed295b",
+      "status": []
+    },
+    {
+      "path": "inbox-usability",
+      "branch": "fix/inbox-usability-email-refresh",
+      "head": "922b4a4381be479ba327b482fd4c29c26b7684c1",
+      "status": []
+    },
+    {
+      "path": "security-001",
+      "branch": "fix/security-001-integration-routes",
+      "head": "ce45b52d81067cf548eeb744b9ef7b6f0a219c91",
+      "status": []
+    },
+    {
+      "path": "security-001-final",
+      "branch": "fix/security-001-final-hardening",
+      "head": "c2ae05980fb73b962fb467df32a629bf7d4b1c91",
+      "status": []
+    },
+    {
+      "path": "security-001-redaction",
+      "branch": "fix/security-001-provider-redaction",
+      "head": "9845c5dc15b36f5b31edf787c97e5df885d2244a",
+      "status": []
+    },
+    {
+      "path": "security-001a",
+      "branch": "fix/security-001a-settings-containment",
+      "head": "7d7a15d804a228285dc401f53917f66913280956",
+      "status": []
+    },
+    {
+      "path": "security-001c",
+      "branch": "fix/security-001c-forwarding",
+      "head": "bb6bcbe4f200c34fa17e028244a919d33f664b5f",
+      "status": []
+    },
+    {
+      "path": "social-inbox",
+      "branch": "feat/brightbean-inbox",
+      "head": "b3baab39337b71ea0b100a663b91838dba531f19",
+      "status": []
+    },
+    {
+      "path": "whatsapp-inbox-ui",
+      "branch": "fix/whatsapp-inbox-ui",
+      "head": "269d253ee4333bf411901ed984a73672ffcc70ce",
+      "status": []
+    },
+    {
+      "path": "whatsapp-labels",
+      "branch": "fix/whatsapp-unread-identifiers",
+      "head": "799bbdbf0d31060fc1552913d522c05d4e77150f",
+      "status": []
+    },
+    {
+      "path": "whatsapp-media-fix",
+      "branch": "fix/whatsapp-media-initialization",
+      "head": "6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a",
+      "status": []
+    },
+    {
+      "path": "whatsapp-shared-labels",
+      "branch": "fix/whatsapp-lid-label-management",
+      "head": "9617820ae54fde5c50b30ac701ce749cadec33f2",
+      "status": []
+    },
+    {
+      "path": "woocommerce-fix",
+      "branch": "fix/woocommerce-sync",
+      "head": "893068198d6e29578ae4f287411bdd40b228fec4",
+      "status": []
+    }
+  ],
+  "excluded_symbolic_refs": [
+    {
+      "ref": "refs/remotes/origin/HEAD",
+      "target": "refs/remotes/origin/master"
+    }
+  ],
+  "remote_branch_details": [
+    {
+      "branch": "WP-001-whatsapp",
+      "head": "a2adb32c91e23fafe75fe209fa07ef8374cfc63f",
+      "master_behind": 85,
+      "master_ahead": 4,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "WP-001-whatsapp-fresh",
+      "head": "7b6979b6336c4243780e823fb28be071bc11dadb",
+      "master_behind": 53,
+      "master_ahead": 6,
+      "ancestor_of_master": false,
+      "local_branch_present": false
+    },
+    {
+      "branch": "WP-ARCHITECTURE-REVALIDATED",
+      "head": "63a449db1c2137719778134b8831cbfb674f738a",
+      "master_behind": 75,
+      "master_ahead": 2,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "WP-EMAIL-RECOVERY",
+      "head": "a200ae2f49a74f75567283838dcc2b427b6c92f8",
+      "master_behind": 53,
+      "master_ahead": 2,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "WP-EMAIL-RECOVERY-IMPLEMENT",
+      "head": "a936be550d1b52948c84190882447c1dce808f1d",
+      "master_behind": 44,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "WP-INBOX-CONTRACT",
+      "head": "56e45a50a0beb45be345f818ee3cd15665ad3065",
+      "master_behind": 71,
+      "master_ahead": 3,
+      "ancestor_of_master": false,
+      "local_branch_present": false
+    },
+    {
+      "branch": "WP-MAINTENANCE-BASELINE-IMPLEMENT",
+      "head": "a330f2442abf19997b80d80ec5aeb8876229b370",
+      "master_behind": 55,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": false
+    },
+    {
+      "branch": "WP-OPS-STABILIZATION",
+      "head": "5dea94f2109f530ada8c30e8d98ec702d0a280c6",
+      "master_behind": 53,
+      "master_ahead": 3,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "WP-REBRAND-IMPLEMENT",
+      "head": "53881a7f5709ef276ac6d559f25601ce1a297245",
+      "master_behind": 68,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": false
+    },
+    {
+      "branch": "WP-SEC-AUTH",
+      "head": "cd2052f4f2e7453bcf9094c0ddf1aeeed56f0a26",
+      "master_behind": 70,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": false
+    },
+    {
+      "branch": "chore/follops-native-agents",
+      "head": "5d6c7f0386f552f624eb222fa7f8638726fd218d",
+      "master_behind": 86,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "chore/tsc-cleanup-adapters",
+      "head": "cb75344272bd1d992a42c8010a9c7201d6625acc",
+      "master_behind": 342,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": false
+    },
+    {
+      "branch": "content/dhd-social-pilot-2026-10",
+      "head": "3cf71773a90b17aeb70b091e05d36984bb12ecdd",
+      "master_behind": 18,
+      "master_ahead": 7,
+      "ancestor_of_master": false,
+      "local_branch_present": false
+    },
+    {
+      "branch": "docs/inbox-foundation-refresh",
+      "head": "fc6e1093d247bc0b34f59ffe5c048d4a45a96fdc",
+      "master_behind": 38,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "docs/inbox-release-closeout",
+      "head": "017bb6db031f59930e384473566795c56037c76c",
+      "master_behind": 28,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "docs/social-inbox-release",
+      "head": "6213501a25c19d8f71e99fe36e96c0c2e861d0b1",
+      "master_behind": 24,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "feat/brightbean-content-studio",
+      "head": "808be251406c0d9e1c4406f52c259feb1269ab2d",
+      "master_behind": 18,
+      "master_ahead": 9,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "feat/brightbean-inbox",
+      "head": "b3baab39337b71ea0b100a663b91838dba531f19",
+      "master_behind": 26,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "feat/contact-001a-secure-review",
+      "head": "3257ce3fd54d331bde9bc9bea1e3a127c33364c1",
+      "master_behind": 5,
+      "master_ahead": 7,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "feat/email-inbox-mvp",
+      "head": "15f862f091d151b7aefd7d7f0ede3c997a84ce1e",
+      "master_behind": 32,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "feat/whatsapp-labels-unread",
+      "head": "c61450e7b3468e3edf63a4e4320f6e9ecacc32ea",
+      "master_behind": 16,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "feat/whatsapp-shared-labels",
+      "head": "8c2cf9dad3fdeee6cdc3423bfeec1ace19d0116c",
+      "master_behind": 12,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "feature/local-models-docs-and-whatsapp-db",
+      "head": "94df827682d1d64a5f9810415c566ba3fa2daa8f",
+      "master_behind": 339,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": false
+    },
+    {
+      "branch": "fix/account-setup-email",
+      "head": "7c79985e9bf5d010b6eb94ecda1780d4f6a0f225",
+      "master_behind": 35,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/communications-access-control",
+      "head": "047beafcc643e9a31a2d54218d1526993164de2d",
+      "master_behind": 5,
+      "master_ahead": 2,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/email-sync-server-settings",
+      "head": "49e3d9c19bd1617126db8c157c0351eb7a8d6d4d",
+      "master_behind": 19,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/inbox-partial-sync",
+      "head": "57e9ffe5c243db7f40c7e94c182e8f971dc7b24d",
+      "master_behind": 6,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/inbox-runtime",
+      "head": "fcc321810a288199e29c8d5c611aae14d2ed295b",
+      "master_behind": 30,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/inbox-usability-email-refresh",
+      "head": "922b4a4381be479ba327b482fd4c29c26b7684c1",
+      "master_behind": 8,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/recovery-email-delivery",
+      "head": "b1997f336ae1b4258e7337d8e6bed15d375da190",
+      "master_behind": 42,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/security-001-provider-redaction",
+      "head": "9845c5dc15b36f5b31edf787c97e5df885d2244a",
+      "master_behind": 1,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/security-001a-settings-containment",
+      "head": "7d7a15d804a228285dc401f53917f66913280956",
+      "master_behind": 3,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/whatsapp-inbox-ui",
+      "head": "269d253ee4333bf411901ed984a73672ffcc70ce",
+      "master_behind": 5,
+      "master_ahead": 4,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/whatsapp-lid-label-management",
+      "head": "9617820ae54fde5c50b30ac701ce749cadec33f2",
+      "master_behind": 10,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/whatsapp-media-initialization",
+      "head": "6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a",
+      "master_behind": 5,
+      "master_ahead": 1,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/whatsapp-unread-identifiers",
+      "head": "799bbdbf0d31060fc1552913d522c05d4e77150f",
+      "master_behind": 14,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "fix/woocommerce-sync",
+      "head": "893068198d6e29578ae4f287411bdd40b228fec4",
+      "master_behind": 18,
+      "master_ahead": 1,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    },
+    {
+      "branch": "master",
+      "head": "37a7253910c8541fbc35a296ee3371b848f28051",
+      "master_behind": 0,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": true
+    },
+    {
+      "branch": "planning/phase1-packets",
+      "head": "4c50875a9ed628fe4818b5efbd993b2f9860233e",
+      "master_behind": 72,
+      "master_ahead": 0,
+      "ancestor_of_master": true,
+      "local_branch_present": false
+    },
+    {
+      "branch": "review/security-001c-forwarding",
+      "head": "4405878a024fd9422a3b5bb89efe45c7ce669686",
+      "master_behind": 0,
+      "master_ahead": 2,
+      "ancestor_of_master": false,
+      "local_branch_present": true
+    }
+  ],
+  "original_remote_branches": {
+    "WP-001-whatsapp": "a2adb32c91e23fafe75fe209fa07ef8374cfc63f",
+    "WP-001-whatsapp-fresh": "7b6979b6336c4243780e823fb28be071bc11dadb",
+    "WP-ARCHITECTURE-REVALIDATED": "63a449db1c2137719778134b8831cbfb674f738a",
+    "WP-EMAIL-RECOVERY": "a200ae2f49a74f75567283838dcc2b427b6c92f8",
+    "WP-EMAIL-RECOVERY-IMPLEMENT": "a936be550d1b52948c84190882447c1dce808f1d",
+    "WP-INBOX-CONTRACT": "56e45a50a0beb45be345f818ee3cd15665ad3065",
+    "WP-MAINTENANCE-BASELINE-IMPLEMENT": "a330f2442abf19997b80d80ec5aeb8876229b370",
+    "WP-OPS-STABILIZATION": "5dea94f2109f530ada8c30e8d98ec702d0a280c6",
+    "WP-REBRAND-IMPLEMENT": "53881a7f5709ef276ac6d559f25601ce1a297245",
+    "WP-SEC-AUTH": "cd2052f4f2e7453bcf9094c0ddf1aeeed56f0a26",
+    "chore/follops-native-agents": "5d6c7f0386f552f624eb222fa7f8638726fd218d",
+    "chore/tsc-cleanup-adapters": "cb75344272bd1d992a42c8010a9c7201d6625acc",
+    "content/dhd-social-pilot-2026-10": "3cf71773a90b17aeb70b091e05d36984bb12ecdd",
+    "docs/inbox-foundation-refresh": "fc6e1093d247bc0b34f59ffe5c048d4a45a96fdc",
+    "docs/inbox-release-closeout": "017bb6db031f59930e384473566795c56037c76c",
+    "docs/social-inbox-release": "6213501a25c19d8f71e99fe36e96c0c2e861d0b1",
+    "feat/brightbean-content-studio": "808be251406c0d9e1c4406f52c259feb1269ab2d",
+    "feat/brightbean-inbox": "b3baab39337b71ea0b100a663b91838dba531f19",
+    "feat/email-inbox-mvp": "15f862f091d151b7aefd7d7f0ede3c997a84ce1e",
+    "feat/whatsapp-labels-unread": "c61450e7b3468e3edf63a4e4320f6e9ecacc32ea",
+    "feat/whatsapp-shared-labels": "8c2cf9dad3fdeee6cdc3423bfeec1ace19d0116c",
+    "feature/local-models-docs-and-whatsapp-db": "94df827682d1d64a5f9810415c566ba3fa2daa8f",
+    "fix/account-setup-email": "7c79985e9bf5d010b6eb94ecda1780d4f6a0f225",
+    "fix/communications-access-control": "047beafcc643e9a31a2d54218d1526993164de2d",
+    "fix/email-sync-server-settings": "49e3d9c19bd1617126db8c157c0351eb7a8d6d4d",
+    "fix/inbox-partial-sync": "57e9ffe5c243db7f40c7e94c182e8f971dc7b24d",
+    "fix/inbox-runtime": "fcc321810a288199e29c8d5c611aae14d2ed295b",
+    "fix/inbox-usability-email-refresh": "922b4a4381be479ba327b482fd4c29c26b7684c1",
+    "fix/recovery-email-delivery": "b1997f336ae1b4258e7337d8e6bed15d375da190",
+    "fix/security-001-provider-redaction": "9845c5dc15b36f5b31edf787c97e5df885d2244a",
+    "fix/security-001a-settings-containment": "7d7a15d804a228285dc401f53917f66913280956",
+    "fix/whatsapp-inbox-ui": "269d253ee4333bf411901ed984a73672ffcc70ce",
+    "fix/whatsapp-lid-label-management": "9617820ae54fde5c50b30ac701ce749cadec33f2",
+    "fix/whatsapp-media-initialization": "6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a",
+    "fix/whatsapp-unread-identifiers": "799bbdbf0d31060fc1552913d522c05d4e77150f",
+    "fix/woocommerce-sync": "893068198d6e29578ae4f287411bdd40b228fec4",
+    "master": "37a7253910c8541fbc35a296ee3371b848f28051",
+    "planning/phase1-packets": "4c50875a9ed628fe4818b5efbd993b2f9860233e"
+  },
+  "remote_branches_at_publication_readback": {
+    "WP-001-whatsapp": "a2adb32c91e23fafe75fe209fa07ef8374cfc63f",
+    "WP-001-whatsapp-fresh": "7b6979b6336c4243780e823fb28be071bc11dadb",
+    "WP-ARCHITECTURE-REVALIDATED": "63a449db1c2137719778134b8831cbfb674f738a",
+    "WP-EMAIL-RECOVERY": "a200ae2f49a74f75567283838dcc2b427b6c92f8",
+    "WP-EMAIL-RECOVERY-IMPLEMENT": "a936be550d1b52948c84190882447c1dce808f1d",
+    "WP-INBOX-CONTRACT": "56e45a50a0beb45be345f818ee3cd15665ad3065",
+    "WP-MAINTENANCE-BASELINE-IMPLEMENT": "a330f2442abf19997b80d80ec5aeb8876229b370",
+    "WP-OPS-STABILIZATION": "5dea94f2109f530ada8c30e8d98ec702d0a280c6",
+    "WP-REBRAND-IMPLEMENT": "53881a7f5709ef276ac6d559f25601ce1a297245",
+    "WP-SEC-AUTH": "cd2052f4f2e7453bcf9094c0ddf1aeeed56f0a26",
+    "chore/follops-native-agents": "5d6c7f0386f552f624eb222fa7f8638726fd218d",
+    "chore/tsc-cleanup-adapters": "cb75344272bd1d992a42c8010a9c7201d6625acc",
+    "content/dhd-social-pilot-2026-10": "3cf71773a90b17aeb70b091e05d36984bb12ecdd",
+    "docs/inbox-foundation-refresh": "fc6e1093d247bc0b34f59ffe5c048d4a45a96fdc",
+    "docs/inbox-release-closeout": "017bb6db031f59930e384473566795c56037c76c",
+    "docs/social-inbox-release": "6213501a25c19d8f71e99fe36e96c0c2e861d0b1",
+    "feat/brightbean-content-studio": "808be251406c0d9e1c4406f52c259feb1269ab2d",
+    "feat/brightbean-inbox": "b3baab39337b71ea0b100a663b91838dba531f19",
+    "feat/contact-001a-secure-review": "3257ce3fd54d331bde9bc9bea1e3a127c33364c1",
+    "feat/email-inbox-mvp": "15f862f091d151b7aefd7d7f0ede3c997a84ce1e",
+    "feat/whatsapp-labels-unread": "c61450e7b3468e3edf63a4e4320f6e9ecacc32ea",
+    "feat/whatsapp-shared-labels": "8c2cf9dad3fdeee6cdc3423bfeec1ace19d0116c",
+    "feature/local-models-docs-and-whatsapp-db": "94df827682d1d64a5f9810415c566ba3fa2daa8f",
+    "fix/account-setup-email": "7c79985e9bf5d010b6eb94ecda1780d4f6a0f225",
+    "fix/communications-access-control": "047beafcc643e9a31a2d54218d1526993164de2d",
+    "fix/email-sync-server-settings": "49e3d9c19bd1617126db8c157c0351eb7a8d6d4d",
+    "fix/inbox-partial-sync": "57e9ffe5c243db7f40c7e94c182e8f971dc7b24d",
+    "fix/inbox-runtime": "fcc321810a288199e29c8d5c611aae14d2ed295b",
+    "fix/inbox-usability-email-refresh": "922b4a4381be479ba327b482fd4c29c26b7684c1",
+    "fix/recovery-email-delivery": "b1997f336ae1b4258e7337d8e6bed15d375da190",
+    "fix/security-001-provider-redaction": "9845c5dc15b36f5b31edf787c97e5df885d2244a",
+    "fix/security-001a-settings-containment": "7d7a15d804a228285dc401f53917f66913280956",
+    "fix/whatsapp-inbox-ui": "269d253ee4333bf411901ed984a73672ffcc70ce",
+    "fix/whatsapp-lid-label-management": "9617820ae54fde5c50b30ac701ce749cadec33f2",
+    "fix/whatsapp-media-initialization": "6d1ac1eaf761f6d62ff786fc222b1b2d4d69d64a",
+    "fix/whatsapp-unread-identifiers": "799bbdbf0d31060fc1552913d522c05d4e77150f",
+    "fix/woocommerce-sync": "893068198d6e29578ae4f287411bdd40b228fec4",
+    "master": "37a7253910c8541fbc35a296ee3371b848f28051",
+    "planning/phase1-packets": "4c50875a9ed628fe4818b5efbd993b2f9860233e",
+    "review/security-001c-forwarding": "4405878a024fd9422a3b5bb89efe45c7ce669686"
+  },
+  "added_local_branches": {
+    "docs/state-reconciliation-2026-11-02": "37a7253910c8541fbc35a296ee3371b848f28051",
+    "review/security-001c-forwarding": "4405878a024fd9422a3b5bb89efe45c7ce669686"
+  },
+  "companion": {
+    "local_branches": {
+      "fix/android-call-sync-reliability": "92b8059c5ed58334edf524b1abf75d1b60ee7559",
+      "master": "e9ae1c240996ae16e7e6e1cd3b8d453e6473c3ec"
+    },
+    "origin_master": "e9ae1c240996ae16e7e6e1cd3b8d453e6473c3ec",
+    "primary_untracked_preserved": [
+      "?? DHD-CRM-Companion-signed.apk",
+      "?? DHD-CRM-Companion-signed.apk.idsig",
+      "?? DHD-CRM-Companion-v1.0.0-aligned.apk"
+    ],
+    "implementation_commit": "7d3af63741efbb365420105c071ed19362892ad0",
+    "readiness": "LOCAL DRAFT; not pushed/installed; full native/server/recovery gates remain"
+  },
+  "scope_note": "Original 36-local/38-real-remote-branch/24-worktree baseline, plus publication readbacks. The original raw39 ref count included one symbolic origin/HEAD alias, now excluded. New reconciliation/review branches are recorded separately in the report. No original worktree was dirty or reset."
+}

@@ -1,5 +1,19 @@
 # Changelog
 
+## Current reconciliation — 2026-11-02
+
+Documentation/publication reconciliation only; no application feature deployed.
+
+- Reconciled36original local CRM branches,38original remote branches and24original clean worktrees plus separate Companion state. Exact SHAs and ancestry remain in CODE_STATE_INVENTORY.json; all original work preserved.
+- Published CONTACT001A3257ce3 under its existing disabled-deployment feature branch. Published forwarding bb6bcbe through review/security-001c-forwarding4405878 with exact branch-only deployment guard;14publication-preservation tests PASS and independent guard review PASS. No PR opened/merged and no Deploy Hook invoked.
+- Corrected PR15 classification to draft content assets/import specification targeting the Studio branch; PR14 remains conflicting draft. Recorded fresh absent Studio/Woo repair database objects and pending contact view options without modifying hosted state.
+- Recorded proposed F1WhatsApp media/UI functionality release, historical incident/open release blockers and Android local-only/native validation limits. No claim of fresh end-to-end provider verification.
+- Added a no-deployment guard only for this documentation branch; production/master behavior and hosted settings remain unchanged.
+
+## Historical notes retained below
+
+The following dated entries preserve prior decisions; they do not override the current reconciliation or establish present deployment/acceptance.
+
 Entries are newest first. Each entry covers a development session or sprint.
 
 ## BrightBean social Inbox release

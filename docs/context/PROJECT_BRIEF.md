@@ -1,5 +1,15 @@
 # Project Brief
 
+## Current reconciliation — 2026-11-02
+
+This is a functionality-first reconciliation, not a new implementation release. Prioritize usable WhatsApp attachments/layout/search, clear email freshness, reliable call outcomes, deliberate contact correction, then safe store-order and single-post publishing slices. Reuse existing implementations rather than repeating them.
+
+Production37a7253 already includes saved Email Inbox, Social Inbox, manual email sync, WhatsApp label/personal unread, contact correction, and001A/B source. Actual live acceptance varies by integration; see INTEGRATION_STATUS.md. Content Studio, duplicate-review UI, Woo repair, media/UI follow-ups and Android reliability are not production-complete merely because their code exists.
+
+## Historical notes retained below
+
+The following dated entries preserve prior decisions; they do not override the current reconciliation or establish present deployment/acceptance.
+
 ## Project
 
 DHD CRM SalesTrail is a customer relationship management application for Dirty
