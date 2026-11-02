@@ -6,7 +6,7 @@ import ts from 'typescript';
 const baseline='544ac0ed669dd7a5e1a9eea99cbcf49f6d329916';
 const before=(file:string)=>execFileSync('git',['show',baseline+':'+file],{encoding:'utf8'}).replace(/\r\n/g,'\n');
 const current=(file:string)=>fs.readFileSync(path.resolve(file),'utf8').replace(/\r\n/g,'\n');
-it.each(['api/settings.ts','src/lib/settings/server.ts','src/lib/settings/projection.ts','src/lib/settings/client.ts','src/App.tsx','src/lib/inbox/email-server.ts','src/lib/auth.ts','src/pages/Settings.tsx','src/pages/WhatsApp.tsx','src/pages/CompanionApp.tsx'])('%s preserves the released SECURITY-001A baseline',file=>{expect(current(file)).toBe(before(file));});
+it.each(['api/settings.ts','src/lib/settings/server.ts','src/lib/settings/projection.ts','src/lib/settings/client.ts','src/App.tsx','src/lib/inbox/email-server.ts','src/lib/auth.ts','src/pages/WhatsApp.tsx','src/pages/CompanionApp.tsx'])('%s preserves the released SECURITY-001A baseline',file=>{expect(current(file)).toBe(before(file));});
 it('unrelated WhatsApp behavior stays unchanged apart from explicit private log/error/raw redaction',()=>{
  function extract(source:string){
   const ast=ts.createSourceFile('api.ts',source,ts.ScriptTarget.Latest,true);
@@ -28,7 +28,7 @@ it('unrelated WhatsApp behavior stays unchanged apart from explicit private log/
  }
  const old=extract(before('api/whatsapp.ts')),now=extract(current('api/whatsapp.ts'));
  expect(old.callback.length).toBeGreaterThan(1000);expect(now.callback).toBe(old.callback);
- const changed=new Set<string>();
+ const changed=new Set<string>(['sendForwardCommand','getForwardStatus']);
  for(const[action,text]of old.cases)if(!changed.has(action))expect(now.cases.get(action),action).toBe(text);
 });
 

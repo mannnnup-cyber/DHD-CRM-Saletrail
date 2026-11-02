@@ -386,3 +386,10 @@ Settings containment uses src/lib/settings/server.ts to reuse fresh Email authen
 Independent SECURITY-001 provider redaction preserves production544ac0e/001A authentication. Pure provider-projection.ts removes named credentials from future raw persistence; selected WhatsApp/recording log/error responses become fixed messages. No machine guard, environment registry, mobile, org binding, schema or Storage dependency. Legacy public channel/recording surfaces and persisted transcription-error exposure remain; this is not full integration containment.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+
+## SECURITY-001C — 2026-11-01
+
+Independent SECURITY-001C protects only browser sendForwardCommand (POST) and getForwardStatus (GET) using existing settingsOwner fresh active owner/manager authorization before settings/queue effects. New command creator is canonical actor UUID. Existing callback, Android call/poll/ack, bindings, recording and media contracts remain unchanged; no new hosted dependency.
+
+SECURITY-001C local closeout:403 tests/28 files, TypeScript/build and independent QA/security PASS. No publication/deployment/hosted changes; see forwarding delivery report.

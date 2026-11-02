@@ -235,3 +235,10 @@ SECURITY-001A: src/lib/settings/server.ts (fresh owner/manager guard), projectio
 src/lib/integrations/provider-projection.ts is the only new application helper in the independent redaction slice; api/whatsapp.ts and api/recordings.ts contain selected log/error/future-raw projections. tests/provider-redaction.test.ts and provider-redaction-runtime.test.ts add synthetic sentinel/native checks; settings-scope.test.ts preserves released controls/UI and all unrelated action cases. See docs/SECURITY-001-PROVIDER-REDACTION.md. No machine-server helper belongs to this branch.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+
+## SECURITY-001C — 2026-11-01
+
+SECURITY-001C: api/whatsapp.ts adds only two forwarding management guards and canonical creator attribution; four existing Settings.tsx forwarding fetches use settingsFetch. tests/forwarding-auth.test.ts and forwarding-scope.test.ts cover real-handler denial/roles/positive attribution and exact baseline restoration. Delivery: docs/SECURITY-001C-FORWARDING-MANAGEMENT.md. No machine helper/registry belongs to this slice.
+
+SECURITY-001C local closeout:403 tests/28 files, TypeScript/build and independent QA/security PASS. No publication/deployment/hosted changes; see forwarding delivery report.

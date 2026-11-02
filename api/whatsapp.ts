@@ -162,6 +162,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if(!await settingsOwner(req,res,_supabaseUrl))return;
     if(req.method==='POST'&&req.body!==undefined&&(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||JSON.stringify(req.body).length>65536))return res.status(400).json({success:false,error:'Provide bounded configuration data.'});
   }
+  let forwardingActor:Awaited<ReturnType<typeof settingsOwner>>=null;
+  const forwardingMethod=configurationAction==='sendForwardCommand'?'POST':configurationAction==='getForwardStatus'?'GET':null;
+  if(forwardingMethod){
+    if(req.method!==forwardingMethod)return res.status(405).json({success:false,error:forwardingMethod+' required.'});
+    forwardingActor=await settingsOwner(req,res,_supabaseUrl);
+    if(!forwardingActor)return;
+  }
 
   // Secrets prefer server env (Vercel) with app_settings as fallback, so rotated
   // credentials can live in Vercel without being rewritten into the database.
@@ -2885,7 +2892,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             command: fwdCmd,
             target_number: fwdCmd === 'forward_enable' ? String(targetNumber).replace(/[^0-9+]/g, '') : null,
             sim_slot: simSlotNum,
-            created_by: String(req.headers['x-user-email'] || 'system'),
+            created_by: forwardingActor!.id,
             status: 'pending',
           })
           .select()

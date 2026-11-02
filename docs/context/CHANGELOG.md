@@ -470,3 +470,10 @@ Prepared isolated SECURITY-001A settings containment from b3b55c8: fresh active 
 Isolated future provider-envelope credential and variable log/selected immediate-error redaction from prerequisite-dependent SECURITY-001 enforcement. Preserved001A and existing communication contracts. Legacy public endpoints, recording parser and at-rest transcription-error risks remain explicitly unresolved; no full communications recovery or deployment claim.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+
+## SECURITY-001C — 2026-11-01
+
+Prepared minimal independent browser forwarding management authorization. sendForwardCommand/getForwardStatus require fresh active owner/manager; creator uses verified UUID; existing Settings callers use current Bearer helper. Callback/mobile/device/recording/media behavior and hosting/schema remain unchanged. See SECURITY-001C delivery for evidence/release gates.
+
+SECURITY-001C local closeout:403 tests/28 files, TypeScript/build and independent QA/security PASS. No publication/deployment/hosted changes; see forwarding delivery report.
