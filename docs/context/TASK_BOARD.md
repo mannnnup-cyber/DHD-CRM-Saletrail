@@ -299,3 +299,10 @@ WP-INBOX-PARTIAL-SYNC: in review; narrow UI correction for partial manual import
 ## SECURITY-001A — 2026-10-30
 
 SECURITY-001A settings containment is isolated on fix/security-001a-settings-containment from production b3b55c8. Local verification and independent review are required before commit; publication/deployment remain owner-gated. Full SECURITY-001 callback/device/recording blockers are separate. No hosted changes authorized.
+
+
+## Independent SECURITY-001 redaction — 2026-11-01
+
+SECURITY-001A is deployed at544ac0e. Independent redaction is locally prepared on fix/security-001-provider-redaction; root final checks/local commit and separate owner release authorization required. Full enforcement remains in separate fix/security-001-final-hardening, blocked by callback/device enrollment and recording prerequisites. No push/deploy/hosted change authorized by this packet.
+
+November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.

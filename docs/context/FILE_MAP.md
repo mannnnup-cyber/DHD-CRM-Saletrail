@@ -228,3 +228,10 @@ Inbox usability: src/lib/contacts/edit-server.ts isolates authenticated owner/ma
 ## SECURITY-001A — 2026-10-30
 
 SECURITY-001A: src/lib/settings/server.ts (fresh owner/manager guard), projection.ts (safe reads/bounded writes), client.ts (current Bearer transport); api/settings.ts and the private configuration slice in api/whatsapp.ts use these controls. Settings.tsx and WhatsApp.tsx update configuration callers only. tests/settings-containment.test.ts, settings-runtime.test.ts and settings-scope.test.ts cover authorization, emitted startup and baseline preservation. Delivery and acceptance: docs/SECURITY-001A-CONTAINMENT-DELIVERY.md.
+
+
+## Independent SECURITY-001 redaction — 2026-11-01
+
+src/lib/integrations/provider-projection.ts is the only new application helper in the independent redaction slice; api/whatsapp.ts and api/recordings.ts contain selected log/error/future-raw projections. tests/provider-redaction.test.ts and provider-redaction-runtime.test.ts add synthetic sentinel/native checks; settings-scope.test.ts preserves released controls/UI and all unrelated action cases. See docs/SECURITY-001-PROVIDER-REDACTION.md. No machine-server helper belongs to this branch.
+
+November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.

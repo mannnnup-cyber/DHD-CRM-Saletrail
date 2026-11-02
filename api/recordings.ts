@@ -55,7 +55,7 @@ async function shouldSkipRecording(
 
     // Check if number is excluded
     if (settings.excluded_numbers && settings.excluded_numbers.includes(phoneNumber)) {
-      console.log('[recordings] Skipping excluded number:', phoneNumber);
+      console.log('[recordings] Skipping excluded number:');
       return true;
     }
 
@@ -83,7 +83,7 @@ async function shouldSkipRecording(
 
     return false;
   } catch (err) {
-    console.error('[recordings] Error checking settings:', err);
+    console.error('[recordings] Error checking settings:');
     return false; // Record by default on error
   }
 }
@@ -132,14 +132,14 @@ async function uploadToStorage(
       throw new Error(`Storage upload failed: ${error.message}`);
     }
 
-    console.log('[recordings] File uploaded to storage:', storagePath);
+    console.log('[recordings] File uploaded to storage:');
 
     return {
       path: data.path,
       size: fileContent.length,
     };
   } catch (err) {
-    console.error('[recordings] Storage upload error:', err);
+    console.error('[recordings] Storage upload error:');
     throw err;
   }
 }
@@ -162,7 +162,7 @@ async function handleUploadRecording(
     const duration_ms  = parseInt(fields.duration_ms?.[0] || '0', 10);
     const file         = files.file?.[0];
 
-    console.log('[recordings] Upload request:', { phone_number, timestamp_ms, filename, size: file?.size });
+    console.log('[recordings] Upload request:');
 
     if (!file || !filename) {
       return res.status(400).json({ success: false, error: 'Missing file or filename' });
@@ -242,8 +242,8 @@ async function handleUploadRecording(
       .single();
 
     if (dbError) {
-      console.error('[recordings] DB insert error:', dbError);
-      return res.status(500).json({ success: false, error: dbError.message });
+      console.error('[recordings] DB insert error:');
+      return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
     }
 
     // ── Queue transcription job ────────────────────────────────────────────
@@ -256,7 +256,7 @@ async function handleUploadRecording(
 
     try { fs.unlinkSync(file.filepath); } catch (_) {}
 
-    console.log('[recordings] Upload complete:', recording.recording_id);
+    console.log('[recordings] Upload complete:');
     return res.json({
       success: true,
       recording_id:         recording.recording_id,
@@ -266,8 +266,8 @@ async function handleUploadRecording(
     });
 
   } catch (err: any) {
-    console.error('[recordings] Upload error:', err);
-    return res.status(500).json({ success: false, error: err.message || 'Upload failed' });
+    console.error('[recordings] Upload error:');
+    return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
   }
 }
 
@@ -298,7 +298,7 @@ async function handleListRecordings(
       .limit(50);
 
     if (error) {
-      return res.status(500).json({ success: false, error: error.message });
+      return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
     }
 
     return res.json({
@@ -307,10 +307,10 @@ async function handleListRecordings(
       count: data?.length || 0,
     });
   } catch (err: any) {
-    console.error('[recordings] List error:', err);
+    console.error('[recordings] List error:');
     return res.status(500).json({
       success: false,
-      error: err.message,
+      error: "Operation is temporarily unavailable.",
     });
   }
 }
@@ -340,7 +340,7 @@ async function handleGetTranscript(
 
     if (error && error.code !== 'PGRST116') {
       // PGRST116 = not found
-      return res.status(500).json({ success: false, error: error.message });
+      return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
     }
 
     if (!transcript) {
@@ -356,10 +356,10 @@ async function handleGetTranscript(
       transcript,
     });
   } catch (err: any) {
-    console.error('[recordings] Transcript error:', err);
+    console.error('[recordings] Transcript error:');
     return res.status(500).json({
       success: false,
-      error: err.message,
+      error: "Operation is temporarily unavailable.",
     });
   }
 }
@@ -396,14 +396,14 @@ export default async function handler(
       default:
         return res.status(400).json({
           success: false,
-          error: `Unknown action: ${action}`,
+          error: "Operation is temporarily unavailable.",
         });
     }
   } catch (err: any) {
-    console.error('[recordings] Unexpected error:', err);
+    console.error('[recordings] Unexpected error:');
     return res.status(500).json({
       success: false,
-      error: err.message || 'Internal server error',
+      error: "Operation is temporarily unavailable.",
     });
   }
 }
@@ -470,7 +470,7 @@ async function handleProcessTranscriptions(req: VercelRequest, res: VercelRespon
     return res.json({ success, message: success ? 'Transcription complete' : 'Transcription failed' });
   }
   const { data: jobs, error } = await supabase.from('transcription_jobs').select('job_id, recording_id').eq('status', 'QUEUED').order('created_at', { ascending: true }).limit(10);
-  if (error) return res.status(500).json({ success: false, error: error.message });
+  if (error) return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
   if (!jobs || jobs.length === 0) return res.json({ success: true, processed: 0, message: 'No pending transcription jobs' });
   let processed = 0, failed = 0;
   for (const job of jobs) { if (await processTranscriptionJob(job.job_id, job.recording_id)) processed++; else failed++; }

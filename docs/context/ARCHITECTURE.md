@@ -379,3 +379,10 @@ Partial manual email sync (2026-10-22): Unified Inbox preserves valid saved coun
 ## SECURITY-001A — 2026-10-30
 
 Settings containment uses src/lib/settings/server.ts to reuse fresh Email authentication and require active owner/manager access. projection.ts bounds supported writes and masks credentials; client.ts sends current Bearer tokens. Alternate WhatsApp configuration actions use the same guard. Callback, GSM and recording contracts remain unchanged; no new hosted variables or schema. Public search drops raw provider envelopes; arbitrary URL media requests never receive the provider administrative key.
+
+
+## Independent SECURITY-001 redaction — 2026-11-01
+
+Independent SECURITY-001 provider redaction preserves production544ac0e/001A authentication. Pure provider-projection.ts removes named credentials from future raw persistence; selected WhatsApp/recording log/error responses become fixed messages. No machine guard, environment registry, mobile, org binding, schema or Storage dependency. Legacy public channel/recording surfaces and persisted transcription-error exposure remain; this is not full integration containment.
+
+November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.

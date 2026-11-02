@@ -1,3 +1,4 @@
+import {providerPayload} from '../src/lib/integrations/provider-projection.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import {isWhatsAppSettingsAction,settingsOwner,whatsappSettingsMethods,settingsFailure} from '../src/lib/settings/server.js';
@@ -29,7 +30,7 @@ async function resolveContact(sb: any, opts: { name: string; phone?: string; ema
     }
   }
   const { data, error } = await sb.from('contacts').insert({ name: opts.name || 'Unknown', email: emailLower || null, phone: opts.phone || null, phone_normalized: phoneNorm || null, company: opts.company || null, source: opts.source, sources: [opts.source], status: 'NEW' }).select('id').single();
-  if (error) { console.error('[whatsapp] resolveContact error:', error.message); return null; }
+  if (error) { console.error('[whatsapp] resolveContact error:'); return null; }
   return data.id;
 }
 
@@ -75,11 +76,11 @@ try {
     console.log('[Supabase Init] ✗ CANNOT CREATE - Missing credentials');
   }
 } catch (err: any) {
-  console.error('[Supabase Init Error]:', err?.message || err);
+  console.error('[Supabase Init Error]:');
   supabase = null;
 }
 
-console.log('[Supabase Init] URL:', _supabaseUrl ? '✓ ' + _supabaseUrl.substring(0, 30) : '✗ MISSING', 'Key:', _supabaseKey ? '✓ set (length: ' + _supabaseKey.length + ')' : '✗ MISSING', 'Client:', supabase ? '✓ CREATED' : '✗ NULL');
+console.log('[Supabase Init] URL:');
 
 const supaDb = {
   createCall: async (call: any) => {
@@ -157,7 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const configurationAction=req.query.action;
   if(configurationAction!==undefined&&typeof configurationAction!=='string')return res.status(400).json({success:false,error:'Invalid action.'});
   if(isWhatsAppSettingsAction(configurationAction)){
-    if(req.method!==whatsappSettingsMethods[configurationAction])return res.status(405).json({success:false,error:whatsappSettingsMethods[configurationAction]+' required.'});
+    if(req.method!==whatsappSettingsMethods[configurationAction])return res.status(405).json({success:false,error:"Operation is temporarily unavailable."});
     if(!await settingsOwner(req,res,_supabaseUrl))return;
     if(req.method==='POST'&&req.body!==undefined&&(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||JSON.stringify(req.body).length>65536))return res.status(400).json({success:false,error:'Provide bounded configuration data.'});
   }
@@ -175,8 +176,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'POST' && !req.query.action) {
     const body = req.body;
 
-    console.log('[WEBHOOK RECEIVED] Method:', req.method, 'Has action:', !!req.query.action);
-    console.log('[WEBHOOK BODY] Keys:', Object.keys(body), 'Event:', body.event, 'typeWebhook:', body.typeWebhook);
+    console.log('[WEBHOOK RECEIVED] Method:');
+    console.log('[WEBHOOK BODY] Keys:');
 
     try {
       // Detect provider and extract message data
@@ -223,7 +224,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (!text && body.data.messageType) text = `[${body.data.messageType}]`;
             msgType = body.data.messageType || 'conversation';
 
-            console.log('[Webhook] Evolution v2 format (key.remoteJid):', { chatId, messageId, isInbound, text: text?.substring(0, 50) });
+            console.log('[Webhook] Evolution v2 format (key.remoteJid):');
           } else {
             // ---- Fallback: array / older format ----
             const message = body.data?.messages?.[0] || (Array.isArray(body.data) ? body.data[0] : null);
@@ -243,7 +244,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
               msgType = message.messageType || message.type || 'text';
 
-              console.log('[Webhook] Evolution array format:', { chatId, messageId, isInbound, text: text?.substring(0, 50) });
+              console.log('[Webhook] Evolution array format:');
             }
           }
         }
@@ -252,15 +253,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Only store actual messages — ignore state/ack events
       if (typeWebhook === 'messages.upsert') {
 
-        console.log('[Webhook] Pre-save check:', {
-          provider,
-          typeWebhook,
-          supabaseConnected: supabase !== null,
-          chatId,
-          messageId,
-          isInbound,
-          willSave: supabase !== null && chatId && messageId
-        });
+        console.log('[Webhook] Pre-save check:');
 
         if (supabase !== null && chatId && messageId) {
           // Idempotency check: use provider_message_id to prevent duplicates
@@ -313,7 +306,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               body: text,
               message_type: msgType,
               media_url: mediaUrl,
-              raw: body,
+              raw: providerPayload(provider==='evolution'?{event:body.event,instance:body.instance,data:body.data}:{typeWebhook:body.typeWebhook,timestamp:body.timestamp,senderData:body.senderData,messageData:body.messageData,instanceData:{idInstance:body.instanceData?.idInstance}}),
               contact_id: contactId ?? null,
               created_at: msgAt
             }).select('id').single();
@@ -339,7 +332,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Evolution API v2 CALL payload: { event:'CALL', data:{ id, from, callType, status, timestamp, duration } }
         const callData = body.data || body;
         const rawCallerId = callData.from || callData.remoteJid || callData.chatId || '';
-        console.log('[Webhook] CALL event received:', { from: rawCallerId, callType: callData.callType, status: callData.status, raw: callData });
+        console.log('[Webhook] CALL event received:');
 
         if (supabase !== null && rawCallerId) {
           const callChatId = rawCallerId;
@@ -379,9 +372,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               .select('id');
 
             if (insertError) {
-              console.error('[Webhook] Failed to insert call:', insertError);
+              console.error('[Webhook] Failed to insert call:');
             } else {
-              console.log('[Webhook] Call logged:', { callId, chatId: callChatId, status: callStatus, duration: callDuration });
+              console.log('[Webhook] Call logged:');
 
               // Optional: Create interaction record for CRM
               if (inserted && inserted.length > 0) {
@@ -407,7 +400,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
     } catch (err) {
-      console.error('Webhook processing error:', err);
+      console.error('Webhook processing error:');
     }
 
     return res.status(200).json({ success: true });
@@ -462,7 +455,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.json({ success: true, connected, state, instanceName });
             }
           } catch (err: any) {
-            console.warn('[status] Evolution API check failed:', err.message, '— falling back to DB check');
+            console.warn('[status] Evolution API check failed:');
           }
         }
 
@@ -620,8 +613,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const chats = Object.values(byChat).slice(0, 200);
           return res.json({ success: true, chats, source: 'db' });
         } catch (err) {
-          console.error('chats error', err);
-          return res.status(400).json({ success: false, error: String(err) });
+          console.error('chats error');
+          return res.status(400).json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -638,8 +631,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .rpc('get_chats_from_messages', { provider_filter: 'evolution' });
 
           if (fnError) {
-            console.error('[chatsFromDb] RPC error:', fnError);
-            return res.json({ success: false, error: fnError.message });
+            console.error('[chatsFromDb] RPC error:');
+            return res.json({ success: false, error: "Operation is temporarily unavailable." });
           }
 
           // Load persisted chat metadata (status, assignedTo, contact_name for @lid resolution)
@@ -699,8 +692,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // No slice — return all chats (DB function already deduplicates efficiently)
           return res.json({ success: true, chats, source: 'db' });
         } catch (err) {
-          console.error('chatsFromDb error', err);
-          return res.json({ success: false, error: String(err) });
+          console.error('chatsFromDb error');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -734,8 +727,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           return res.json({ success: true, messages: formatted });
         } catch (err: any) {
-          console.error('messages error:', err.message);
-          return res.status(500).json({ success: false, error: err.message });
+          console.error('messages error:');
+          return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -807,7 +800,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (msgRow?.media_url) {
               return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
             }
-            console.error('[mediaProxy/msgId] Message not found in DB:', msgId);
+            console.error('[mediaProxy/msgId] Message not found in DB:');
             return res.status(404).json({ error: 'Message not found' });
           }
 
@@ -829,7 +822,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               if (msgRow?.media_url) {
                 return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
               }
-              return res.status(r.status).json({ error: `Evolution API returned ${r.status}` });
+              return res.status(r.status).json({ error: "Operation is temporarily unavailable." });
             }
 
             const rData = await r.json();
@@ -860,12 +853,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             res.setHeader('Cache-Control', 'public, max-age=3600');
             return res.send(Buffer.from(b64Data, 'base64'));
           } catch (err: any) {
-            console.error('[mediaProxy/msgId] Error:', err.message);
+            console.error('[mediaProxy/msgId] Error:');
             // Fallback to stored CDN URL when Evolution API throws (network timeout, ECONNREFUSED, etc.)
             if (msgRow?.media_url) {
               return res.redirect(307, `/api/whatsapp?action=mediaProxy&url=${encodeURIComponent(msgRow.media_url)}`);
             }
-            return res.status(500).json({ error: err.message });
+            return res.status(500).json({ error: "Operation is temporarily unavailable." });
           }
         }
 
@@ -885,8 +878,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           const mr = await fetch(mediaUrl, { headers });
           if (!mr.ok) {
-            console.error('[mediaProxy] Fetch failed:', mr.status, mediaUrl);
-            return res.status(mr.status).json({ error: `Media fetch failed: ${mr.status}` });
+            console.error('[mediaProxy] Fetch failed:');
+            return res.status(mr.status).json({ error: "Operation is temporarily unavailable." });
           }
           const ct = mr.headers.get('content-type') || 'application/octet-stream';
           if(/^(?:application|text)\/(?:[^;]*\+)?json(?:;|$)/i.test(ct.trim()))return res.status(415).json({error:'URL proxy supports media, not API responses.'});
@@ -895,8 +888,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const buf = await mr.arrayBuffer();
           return res.send(Buffer.from(buf));
         } catch (err: any) {
-          console.error('[mediaProxy] Error:', err.message, mediaUrl);
-          return res.status(500).json({ error: err.message });
+          console.error('[mediaProxy] Error:');
+          return res.status(500).json({ error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -917,10 +910,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             body: JSON.stringify({ key: { remoteJid: chatId, fromMe: !!fromMe, id: messageId }, reaction })
           });
           const data = await r.json();
-          if (!r.ok) return res.json({ success: false, error: data.message || JSON.stringify(data) });
+          if (!r.ok) return res.json({ success: false, error: "Operation is temporarily unavailable." });
           return res.json({ success: true });
         } catch (err: any) {
-          return res.json({ success: false, error: err.message });
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -957,14 +950,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           if (!r.ok) {
             const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-            console.error('Send failed:', errMsg);
-            return res.json({ success: false, error: errMsg });
+            console.error('Send failed:');
+            return res.json({ success: false, error: "Operation is temporarily unavailable." });
           }
 
           messageId = rawData.key?.id || rawData.data?.key?.id || rawData.id || 'unknown';
         } catch (err: any) {
-          console.error('Send error:', err.message);
-          return res.json({ success: false, error: err.message });
+          console.error('Send error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
 
         // Persist outgoing message
@@ -977,7 +970,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               direction: 'outbound',
               body: message,
               contact_id: contactId || null,
-              raw: rawData,
+              raw: providerPayload(rawData),
               created_at: new Date().toISOString()
             });
 
@@ -994,7 +987,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               });
             }
           } catch (err: any) {
-            console.error('Message persistence error:', err.message);
+            console.error('Message persistence error:');
           }
         }
 
@@ -1037,7 +1030,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           if (!r.ok) {
             const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-            return res.json({ success: false, error: errMsg });
+            return res.json({ success: false, error: "Operation is temporarily unavailable." });
           }
 
           // Persist audio message
@@ -1049,14 +1042,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               direction: 'outbound',
               body: '[Audio Message]',
               message_type: 'audioMessage',
-              raw: rawData,
+              raw: providerPayload(rawData),
               created_at: new Date().toISOString()
             });
           }
 
           return res.json({ success: true, messageId });
         } catch (err: any) {
-          return res.json({ success: false, error: err.message });
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -1110,13 +1103,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           if (!r.ok) {
             const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-            return res.json({ success: false, error: errMsg });
+            return res.json({ success: false, error: "Operation is temporarily unavailable." });
           }
 
           messageId = rawData.key?.id || rawData.id || 'unknown';
         } catch (err: any) {
-          console.error('SendMedia error:', err.message);
-          return res.json({ success: false, error: err.message });
+          console.error('SendMedia error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
 
         // Persist media message to database
@@ -1130,13 +1123,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               direction: 'outbound',
               body: caption || `[${mediaType}: ${fileName}]`,
               type: messageType,
-              raw: rawData,
+              raw: providerPayload(rawData),
               created_at: new Date().toISOString()
             });
             console.log('[SendMedia Persistence] Message saved successfully');
           }
         } catch (err: any) {
-          console.error('[SendMedia Persistence] Error:', err.message);
+          console.error('[SendMedia Persistence] Error:');
         }
 
         return res.json({ success: true, messageId, provider: activeProvider });
@@ -1181,7 +1174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           return res.json({ success: true });
         } catch (err: any) {
-          return res.json({ success: false, error: err.message });
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -1220,7 +1213,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               );
 
             if (error) {
-              console.error('[bulkUpdateChats] Batch update error:', error);
+              console.error('[bulkUpdateChats] Batch update error:');
             } else {
               updated += batch.length;
             }
@@ -1232,8 +1225,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             updated
           });
         } catch (err: any) {
-          console.error('[bulkUpdateChats] Error:', err?.message || err);
-          return res.json({ success: false, error: err?.message || 'Bulk update failed' });
+          console.error('[bulkUpdateChats] Error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -1254,8 +1247,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .limit(limit);
 
           if (error) {
-            console.error('[getCalls] Database error:', error);
-            return res.json({ success: false, error: error.message });
+            console.error('[getCalls] Database error:');
+            return res.json({ success: false, error: "Operation is temporarily unavailable." });
           }
 
           return res.json({
@@ -1271,8 +1264,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }))
           });
         } catch (err: any) {
-          console.error('[getCalls] Error:', err?.message || err);
-          return res.json({ success: false, error: err?.message || 'Failed to fetch calls' });
+          console.error('[getCalls] Error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -1294,8 +1287,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .range(offset, offset + limit - 1);
 
           if (error) {
-            console.error('[getAllCalls] Database error:', error);
-            return res.json({ success: false, error: error.message });
+            console.error('[getAllCalls] Database error:');
+            return res.json({ success: false, error: "Operation is temporarily unavailable." });
           }
 
           // Get chat metadata and contact details for each call
@@ -1362,8 +1355,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             })
           });
         } catch (err: any) {
-          console.error('[getAllCalls] Error:', err?.message || err);
-          return res.json({ success: false, error: err?.message || 'Failed to fetch calls' });
+          console.error('[getAllCalls] Error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -1506,8 +1499,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             total: results.length
           });
         } catch (err: any) {
-          console.error('[searchUnified] Error:', err?.message || err);
-          return res.json({ success: false, error: err?.message || 'Search failed' });
+          console.error('[searchUnified] Error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -1926,7 +1919,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             body: msgText || (msg.messageType ? `[${msg.messageType}]` : ''),
             message_type: msg.messageType || 'conversation',
             media_url: mediaSrc,
-            raw: msg,
+            raw: providerPayload(msg),
             created_at: msg.messageTimestamp
               ? new Date(msg.messageTimestamp > 1e10 ? msg.messageTimestamp : msg.messageTimestamp * 1000).toISOString()
               : new Date().toISOString()
@@ -1936,7 +1929,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           // If chatId specified, sync single chat
           if (chatId) {
-            console.log('[syncEvolutionMessages] Syncing single chat:', chatId);
+            console.log('[syncEvolutionMessages] Syncing single chat:');
             const messagesUrl = new URL(`/chat/findMessages/${instanceName}`, EVOLUTION_API_URL).toString();
             const r = await fetch(messagesUrl, {
               method: 'POST',
@@ -1945,21 +1938,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
 
             if (!r.ok) {
-              console.error('[syncEvolutionMessages] API error:', r.status);
+              console.error('[syncEvolutionMessages] API error:');
               return res.json({ success: false, error: 'Failed to fetch messages' });
             }
 
             const rawData = await r.json();
             const records = extractRecords(rawData);
-            console.log('[syncEvolutionMessages] Found', records.length, 'messages for chat', chatId);
+            console.log('[syncEvolutionMessages] Found');
 
             if (supabase && records.length > 0) {
               const toInsert = records.filter((m: any) => m.key?.id).map((m: any) => mapToDbRow(m, chatId, ''));
               const { error } = await supabase.from('whatsapp_messages')
                 .upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
               if (error) {
-                console.error('[syncEvolutionMessages] DB error:', error);
-                return res.json({ success: false, error: 'Failed to save messages', dbError: error.message });
+                console.error('[syncEvolutionMessages] DB error:');
+                return res.json({ success: false, error: 'Failed to save messages', dbError: "Operation is temporarily unavailable." });
               }
               return res.json({ success: true, message: 'Single chat synced', count: toInsert.length, fromApi: records.length });
             }
@@ -1967,7 +1960,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           // Sync batch of recent chats (sorted by updatedAt descending)
-          console.log('[syncEvolutionMessages] Syncing recent chats, offset:', chatOffset, 'limit:', maxChats);
+          console.log('[syncEvolutionMessages] Syncing recent chats, offset:');
           const chatsUrl = new URL(`/chat/findChats/${instanceName}`, EVOLUTION_API_URL).toString();
           const chatsRes = await fetch(chatsUrl, {
             method: 'POST',
@@ -1978,7 +1971,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           if (!chatsRes.ok) {
             const errBody = await chatsRes.text().catch(() => '');
-            console.error('[syncEvolutionMessages] findChats failed:', chatsRes.status, errBody);
+            console.error('[syncEvolutionMessages] findChats failed:');
 
             // Fallback: pull recent messages directly without chat list
             // Groups them by chatId to build a synthetic chat list
@@ -1993,19 +1986,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             if (!msgsRes.ok) {
               const msgsErr = await msgsRes.text().catch(() => '');
-              console.error('[syncEvolutionMessages] Fallback also failed:', msgsRes.status, msgsErr);
-              return res.json({ success: false, error: `Evolution API error ${chatsRes.status}: ${errBody.slice(0, 200)}` });
+              console.error('[syncEvolutionMessages] Fallback also failed:');
+              return res.json({ success: false, error: "Operation is temporarily unavailable." });
             }
 
             const msgsData = await msgsRes.json();
             const allRecords = extractRecords(msgsData);
-            console.log('[syncEvolutionMessages] Fallback got', allRecords.length, 'messages');
+            console.log('[syncEvolutionMessages] Fallback got');
 
             if (supabase && allRecords.length > 0) {
               const toInsert = allRecords.filter((m: any) => m.key?.id).map((m: any) => mapToDbRow(m, m.key?.remoteJid || '', m.pushName || ''));
               const { error: dbErr } = await supabase.from('whatsapp_messages')
                 .upsert(toInsert, { onConflict: 'provider_message_id', ignoreDuplicates: true });
-              if (dbErr) return res.json({ success: false, error: dbErr.message });
+              if (dbErr) return res.json({ success: false, error: "Operation is temporarily unavailable." });
               return res.json({ success: true, count: toInsert.length, chatsProcessed: new Set(toInsert.map((m: any) => m.chat_id)).size, message: 'Synced via fallback (direct messages)' });
             }
             return res.json({ success: true, count: 0, message: 'No messages found via fallback' });
@@ -2013,7 +2006,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           const allChats = await chatsRes.json();
           const chatList = Array.isArray(allChats) ? allChats : [];
-          console.log('[syncEvolutionMessages] Total chats available:', chatList.length);
+          console.log('[syncEvolutionMessages] Total chats available:');
 
           // Sort by updatedAt descending (most recent first), then paginate
           chatList.sort((a: any, b: any) =>
@@ -2056,11 +2049,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   totalSynced += toInsert.length;
                   chatsWithMessages++;
                 } else {
-                  console.error('[syncEvolutionMessages] DB error for', chatRemoteJid, ':', error.message);
+                  console.error('[syncEvolutionMessages] DB error for');
                 }
               }
             } catch (err) {
-              console.error('[syncEvolutionMessages] Error syncing chat', chatRemoteJid, ':', err);
+              console.error('[syncEvolutionMessages] Error syncing chat');
             }
           }
 
@@ -2077,8 +2070,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
 
         } catch (err: any) {
-          console.error('[syncEvolutionMessages] Error:', err.message);
-          return res.json({ success: false, error: err.message });
+          console.error('[syncEvolutionMessages] Error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -2099,7 +2092,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           upsertData.assigned_to_user_id = assignedToUserId || null;
         }
         const { error } = await supabase.from('whatsapp_chats').upsert(upsertData, { onConflict: 'chat_id' });
-        if (error) return res.status(500).json({ success: false, error: error.message });
+        if (error) return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
         return res.json({ success: true, chatId, status });
       }
 
@@ -2109,7 +2102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { data, error: _error } = await supabase
           .from('whatsapp_chats')
           .select('chat_id, status, assigned_to, assigned_to_user_id, contact_name');
-        if (_error) return res.status(500).json({ success: false, error: _error.message });
+        if (_error) return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
         const statuses: Record<string, any> = {};
         (data || []).forEach((row: any) => {
           statuses[row.chat_id] = {
@@ -2136,7 +2129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             new URL(`/chat/findContacts/${instanceName}`, EVOLUTION_API_URL).toString(),
             { method: 'POST', headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ where: {} }) }
           );
-          if (!r.ok) return res.json({ success: false, error: `Evolution API returned ${r.status}` });
+          if (!r.ok) return res.json({ success: false, error: "Operation is temporarily unavailable." });
 
           const contacts = await r.json();
           const list = Array.isArray(contacts) ? contacts : (contacts?.contacts || contacts?.data || []);
@@ -2161,7 +2154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           return res.json({ success: true, count: Object.keys(nameMap).length });
         } catch (err: any) {
-          return res.json({ success: false, error: err.message });
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -2395,12 +2388,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     timestamp: calledAt
                   });
                 } catch (interactionErr) {
-                  console.warn('[addGSMCall] interaction insert failed (non-blocking):', interactionErr);
+                  console.warn('[addGSMCall] interaction insert failed (non-blocking):');
                 }
               }
             } else {
               if (upsertErr.code !== '23505') { // ignore unique violation
-                console.error('[addGSMCall] upsert error:', upsertErr.message);
+                console.error('[addGSMCall] upsert error:');
               }
               skipped++;
             }
@@ -2410,8 +2403,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const release = await fetchLatestRelease().catch(() => ({ version: null, downloadUrl: '', publishedAt: null }));
           return res.json({ success: true, inserted, skipped, total: gsmCalls.length, latestVersion: release.version, updateAvailable: release.version && appVersion ? release.version !== appVersion : false, downloadUrl: release.downloadUrl });
         } catch (err: any) {
-          console.error('[addGSMCall] Error:', err?.message || err);
-          return res.json({ success: false, error: err?.message || 'Failed to store GSM calls' });
+          console.error('[addGSMCall] Error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -2427,7 +2420,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (_error) throw _error;
           return res.json({ success: true, devices: data || [] });
         } catch (err: any) {
-          return res.json({ success: false, error: err.message });
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -2530,7 +2523,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             topics,
           });
         } catch (err: any) {
-          return res.status(500).json({ success: false, error: err.message });
+          return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -2554,7 +2547,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .eq('rep_phone', devPhone);
           return res.json({ success: true });
         } catch (err: any) {
-          return res.json({ success: false, error: err.message });
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -2615,8 +2608,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           const { data: calls, error, count } = await query;
           if (error) {
-            console.error('[getGSMCalls] DB error:', error);
-            return res.json({ success: false, error: error.message });
+            console.error('[getGSMCalls] DB error:');
+            return res.json({ success: false, error: "Operation is temporarily unavailable." });
           }
 
           // Tag each call as internal if the other party is a registered device
@@ -2719,8 +2712,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             limit
           });
         } catch (err: any) {
-          console.error('[getGSMCalls] Error:', err?.message || err);
-          return res.json({ success: false, error: err?.message || 'Failed to fetch GSM calls' });
+          console.error('[getGSMCalls] Error:');
+          return res.json({ success: false, error: "Operation is temporarily unavailable." });
         }
       }
 
@@ -2788,8 +2781,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
 
         if (insertErr) {
-          console.error('[addWhatsAppCall] insert error:', insertErr.message);
-          return res.status(500).json({ success: false, error: insertErr.message });
+          console.error('[addWhatsAppCall] insert error:');
+          return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
         }
         return res.json({ success: true });
       }
@@ -2898,7 +2891,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .select()
           .single();
 
-        if (cmdErr) return res.status(500).json({ success: false, error: cmdErr.message });
+        if (cmdErr) return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
         return res.json({ success: true, command: newCmd });
       }
 
@@ -2946,7 +2939,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (err: any) {
     if(isWhatsAppSettingsAction(req.query.action))return settingsFailure(res);
-    console.error('WhatsApp API Error:', err);
-    return res.status(500).json({ success: false, error: err.message });
+    console.error('WhatsApp API Error:');
+    return res.status(500).json({ success: false, error: "Operation is temporarily unavailable." });
   }
 }
