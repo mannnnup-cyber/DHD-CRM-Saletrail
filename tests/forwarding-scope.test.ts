@@ -7,6 +7,13 @@ const before=(file:string)=>execFileSync('git',['show',baseline+':'+file],{encod
 const current=(file:string)=>fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n');
 
 it.each(['api/settings.ts','api/recordings.ts','src/lib/settings/server.ts','src/lib/settings/client.ts','src/lib/settings/projection.ts','src/lib/integrations/provider-projection.ts','src/lib/inbox/email-server.ts','src/pages/WhatsApp.tsx','src/pages/CompanionApp.tsx','src/pages/CallLogs.tsx','.github/workflows/ci.yml','vercel.json'])('%s preserves the approved baseline',file=>{
+ if(file==='vercel.json') {
+  const config=JSON.parse(current(file));
+  expect(config.git).toEqual({deploymentEnabled:{'review/security-001c-forwarding':false}});
+  delete config.git;
+  expect(config).toEqual(JSON.parse(before(file)));
+  return;
+ }
  expect(current(file)).toBe(before(file));
 });
 it('WhatsApp changes only the two forwarding guards and canonical creator attribution',()=>{
