@@ -470,3 +470,7 @@ Prepared isolated SECURITY-001A settings containment from b3b55c8: fresh active 
 Isolated future provider-envelope credential and variable log/selected immediate-error redaction from prerequisite-dependent SECURITY-001 enforcement. Preserved001A and existing communication contracts. Legacy public endpoints, recording parser and at-rest transcription-error risks remain explicitly unresolved; no full communications recovery or deployment claim.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+## F1 release candidate — 2026-11-02
+
+Prepared F1 on master 37a7253: corrected direct media helper initialization; added narrow media authentication and validation; improved conversation navigation, bounded search, attachment cards and session isolation. Full local regression: 453 tests, TypeScript and production build PASS. Independent scoped code/security PASS; browser evidence is recorded in the delivery report. Feature-branch Git deployments disabled; no merge, deployment or live customer send.

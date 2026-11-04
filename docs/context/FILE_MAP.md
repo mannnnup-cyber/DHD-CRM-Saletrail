@@ -235,3 +235,7 @@ SECURITY-001A: src/lib/settings/server.ts (fresh owner/manager guard), projectio
 src/lib/integrations/provider-projection.ts is the only new application helper in the independent redaction slice; api/whatsapp.ts and api/recordings.ts contain selected log/error/future-raw projections. tests/provider-redaction.test.ts and provider-redaction-runtime.test.ts add synthetic sentinel/native checks; settings-scope.test.ts preserves released controls/UI and all unrelated action cases. See docs/SECURITY-001-PROVIDER-REDACTION.md. No machine-server helper belongs to this branch.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+## F1 release candidate — 2026-11-02
+
+F1: api/whatsapp.ts; src/lib/whatsapp/media-server.ts; src/lib/whatsapp/attachments.ts and test; src/components/ProtectedMedia.tsx and test; src/pages/WhatsApp.tsx and test; seven-line src/App.tsx layout boundary; tests/f1-media-api.test.ts and existing security preservation/runtime fixtures. See docs/F1-WHATSAPP-MEDIA-INBOX-DELIVERY.md and completed/WP-F1-WHATSAPP-MEDIA-INBOX.md. vercel.json contains only the exact feature-branch no-deployment guard.

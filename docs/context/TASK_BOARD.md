@@ -306,3 +306,7 @@ SECURITY-001A settings containment is isolated on fix/security-001a-settings-con
 SECURITY-001A is deployed at544ac0e. Independent redaction is locally prepared on fix/security-001-provider-redaction; root final checks/local commit and separate owner release authorization required. Full enforcement remains in separate fix/security-001-final-hardening, blocked by callback/device enrollment and recording prerequisites. No push/deploy/hosted change authorized by this packet.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+## F1 release candidate — 2026-11-02
+
+F1 IMPLEMENTED / LOCAL TESTED: 453 tests, TypeScript and production build PASS; independent scoped security/code review PASS. Publication/CI and final browser evidence are tracked in docs/F1-WHATSAPP-MEDIA-INBOX-DELIVERY.md. NOT MERGED / NOT DEPLOYED / NOT PRODUCTION VERIFIED. Next gate: PR review, then separate owner merge/deployment authorization and controlled provider acceptance. Do not duplicate donor work or include unrelated branches.

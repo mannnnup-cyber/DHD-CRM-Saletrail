@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import Sidebar from './components/Sidebar';
 import Login from './pages/Login';
@@ -90,6 +90,7 @@ function getJamaicaHoliday(): string | null {
 }
 
 const AppInner: React.FC = () => {
+  const isWhatsApp=useLocation().pathname==='/whatsapp';
   const { state, logout } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -158,7 +159,7 @@ const AppInner: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex h-dvh bg-gray-950 text-white overflow-hidden">
       {/* Sidebar */}
       <Sidebar
         sidebarOpen={sidebarOpen}
@@ -325,7 +326,7 @@ const AppInner: React.FC = () => {
         )}
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto">
+        <main data-layout={isWhatsApp?'conversation':'page'} className={isWhatsApp?'flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden':'flex-1 min-h-0 overflow-y-auto'}>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />

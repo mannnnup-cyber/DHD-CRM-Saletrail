@@ -77,3 +77,7 @@ eligible replies. Reps remain denied pending a verified assignment design.
 Provider history may be old and reply windows may have expired; live inbound and
 reply delivery are separate release checks. WhatsApp remains unavailable and
 email collection still requires the owner's mailbox app-password repair.
+
+## F1 release candidate — 2026-11-02
+
+Current production baseline is 37a7253 (SECURITY-001A/B). F1 is implemented and tested locally for PR review; it is not merged, deployed or production-verified. Media and inbox improvements preserve existing labels/unread/identity and settings/provider-redaction protections. Contact, Android, WooCommerce, Content Studio and broader machine security remain separate workstreams. Older status paragraphs above are historical snapshots, not current release evidence.
