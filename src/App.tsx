@@ -159,7 +159,7 @@ const AppInner: React.FC = () => {
   };
 
   return (
-    <div className="flex h-dvh bg-gray-950 text-white overflow-hidden">
+    <div className={`flex h-dvh bg-gray-950 text-white ${isWhatsApp?'overflow-clip':'overflow-hidden'}`}>
       {/* Sidebar */}
       <Sidebar
         sidebarOpen={sidebarOpen}
@@ -167,7 +167,7 @@ const AppInner: React.FC = () => {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className={`flex-1 flex flex-col min-w-0 ${isWhatsApp?'min-h-0 overflow-clip':'overflow-hidden'}`}>
 
         {/* Header */}
         <header className="h-16 bg-gray-900/80 backdrop-blur-sm border-b border-gray-800/50 flex items-center justify-between px-4 lg:px-6 flex-shrink-0 z-30">
@@ -326,7 +326,7 @@ const AppInner: React.FC = () => {
         )}
 
         {/* Page Content */}
-        <main data-layout={isWhatsApp?'conversation':'page'} className={isWhatsApp?'flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden':'flex-1 min-h-0 overflow-y-auto'}>
+        <main data-layout={isWhatsApp?'conversation':'page'} className={isWhatsApp?'flex-1 min-h-0 min-w-0 flex flex-col overflow-clip':'flex-1 min-h-0 overflow-y-auto'}>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
