@@ -473,6 +473,8 @@ November1 closeout: security-001-redaction local verification and independent re
 
 ## F1 release candidate — 2026-11-02
 
+Production closeout 2026-11-04: PR #24 merged as4146af4 and deployed through native Git integration. Vercel confirms Ready / Production Current. Fixed media initialization, lightbox propagation and outer-app scrolling; retained labels/unread/search/history and SECURITY-001A/B. 455 tests, 26 browser checks, type/build and both CI runs PASS. Safe production auth/static checks PASS; live customer/provider exchanges were not performed. Complete evidence and runtime compatibility caveat are in the delivery report.
+
 2026-11-04 screenshot follow-up: contained WhatsApp-only outer scrolling with overflow clipping; message history remains independently scrollable. Controlled baseline native-scroll stress displaced the header 256 px, while F1 preserves zero outer offsets. Final browser checks 26/26 and independent review PASS. Browser access now permits Vercel production verification; conditional release gates remain in force.
 
 2026-11-04 follow-up: download loading preserves lightbox click handling and cancellation; WhatsApp root uses explicit flex growth. Added reusable actual-browser lightbox/dimension assertions and two component regressions. Final evidence: 455 tests, 25 browser checks and independent review PASS. Conditional production release remains blocked by Vercel access and unresolved original layout reproduction. No deployment or hosted change.
