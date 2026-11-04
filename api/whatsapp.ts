@@ -1,3 +1,6 @@
+import {isMediaAction,mediaMethods,mediaActor,mediaInput,MediaInputError,knownMediaId,proxyBuffer,proxyHeaders,safeProxyMime,boundedProxyBytes} from '../src/lib/whatsapp/media-server.js';
+import {attachmentMetadata} from '../src/lib/whatsapp/attachments.js';
+const literalSearchPattern=(query:string)=>'%'+query.replace(/[\\%_]/g,'\\$&')+'%';
 import {providerPayload} from '../src/lib/integrations/provider-projection.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
@@ -161,6 +164,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if(req.method!==whatsappSettingsMethods[configurationAction])return res.status(405).json({success:false,error:"Operation is temporarily unavailable."});
     if(!await settingsOwner(req,res,_supabaseUrl))return;
     if(req.method==='POST'&&req.body!==undefined&&(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||JSON.stringify(req.body).length>65536))return res.status(400).json({success:false,error:'Provide bounded configuration data.'});
+  }
+
+
+  if(isMediaAction(configurationAction)){
+    if(req.method!==mediaMethods[configurationAction])return res.status(405).json({success:false,error:'Method not supported.'});
+    if(!await mediaActor(req,res,_supabaseUrl))return;
+    if(configurationAction!=='mediaProxy'){
+      try{mediaInput(req.body,configurationAction);}catch(error){
+        if(error instanceof MediaInputError)return res.status(error.status).json({success:false,error:error.message});
+        return res.status(400).json({success:false,error:'Provide bounded media data.'});
+      }
+    }
   }
 
   // Secrets prefer server env (Vercel) with app_settings as fallback, so rotated
@@ -706,12 +721,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           // Select only display columns — raw is excluded (can be 70+ MB for active group chats)
-          const { data: msgsDesc } = await supabase
+          const { data: msgsDesc, error: messagesError } = await supabase
             .from('whatsapp_messages')
-            .select('id, provider_message_id, chat_id, body, message_type, media_url, direction, created_at, sender_name, contact_id')
+            .select('id, provider_message_id, chat_id, body, message_type, type, media_url, direction, created_at, sender_name, contact_id, attachment_file_name:raw->message->documentMessage->>fileName, attachment_nested_file_name:raw->data->message->documentMessage->>fileName, attachment_mime_type:raw->message->documentMessage->>mimetype, attachment_nested_mime_type:raw->data->message->documentMessage->>mimetype, attachment_file_size:raw->message->documentMessage->>fileLength, attachment_nested_file_size:raw->data->message->documentMessage->>fileLength, fileName:raw->attachment->>fileName, mimeType:raw->attachment->>mimeType, fileSize:raw->attachment->>fileSize')
             .eq('chat_id', chatId)
             .order('created_at', { ascending: false })
             .limit(1000);
+          if(messagesError)return res.status(503).json({success:false,error:'Stored messages are temporarily unavailable.'});
           const msgs = (msgsDesc || []).reverse();
 
           const formatted = (msgs || []).map((m: any) => ({
@@ -722,7 +738,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             storageId: m.id,
             status: 'unknown',
             type: m.message_type || m.type || 'text', // message_type is new col; fall back to legacy 'type'
-            mediaUrl: m.media_url || null
+            mediaUrl: m.media_url || null,
+            ...attachmentMetadata(m)
           }));
 
           return res.json({ success: true, messages: formatted });
@@ -746,6 +763,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'mediaProxy': {
+        if((req.query.url!==undefined&&(typeof req.query.url!=='string'||req.query.url.length>4096))||(req.query.msgId!==undefined&&(typeof req.query.msgId!=='string'||!req.query.msgId.length||req.query.msgId.length>512)))return res.status(400).json({success:false,error:'Invalid media selector.'});
         const mediaUrl = req.query.url as string;
         const msgId = req.query.msgId as string; // Evolution API message ID (provider_message_id)
 
@@ -837,22 +855,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(404).json({ error: 'No media data in Evolution API response' });
             }
 
-            // Match full MIME type including codec params: data:audio/ogg; codecs=opus;base64,...
-            const match = b64Raw.match(/^data:([^,]+);base64,(.+)$/s);
-            let mimeType = 'application/octet-stream';
-            let b64Data = b64Raw;
-            if (match) {
-              // match[1] = "audio/ogg; codecs=opus"  match[2] = base64 data
-              mimeType = match[1].trim();
-              b64Data = match[2];
-            }
-            // Normalize OGG audio MIME for broad browser support
-            if (mimeType.startsWith('audio/ogg')) mimeType = 'audio/ogg';
-            res.setHeader('Content-Type', mimeType);
-            res.setHeader('Content-Disposition', 'inline'); // stream in <audio>/<img>, don't download
-            res.setHeader('Cache-Control', 'public, max-age=3600');
-            return res.send(Buffer.from(b64Data, 'base64'));
+            const decoded=proxyBuffer(b64Raw);
+            proxyHeaders(res,decoded.mime);
+            return res.send(decoded.buffer);
           } catch (err: any) {
+            if(err instanceof MediaInputError)return res.status(err.status).json({success:false,error:err.message});
             console.error('[mediaProxy/msgId] Error:');
             // Fallback to stored CDN URL when Evolution API throws (network timeout, ECONNREFUSED, etc.)
             if (msgRow?.media_url) {
@@ -876,18 +883,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const headers: Record<string, string> = {};
 
         try {
-          const mr = await fetch(mediaUrl, { headers });
+          const mr = await fetch(mediaUrl, { headers,redirect:'error',signal:AbortSignal.timeout(20000) });
           if (!mr.ok) {
             console.error('[mediaProxy] Fetch failed:');
             return res.status(mr.status).json({ error: "Operation is temporarily unavailable." });
           }
           const ct = mr.headers.get('content-type') || 'application/octet-stream';
           if(/^(?:application|text)\/(?:[^;]*\+)?json(?:;|$)/i.test(ct.trim()))return res.status(415).json({error:'URL proxy supports media, not API responses.'});
-          res.setHeader('Content-Type', ct);
-          res.setHeader('Cache-Control', 'public, max-age=86400');
-          const buf = await mr.arrayBuffer();
-          return res.send(Buffer.from(buf));
+          const buf=await boundedProxyBytes(mr);
+          proxyHeaders(res,safeProxyMime(ct));
+          return res.send(buf);
         } catch (err: any) {
+          if(err instanceof MediaInputError)return res.status(err.status).json({success:false,error:err.message});
           console.error('[mediaProxy] Error:');
           return res.status(500).json({ error: "Operation is temporarily unavailable." });
         }
@@ -994,164 +1001,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, messageId });
       }
 
-      case 'sendAudio': {
-        // Send audio files via Evolution API
-        const { chatId, audioBase64, mimeType } = req.body;
-        if (!chatId || !audioBase64) {
-          return res.status(400).json({ error: 'chatId, audioBase64 required' });
-        }
-
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-        if (!instanceName) {
-          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
-        }
-
-        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
-        }
-
-        const audioUrl = new URL(`/message/sendWhatsAppAudio/${instanceName}`, EVOLUTION_API_URL).toString();
-        try {
-          const r = await fetch(audioUrl, {
-            method: 'POST',
-            headers: {
-              'apikey': EVOLUTION_API_KEY,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              number: chatId,
-              audio: `data:${mimeType || 'audio/mpeg'};base64,${audioBase64}`
-            })
-          });
-
-          const rawData = await r.json();
-          const messageId = rawData.key?.id || rawData.id || 'unknown';
-
-          if (!r.ok) {
-            const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-            return res.json({ success: false, error: "Operation is temporarily unavailable." });
-          }
-
-          // Persist audio message
-          if (supabase) {
-            await supabase.from('whatsapp_messages').insert({
-              provider: 'evolution',
-              provider_message_id: messageId,
-              chat_id: chatId,
-              direction: 'outbound',
-              body: '[Audio Message]',
-              message_type: 'audioMessage',
-              raw: providerPayload(rawData),
-              created_at: new Date().toISOString()
-            });
-          }
-
-          return res.json({ success: true, messageId });
-        } catch (err: any) {
-          return res.json({ success: false, error: "Operation is temporarily unavailable." });
-        }
-      }
-
-      // Shared Evolution media-send execution — pre-refactor behavior preserved
-      const executeEvolutionSendMedia = async () => {
-
-        // Send images, videos, or documents via Evolution API
-        const { chatId, mediaBase64, mediaType, fileName, caption, mimeType } = req.body;
-        if (!chatId || !mediaBase64 || !mediaType || !fileName) {
-          return res.status(400).json({ error: 'chatId, mediaBase64, mediaType, fileName required' });
-        }
-
-        const activeProvider = await getSetting('WHATSAPP_ACTIVE_PROVIDER', 'evolution');
-          const instanceName = await getSetting('EVOLUTION_INSTANCE_NAME', '');
-        if (!instanceName) {
-          return res.status(400).json({ success: false, error: 'Evolution API not linked' });
-        }
-
-        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-          return res.status(400).json({ success: false, error: 'Evolution API not configured' });
-        }
-
-        let messageId = 'unknown';
-        let rawData: any = {};
-
-        // Determine Evolution mediatype (must be lowercase)
-        let evolutionMediaType = 'document';
-        if (mediaType.toLowerCase().includes('image')) evolutionMediaType = 'image';
-        else if (mediaType.toLowerCase().includes('video')) evolutionMediaType = 'video';
-        else if (mediaType.toLowerCase().includes('audio')) evolutionMediaType = 'audio';
-
-        const evolutionUrl = new URL(`/message/sendMedia/${instanceName}`, EVOLUTION_API_URL).toString();
-        try {
-          const r = await fetch(evolutionUrl, {
-            method: 'POST',
-            headers: {
-              'apikey': EVOLUTION_API_KEY,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              number: chatId,
-              mediatype: evolutionMediaType,
-              mimetype: mimeType || mediaType || 'application/octet-stream',
-              caption: caption || '',
-              media: mediaBase64,
-              fileName
-            })
-          });
-
-          rawData = await r.json();
-
-          if (!r.ok) {
-            const errMsg = rawData.message || rawData.error || JSON.stringify(rawData);
-            return res.json({ success: false, error: "Operation is temporarily unavailable." });
-          }
-
-          messageId = rawData.key?.id || rawData.id || 'unknown';
-        } catch (err: any) {
-          console.error('SendMedia error:');
-          return res.json({ success: false, error: "Operation is temporarily unavailable." });
-        }
-
-        // Persist media message to database
-        try {
-          if (supabase) {
-            const messageType = mediaType.includes('image') ? 'imageMessage' : mediaType.includes('video') ? 'videoMessage' : 'documentMessage';
-            await supabase.from('whatsapp_messages').insert({
-              provider: activeProvider,
-              provider_message_id: messageId,
-              chat_id: chatId,
-              direction: 'outbound',
-              body: caption || `[${mediaType}: ${fileName}]`,
-              type: messageType,
-              raw: providerPayload(rawData),
-              created_at: new Date().toISOString()
-            });
-            console.log('[SendMedia Persistence] Message saved successfully');
-          }
-        } catch (err: any) {
-          console.error('[SendMedia Persistence] Error:');
-        }
-
-        return res.json({ success: true, messageId, provider: activeProvider });
-      };
-
-      case 'sendFile': {
-        req.body.mediaBase64 = req.body.fileBase64;
-        req.body.mediaType = req.body.mimeType || 'application/octet-stream';
-        return await executeEvolutionSendMedia();
-      }
+      case 'sendAudio':
+      case 'sendFile':
       case 'sendMedia': {
-        return await executeEvolutionSendMedia();
-        // Original semantics preserved via shared helper above
+        const input=mediaInput(req.body,action);
+        const activeProvider=await getSetting('WHATSAPP_ACTIVE_PROVIDER','evolution');
+        const instanceName=await getSetting('EVOLUTION_INSTANCE_NAME','');
+        if(activeProvider!=='evolution'||!instanceName||!EVOLUTION_API_URL||!EVOLUTION_API_KEY)return res.status(400).json({success:false,error:'Evolution media sending is not configured.'});
+        let origin:URL;
+        try{origin=new URL(EVOLUTION_API_URL);if(origin.protocol!=='https:'||origin.username||origin.password||origin.search||origin.hash)throw new Error();}catch{return res.status(400).json({success:false,error:'Evolution media sending requires a trusted HTTPS configuration.'});}
+        const audio=action==='sendAudio';
+        const url=new URL(`/message/${audio?'sendWhatsAppAudio':'sendMedia'}/${encodeURIComponent(instanceName)}`,origin).toString();
+        const payload=audio?{number:input.chatId,audio:`data:${input.mimeType};base64,${input.base64}`}:{number:input.chatId,mediatype:input.kind,mimetype:input.mimeType,caption:input.caption,media:input.base64,fileName:input.fileName};
+        let rawData:any,messageId:string|null=null;
+        try{
+          const response=await fetch(url,{method:'POST',headers:{apikey:EVOLUTION_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(payload),redirect:'error',signal:AbortSignal.timeout(20000)});
+          if(!response.ok)return res.status(502).json({success:false,uncertain:true,error:'Media delivery could not be confirmed. Check the conversation before sending again.'});
+          rawData=await response.json();messageId=knownMediaId(rawData);
+          if(!messageId)return res.status(502).json({success:false,uncertain:true,error:'Media acknowledgment was incomplete. Check the conversation before sending again.'});
+        }catch{return res.status(502).json({success:false,uncertain:true,error:'Media delivery could not be confirmed. Check the conversation before sending again.'});}
+        try{
+          if(!supabase)throw new Error();
+          const type=audio?'audioMessage':input.kind==='image'?'imageMessage':input.kind==='video'?'videoMessage':input.kind==='audio'?'audioMessage':'documentMessage';
+          const {error}=await supabase.from('whatsapp_messages').insert({provider:'evolution',provider_message_id:messageId,chat_id:input.chatId,direction:'outbound',body:audio?'[Audio Message]':input.caption||`[${input.mimeType}: ${input.fileName}]`,message_type:type,type,raw:providerPayload({...rawData,attachment:{fileName:input.fileName,mimeType:input.mimeType,fileSize:input.fileSize}}),created_at:new Date().toISOString()});
+          if(error)throw new Error();
+        }catch{return res.status(502).json({success:false,uncertain:true,messageId,provider:'evolution',error:'Media was accepted by the provider, but CRM history could not be confirmed. Check the conversation before sending again.'});}
+        return res.json({success:true,messageId,provider:'evolution'});
       }
 
       case 'searchMessages': {
-        const q = req.query.q as string;
+        const q=typeof req.query.q==='string'?req.query.q.trim():req.query.q===undefined?'':null;
+        if(q===null||q.length>200)return res.status(400).json({success:false,error:'Search must be at most 200 characters.'});
         if (!q || q.length < 2) return res.json({ success: true, results: [] });
         if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
         const { data: msgs } = await supabase
           .from('whatsapp_messages').select('id,provider,provider_message_id,chat_id,sender_name,body,message_type,media_url,direction,contact_id,created_at')
-          .ilike('body', `%${q}%`)
+          .ilike('body', literalSearchPattern(q))
           .order('created_at', { ascending: false }).limit(50);
         // Stored provider envelopes may contain credentials; never return whole rows.
         const results=(msgs||[]).map((m:any)=>({id:m.id,provider:m.provider,provider_message_id:m.provider_message_id,chat_id:m.chat_id,sender_name:m.sender_name,body:m.body,message_type:m.message_type,media_url:m.media_url,direction:m.direction,contact_id:m.contact_id,created_at:m.created_at}));
@@ -1362,20 +1247,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'searchUnified': {
         // Unified search: finds contacts, chats, and messages in one query
-        const q = req.query.q as string;
-        const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-        const offset = parseInt(req.query.offset as string) || 0;
+        const q=typeof req.query.q==='string'?req.query.q.trim():req.query.q===undefined?'':null;
+        if(q===null||q.length>200)return res.status(400).json({success:false,error:'Search must be at most 200 characters.'});
+        const limit=Number(req.query.limit??20);
+        const offset=Number(req.query.offset??0);
+        if(Array.isArray(req.query.limit)||Array.isArray(req.query.offset)||!Number.isInteger(limit)||limit<1||limit>50||!Number.isInteger(offset)||offset<0||offset>1000)return res.status(400).json({success:false,error:'Invalid search page.'});
 
         if (!q || q.length < 2) return res.json({ success: true, results: [], total: 0 });
         if (supabase === null) return res.json({ success: false, error: 'Supabase not configured' });
 
         try {
-          const searchPattern = `%${q}%`;
+          const searchPattern = literalSearchPattern(q);
+          const quotedPattern=JSON.stringify(searchPattern);
 
           // 1. Search messages by text content
           const { data: messages } = await supabase
             .from('whatsapp_messages')
-            .select('*')
+            .select('id,provider_message_id,chat_id,body,created_at,direction,sender_name')
             .ilike('body', searchPattern)
             .order('created_at', { ascending: false })
             .limit(20);
@@ -1399,7 +1287,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const { data: chatMetaRows } = await supabase
             .from('whatsapp_chats')
             .select('*')
-            .or(`contact_name.ilike.${searchPattern},chat_id.ilike.${searchPattern}`)
+            .or(`contact_name.ilike.${quotedPattern},chat_id.ilike.${quotedPattern}`)
             .limit(10);
 
           // Merge: chatMetaRows overrides message-based results for same chat_id
@@ -1429,9 +1317,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // 3. Search contacts by name, company, or phone (linked to WhatsApp)
           const { data: contacts } = await supabase
             .from('contacts')
-            .select('*')
+            .select('id,name,company,phone,status')
             .eq('source', 'WHATSAPP')
-            .or(`name.ilike.${searchPattern},company.ilike.${searchPattern},phone_normalized.ilike.${q.replace(/[^\d]/g, '')}`)
+            .or(`name.ilike.${quotedPattern},company.ilike.${quotedPattern}${q.replace(/\D/g, '').length>=3?',phone_normalized.ilike.'+JSON.stringify('%'+q.replace(/\D/g, '')+'%'):''}`)
             .limit(10);
 
           // Combine and deduplicate by type

@@ -11,7 +11,8 @@ it('native redaction imports load without machine configuration or network',()=>
  try{
   fs.writeFileSync(path.join(temp,'package.json'),'{"type":"module"}');
   fs.symlinkSync(fs.realpathSync('node_modules'),path.join(temp,'node_modules'),process.platform==='win32'?'junction':'dir');
-  const sources=['api/whatsapp.ts','api/recordings.ts','src/lib/integrations/provider-projection.ts','src/lib/settings/server.ts','src/lib/settings/projection.ts','src/lib/inbox/email-server.ts','src/lib/inbox/email.ts','src/lib/whatsapp/inbox-server.ts','src/lib/whatsapp/inbox.ts','src/lib/whatsapp/phone-labels-server.ts'];
+  const sources=['api/whatsapp.ts','api/recordings.ts','src/lib/integrations/provider-projection.ts','src/lib/settings/server.ts','src/lib/settings/projection.ts','src/lib/inbox/email-server.ts','src/lib/inbox/email.ts','src/lib/whatsapp/inbox-server.ts','src/lib/whatsapp/inbox.ts','src/lib/whatsapp/phone-labels-server.ts','src/lib/whatsapp/media-server.ts'];
+  sources.push('src/lib/whatsapp/attachments.ts');
   for(const source of sources){
    const dest=path.join(temp,source.replace(/\.ts$/,'.js'));fs.mkdirSync(path.dirname(dest),{recursive:true});
    fs.writeFileSync(dest,ts.transpileModule(fs.readFileSync(source,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);

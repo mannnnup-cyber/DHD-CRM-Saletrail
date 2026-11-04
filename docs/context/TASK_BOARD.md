@@ -306,3 +306,11 @@ SECURITY-001A settings containment is isolated on fix/security-001a-settings-con
 SECURITY-001A is deployed at544ac0e. Independent redaction is locally prepared on fix/security-001-provider-redaction; root final checks/local commit and separate owner release authorization required. Full enforcement remains in separate fix/security-001-final-hardening, blocked by callback/device enrollment and recording prerequisites. No push/deploy/hosted change authorized by this packet.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+## F1 release candidate — 2026-11-02
+
+F1 IMPLEMENTED / LOCAL TESTED: 453 tests, TypeScript and production build PASS; independent scoped security/code review PASS. Publication/CI and final browser evidence are tracked in docs/F1-WHATSAPP-MEDIA-INBOX-DELIVERY.md. NOT MERGED / NOT DEPLOYED / NOT PRODUCTION VERIFIED. Next gate: PR review, then separate owner merge/deployment authorization and controlled provider acceptance. Do not duplicate donor work or include unrelated branches.
+
+2026-11-04 follow-up: P2 download propagation corrected; explicit flex growth and committed dimension/lightbox browser assertions added. 455 tests and 25 browser checks PASS; independent follow-up review PASS. Owner granted conditional release authorization. Release remains BLOCKED by Vercel team-access failure and original half-height symptom not reproduced in baseline/F1 fixtures; affected URL/zoom requested. No merge/deploy or hosted changes. See existing delivery report for final evidence and gates.
+
+2026-11-04 screenshot follow-up supersedes those blockers: constrained native ancestor scrolling reproduces 256 px displacement; WhatsApp-only clipping prevents it. Final browser checks 26/26 and independent review PASS. Signed-in Vercel browser verifies the existing Ready production deployment/master path. Release candidate awaits exact-SHA CI/preflight; conditional owner merge/deployment authorization already granted. Other pages, APIs, credentials and hosted data remain unchanged.

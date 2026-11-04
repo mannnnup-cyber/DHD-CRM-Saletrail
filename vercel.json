@@ -4,6 +4,11 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "devCommand": "npm run dev",
+  "git": {
+    "deploymentEnabled": {
+      "feat/f1-whatsapp-media-inbox": false
+    }
+  },
   "functions": {
     "api/email.ts": {
       "maxDuration": 60

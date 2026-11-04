@@ -386,3 +386,7 @@ Settings containment uses src/lib/settings/server.ts to reuse fresh Email authen
 Independent SECURITY-001 provider redaction preserves production544ac0e/001A authentication. Pure provider-projection.ts removes named credentials from future raw persistence; selected WhatsApp/recording log/error responses become fixed messages. No machine guard, environment registry, mobile, org binding, schema or Storage dependency. Legacy public channel/recording surfaces and persisted transcription-error exposure remain; this is not full integration containment.
 
 November1 closeout: security-001-redaction local verification and independent reviews complete; see delivery report. No publication/deployment/hosted mutation.
+
+## F1 release candidate — 2026-11-02
+
+F1 media sends and mediaProxy require fresh active owner/manager/rep/sales_rep Bearer identity and project compatibility. Validated media dispatch is initialized before switch cases. Browser attachments use bounded, actor-bound, demand-loaded revocable blobs with at most two concurrent reads and a 25-second active deadline. WhatsApp owns its internal scroll panes; other App routes retain normal scrolling. No JWT URLs, database migration or hosted configuration dependency. Broader legacy text/history/callback/GSM boundaries and URL-proxy SSRF policy remain unresolved.
