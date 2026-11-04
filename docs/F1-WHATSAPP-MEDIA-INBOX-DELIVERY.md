@@ -39,3 +39,22 @@ Compatibility limits: decoded outgoing attachments are capped at 3 MiB; browser/
 Publication uses the exact feature branch only, with `vercel.json` disabling automatic Git deployments for that branch. The redundant push webhook must remain inactive. Other branches and master configuration are unchanged. No preview is expected; GitHub CI and deployment records are checked after publication.
 
 After PR review, obtain separate merge/deployment authorization. Production acceptance must verify the deployed SHA, anonymous/invalid-token denial, owner/manager/rep/sales_rep media access, an owner-controlled text/image/PDF/audio exchange, received attachment download, known failure and uncertain-outcome handling, and labels/unread/history/search on desktop/mobile. No live customer message was sent. Roll back application-only through a reviewed corrective revert preserving SECURITY-001A/B and authenticated media controls; do not return to unauthenticated media. No database rollback is needed.
+
+## Final correction and conditional release — 2026-11-04
+
+Owner conditionally authorized release after all final gates pass; this supersedes the earlier PR-only authorization, not the unresolved acceptance gates.
+
+- Confirmed P2 cause: `ProtectedDownload`'s initial button discarded the supplied click handler. Both the load button and loaded anchor now invoke it; caller cancellation is honored. The actual lightbox stays open through load and download. Two component regressions cover propagation/cancellation; committed `tests/browser/f1-regressions.mjs` provides actual lightbox and bounding-rectangle assertions reused by the existing synthetic browser harness.
+- The WhatsApp root now explicitly grows as a flex child instead of depending on percentage height. `App.tsx` needed no further changes. Independent history scrolling, composer anchoring, mobile and unrelated page scrolling remain covered.
+- **Reported half-height symptom not reproduced:** the actual rendered stored production baseline (`37a7253`) at 1366×768 left only 13 px below the composer. The final F1 workspace fills the available main height at four sizes below. This is local rendering of baseline code, not inspection of a signed-in production session; the original symptom's root cause remains unconfirmed. Requested the affected URL and browser zoom rather than inventing a cause.
+
+| Viewport | Main bottom | Page bottom | Composer bottom |
+| --- | ---: | ---: | ---: |
+| 1366×768 | 768 | 768 | 751 |
+| 1440×1080 | 1080 | 1080 | 1063 |
+| 1366×635 | 635 | 635 | 618 |
+| 390×844 | 844 | 844 | 835 |
+
+Final browser regression: **25/25 PASS**, identical before/after source hashes, all original media/search/labels/unread/scroll cases retained. Independent follow-up code/security review PASS, with API/authentication and previous safeguards unchanged. The final automated suite has **455/455 tests across 29 files PASS**, superseding 453. TypeScript PASS; production build PASS (38.58 seconds). Runtime checks and generated artifacts remain outside Git; no new package, migration, secret, hosted setting or provider/device change.
+
+**Production gate BLOCKED:** Vercel project lookup returns 403 for `mannnnup-cybers-projects`; team authorization returns 404, and the existing CLI cannot find that scope. Browser control also timed out. GitHub's latest Production record reports successful deployment of `37a7253910c8541fbc35a296ee3371b848f28051`; that does not establish the current signed-in Vercel Production Current/Ready state. No merge or deployment is permitted until deployment verification access and the unresolved layout acceptance are available. No customer messages, credentials, database records or provider configuration were changed.

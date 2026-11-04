@@ -473,4 +473,6 @@ November1 closeout: security-001-redaction local verification and independent re
 
 ## F1 release candidate — 2026-11-02
 
+2026-11-04 follow-up: download loading preserves lightbox click handling and cancellation; WhatsApp root uses explicit flex growth. Added reusable actual-browser lightbox/dimension assertions and two component regressions. Final evidence: 455 tests, 25 browser checks and independent review PASS. Conditional production release remains blocked by Vercel access and unresolved original layout reproduction. No deployment or hosted change.
+
 Prepared F1 on master 37a7253: corrected direct media helper initialization; added narrow media authentication and validation; improved conversation navigation, bounded search, attachment cards and session isolation. Full local regression: 453 tests, TypeScript and production build PASS. Independent scoped code/security PASS; browser evidence is recorded in the delivery report. Feature-branch Git deployments disabled; no merge, deployment or live customer send.

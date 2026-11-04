@@ -1397,7 +1397,7 @@ export default function WhatsApp() {
   const isUsingRealData = hasRealData && connected === true;
 
   return (
-    <div data-testid="whatsapp-page" className="[color-scheme:dark] h-full min-h-0 flex flex-col gap-3 p-2 sm:p-4">
+    <div data-testid="whatsapp-page" className="[color-scheme:dark] flex-1 min-h-0 flex flex-col gap-3 p-2 sm:p-4">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div>
@@ -3081,8 +3081,8 @@ export default function WhatsApp() {
 
       {/* Lightbox */}
       {lightboxUrl && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightboxUrl(null)}>
-          <button className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full bg-black/40" onClick={() => setLightboxUrl(null)}>
+        <div role="dialog" aria-modal="true" aria-label="Image preview" className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightboxUrl(null)}>
+          <button aria-label="Close image preview" className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full bg-black/40" onClick={() => setLightboxUrl(null)}>
             <X className="w-6 h-6" />
           </button>
           <ProtectedImage src={lightboxUrl} alt="Media" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
