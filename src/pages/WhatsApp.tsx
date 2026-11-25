@@ -2108,6 +2108,10 @@ export default function WhatsApp() {
                   </div>
                 )}
 
+                <div aria-label="Conversation phone labels" className="md:hidden shrink-0 max-h-[40dvh] overflow-y-auto overscroll-contain">
+                  <WhatsAppLabelControls controls={phoneLabelControls} selected={selectedChat} conversationOnly />
+                </div>
+
                 {/* Messages */}
                 <div
                   ref={messagesViewportRef}

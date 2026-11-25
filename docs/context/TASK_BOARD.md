@@ -1,5 +1,15 @@
 # Task Board — FollOps
 
+## Label read recovery — 2026-11-25
+
+IMPLEMENTED / LOCALLY VALIDATED: mobile selected-chat label access,
+truthful unknown presentation and sanitized read reasons. Not pushed/deployed.
+Phone label resync and current logged-out WhatsApp session recovery need the
+business phone, presently unavailable. Do not mark full label sync complete from
+local tests. Full465 tests, TypeScript, build and2 rendered browser cases PASS;
+independent QA/security PASS. Release remains owner-gated. Evidence:
+`docs/WHATSAPP-LABEL-READ-RECOVERY.md`.
+
 ## Status Values
 
 Use `Planned`, `In Progress`, `Blocked`, `Review`, or `Done`.

@@ -1,5 +1,14 @@
 # Architecture — FollOps
 
+## Local label read recovery — 2026-11-25
+
+`fix/whatsapp-label-read-recovery` adds a mobile-only selected-conversation label
+panel sharing the existing hook. Unknown memberships show catalog names without
+unchecked assignment boxes. Sanitized read-reason enums distinguish missing
+provider records from empty verified memberships and failed checks. Auth,
+provider scope, read bounds and mutation guards are unchanged. No alias inference,
+new polling, migration or provider change. Evidence: `docs/WHATSAPP-LABEL-READ-RECOVERY.md`.
+
 ## Runtime Shape
 
 FollOps is a React 19, TypeScript, Vite 7, and Tailwind CSS application

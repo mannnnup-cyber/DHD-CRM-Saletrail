@@ -1,18 +1,19 @@
 import { validLabelTarget } from './inbox';
 import { useEffect, useRef, useState } from 'react';
 import { authHeaders } from '../auth';
-import { validChatId, projectPhoneLabels, type PhoneLabel } from './inbox';
+import { validChatId, projectPhoneLabels, type PhoneLabel, type PhoneLabelReadReason } from './inbox';
 export interface PhoneAssignment {
     chatId: string;
     labelIds: string[] | null;
     checkedAt: number | null;
     expiresAt: number | null;
+    reason?: PhoneLabelReadReason;
 }
 export function usePhoneLabels(chats: {
     id: string;
 }[]) {
     const [labels, setLabels] = useState<PhoneLabel[]>([]), [assignments, setAssignments] = useState<Record<string, PhoneAssignment>>({}), [open, setOpen] = useState(false), [filter, setFilter] = useState('all'), [loading, setLoading] = useState(false), [changing, setChanging] = useState(false), [error, setError] = useState(''), [writesEnabled, setWritesEnabled] = useState(false), [blocked, setBlocked] = useState<Set<string>>(new Set()), [clock, setClock] = useState(Date.now());
-    const validRow = (row: PhoneAssignment) => row && typeof row.chatId === 'string' && (row.labelIds === null ? row.checkedAt === null && row.expiresAt === null : Array.isArray(row.labelIds) && row.labelIds.length <= 100 && row.labelIds.every(x => typeof x === 'string' && /^[\w-]{1,100}$/.test(x)) && typeof row.checkedAt === 'number' && Number.isSafeInteger(row.checkedAt) && typeof row.expiresAt === 'number' && Number.isSafeInteger(row.expiresAt) && row.checkedAt >= 0 && row.expiresAt >= row.checkedAt && row.expiresAt - row.checkedAt <= 181000 && row.expiresAt <= Date.now() + 210000);
+    const validRow = (row: PhoneAssignment) => row && typeof row.chatId === 'string' && (row.reason === undefined || row.labelIds === null && ['provider_chat_missing', 'membership_unavailable', 'identity_mismatch', 'invalid_response', 'provider_unavailable', 'timeout', 'limited'].includes(row.reason)) && (row.labelIds === null ? row.checkedAt === null && row.expiresAt === null : Array.isArray(row.labelIds) && row.labelIds.length <= 100 && row.labelIds.every(x => typeof x === 'string' && /^[\w-]{1,100}$/.test(x)) && typeof row.checkedAt === 'number' && Number.isSafeInteger(row.checkedAt) && typeof row.expiresAt === 'number' && Number.isSafeInteger(row.expiresAt) && row.checkedAt >= 0 && row.expiresAt >= row.checkedAt && row.expiresAt - row.checkedAt <= 181000 && row.expiresAt <= Date.now() + 210000);
     const mutationActive = useRef(false), readActive = useRef(false);
     const sequence = useRef(0);
     useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 15000); return () => { clearInterval(timer); sequence.current++; }; }, []);
@@ -46,7 +47,7 @@ export function usePhoneLabels(chats: {
             if (force)
                 setBlocked(prev => new Set([...prev].filter(id => !rows[id] || !Array.isArray(rows[id].labelIds))));
             if (Object.values(rows).some(row => row.labelIds === null))
-                setError('Some phone labels could not be checked. Unknown conversations are excluded from label matches.');
+                setError('Some conversation label memberships are unavailable. Select a conversation to see its check result. Unknown conversations are excluded from label matches.');
             setClock(Date.now());
         }
         catch (e) {
