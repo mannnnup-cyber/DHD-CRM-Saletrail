@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
 import { projectPhoneLabels, validChatId, validLabelTarget } from './inbox.js';
+import type { PhoneLabelReadReason } from './inbox.js';
 class LabelError extends Error {
     constructor(public status: number, message: string, public uncertain = false) { super(message); }
 }
@@ -70,13 +71,14 @@ export async function handlePhoneLabels(req: VercelRequest, res: VercelResponse,
             if (v.expiresAt <= now)
                 cache.delete(k); if (cache.size >= 2000)
             cache.delete(cache.keys().next().value!); const value = { labelIds, checkedAt: now, expiresAt: now + TTL }; cache.set(prefix + '|' + chatId, value); return value; }
-        async function read(chatId: string, force = false) {
+        async function read(chatId: string, force = false, unavailable?: (reason: PhoneLabelReadReason) => void) {
             const cached = cache.get(prefix + '|' + chatId);
             if (!force && cached && cached.expiresAt > Date.now())
                 return cached;
             const value = await call('/chat/findChatByRemoteJid/' + encodeURIComponent(instance) + '?remoteJid=' + encodeURIComponent(chatId));
             if (!value || value.remoteJid !== chatId || !Array.isArray(value.labels) || value.labels.length > 100 || !value.labels.every(validLabel)) {
                 cache.delete(prefix + '|' + chatId);
+                unavailable?.(value === null ? 'provider_chat_missing' : !value || typeof value !== 'object' ? 'invalid_response' : value.remoteJid !== chatId ? 'identity_mismatch' : value.labels == null ? 'membership_unavailable' : 'invalid_response');
                 return null;
             }
             return cacheResult(chatId, [...new Set<string>(value.labels)]);
@@ -94,12 +96,14 @@ export async function handlePhoneLabels(req: VercelRequest, res: VercelResponse,
             await Promise.all(Array.from({ length: Math.min(4, unique.length) }, async () => { while (cursor < unique.length) {
                 const index = cursor++, chatId = unique[index];
                 try {
-                    const value = Date.now() < deadline ? await read(chatId, force === true) : null;
-                    items[index] = { chatId, labelIds: value?.labelIds ?? null, checkedAt: value?.checkedAt ?? null, expiresAt: value?.expiresAt ?? null };
+                    let reason: PhoneLabelReadReason = 'timeout';
+                    const value = Date.now() < deadline ? await read(chatId, force === true, value => { reason = value; }) : null;
+                    items[index] = { chatId, labelIds: value?.labelIds ?? null, checkedAt: value?.checkedAt ?? null, expiresAt: value?.expiresAt ?? null, ...(!value && { reason }) };
                 }
-                catch {
+                catch (error) {
                     cache.delete(prefix + '|' + chatId);
-                    items[index] = { chatId, labelIds: null, checkedAt: null, expiresAt: null };
+                    const reason: PhoneLabelReadReason = error instanceof LabelError && error.status === 429 ? 'limited' : error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name) ? 'timeout' : 'provider_unavailable';
+                    items[index] = { chatId, labelIds: null, checkedAt: null, expiresAt: null, reason };
                 }
             } }));
             return res.json({ success: true, items, complete: items.every(item => Array.isArray(item.labelIds)) });

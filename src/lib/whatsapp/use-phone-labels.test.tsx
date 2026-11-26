@@ -62,3 +62,15 @@ it('allows a fresh exact LID conversation through the client mutation guard', as
     expect(post).toBeDefined();
     expect(controls.fresh(lid)?.labelIds).toEqual(['1']);
 });
+
+it('retains a sanitized missing-chat reason while keeping labels unknown and writes blocked', async () => {
+    const fetchMock=vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('action=phoneLabels')?{success:true,writesEnabled:true,labels:[{id:'1',name:'One',color:'2'}]}:{success:true,items:[{chatId:id,labelIds:null,checkedAt:null,expiresAt:null,reason:'provider_chat_missing'}]}}));vi.stubGlobal('fetch',fetchMock);
+    await act(async()=>controls.toggle());
+    expect(controls.assignments[id].reason).toBe('provider_chat_missing');expect(controls.fresh(id)).toBeNull();expect(controls.known).toBe(0);expect(controls.matches(id)).toBe(true);
+    const count=fetchMock.mock.calls.length;await act(async()=>controls.change(id,'1'));expect(fetchMock).toHaveBeenCalledTimes(count);
+});
+
+it('rejects unrecognized reason values without reflecting upstream text', async () => {
+    vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({success:true,items:[{chatId:id,labelIds:null,checkedAt:null,expiresAt:null,reason:'private-upstream-value'}]})})));
+    await act(async()=>controls.load([id]));expect(controls.fresh(id)).toBeNull();expect(controls.assignments[id].reason).toBeUndefined();expect(controls.error).toBe('Phone label response could not be verified.');
+});

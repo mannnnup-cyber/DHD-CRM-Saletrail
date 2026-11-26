@@ -106,6 +106,22 @@ describe('WhatsApp label and unread UI',()=>{
     expect(requests()).toHaveLength(1);expect(JSON.parse(String(requests()[0][1]?.body)).chatIds).toHaveLength(25);expect(container.textContent).toContain('Verified labels: 25 / 60');
     const next=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Check next 25')!;await act(async()=>next.click());await flush();expect(requests()).toHaveLength(2);expect(container.textContent).toContain('Verified labels: 50 / 60');
   });
+  it('keeps selected-conversation label controls available in the mobile pane using the shared state',async()=>{
+    const customer=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Synthetic customer'))!;await act(async()=>customer.click());await flush();
+    const mobile=container.querySelector('[aria-label="Conversation phone labels"]')!;expect(mobile.className).toContain('md:hidden');expect(mobile.className).toContain('shrink-0');
+    const menu=Array.from(mobile.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
+    expect(mobile.textContent).toContain('Phone labels for Synthetic customer');expect(mobile.querySelector('select')).toBeNull();expect(mobile.querySelector('[aria-label="Verified phone label assignments"]')).toBeTruthy();
+    expect(container.querySelector('[aria-label="Conversations"] [aria-label="Phone labels"]')).toBeTruthy();
+    const refresh=Array.from(mobile.querySelectorAll('button')).find(b=>b.textContent==='Refresh this conversation')!;vi.mocked(fetch).mockClear();await act(async()=>refresh.click());await flush();
+    const reads=vi.mocked(fetch).mock.calls.filter(([url])=>String(url).includes('action=phoneAssignments'));expect(reads).toHaveLength(1);expect(JSON.parse(String(reads[0][1]?.body))).toEqual({chatIds:[chat.id],forceRefresh:true});
+  });
+  it('shows missing provider membership as unknown catalog names rather than unchecked assignments',async()=>{
+    const original=vi.mocked(fetch).getMockImplementation()!;vi.mocked(fetch).mockImplementation(async(url:any,options?:RequestInit)=>String(url).includes('action=phoneAssignments')?({ok:true,json:async()=>({success:true,items:[{chatId:chat.id,labelIds:null,checkedAt:null,expiresAt:null,reason:'provider_chat_missing'}]})} as any):original(url,options));
+    const customer=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Synthetic customer'))!;await act(async()=>customer.click());await flush();
+    const mobile=container.querySelector('[aria-label="Conversation phone labels"]')!;await act(async()=>Array.from(mobile.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!.click());await flush();
+    expect(mobile.textContent).toContain('Evolution has no stored chat record for this exact conversation');expect(mobile.textContent).toContain('unknown');expect(mobile.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);expect(mobile.querySelector('[aria-label="Phone label catalog"]')).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('action=phoneLabelChange'))).toBe(false);
+  });
   it('expires cached UI membership to unknown without another provider request',async()=>{
     const menu=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.includes('Phone labels'))!;await act(async()=>menu.click());await flush();
     const calls=vi.mocked(fetch).mock.calls.length;vi.spyOn(Date,'now').mockReturnValue(Date.now()+181000);

@@ -1,5 +1,12 @@
 # File Map — FollOps
 
+Label recovery (local branch, 2026-11-25): `src/components/WhatsAppLabels.tsx`
+and `src/pages/WhatsApp.tsx` expose mobile selected-chat controls with the existing
+hook. `src/lib/whatsapp/{inbox.ts,phone-labels-server.ts,use-phone-labels.ts}`
+project/validate sanitized unknown reasons without changing mutation authority.
+`tests/browser/label-regressions.mjs` exports synthetic rendered assertions.
+Evidence and limits: `docs/WHATSAPP-LABEL-READ-RECOVERY.md`.
+
 This file explains the key files, folders, routes, dependencies, integrations,
 and environment variables in the project. The JSON block is intended to stay
 parseable by AI tools and harness systems.
